@@ -63,7 +63,7 @@ export function CompetitorForm({ onBack }: { onBack: () => void }) {
   if (!products.length) return <EmptyState title="Add your app first" body="A competitor search starts from your app's profile: what it is and who it's for." action={<ButtonLink href="/app/product/new">Add an app</ButtonLink>} />;
 
   return (
-    <Card className="p-5">
+    <Card className="p-4">
       <p className="text-sm text-muted">The AI names the brands you&apos;re up against with their social accounts, checks each one against your app, and you pick who to study.</p>
 
       <div className="mt-5">
@@ -96,7 +96,7 @@ export function CompetitorForm({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 @xl:grid-cols-2">
+      <div className="mt-5 grid gap-4 @xl:grid-cols-2">
         <div>
           <p className="mb-2 text-sm font-medium">Time frame</p>
           <Segmented label="Time frame" value={String(sinceDays)} onChange={(v) => setSinceDays(Number(v))} options={TIMEFRAMES.map((d) => ({ value: String(d), label: `${d} days` }))} />
@@ -111,8 +111,8 @@ export function CompetitorForm({ onBack }: { onBack: () => void }) {
       <div className="mt-6">
         <p className="mb-2 text-sm font-medium">Niche search terms</p>
         <div className="flex flex-wrap gap-2">
-          {keywords.map((k) => <span key={k} className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-xs text-on-ink">{k}<button type="button" onClick={() => setKeywords(keywords.filter((x) => x !== k))} className="text-on-ink/60 hover:text-on-ink" aria-label={`Remove ${k}`}>×</button></span>)}
-          <input className="min-w-40 flex-1 rounded-control border border-line bg-raised px-3 py-1.5 text-xs outline-none focus:border-ink/25" placeholder={keywords.length >= 8 ? "8 terms max" : "Add a term and press Enter"}
+          {keywords.map((k) => <span key={k} className="inline-flex h-6 items-center gap-1.5 rounded-full border border-hairline bg-control px-2.5 text-xs text-ink">{k}<button type="button" onClick={() => setKeywords(keywords.filter((x) => x !== k))} className="text-on-ink/60 hover:text-on-ink" aria-label={`Remove ${k}`}>×</button></span>)}
+          <input aria-label="Add a niche search term" className="min-w-40 flex-1 rounded-control border border-line bg-raised px-3 py-1.5 text-xs outline-none focus:border-ink/25" placeholder={keywords.length >= 8 ? "8 terms max" : "Add a term and press Enter"}
             value={draft} disabled={keywords.length >= 8} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addKeyword(draft); } }} />
         </div>
         <label className="mt-3 flex items-start gap-2 text-sm">

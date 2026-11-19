@@ -2,7 +2,7 @@
 // first: a collab post (the brand is a co-author), Instagram's paid-partnership label, a bio that
 // declares the tie ("athlete @brand", "ambassador", a personal discount code), and the brand tagged
 // or @mentioned in the post. A brand's tagged feed finds creators nobody named; Jev reads the bios.
-import type { AiProvider, Judge } from "../../_shared/ai/judge.ts";
+import { accountError, type AiProvider, type Judge, type JudgeError } from "../../_shared/ai/judge.ts";
 import { noul } from "../../_shared/ai/questions.ts";
 import { thresholdsFor } from "../../_shared/ai/thresholds.ts";
 import { clean, type PartnerBrand, type Profile, type Reel } from "./types.ts";
@@ -83,8 +83,9 @@ export async function judgeBios(client: Judge, profiles: Profile[], brands: Part
   const checks = profiles.flatMap((profile) => brands.filter((brand) => bioNames(profile.biography, brand)).map((brand) => ({ profile, brand })));
   const verdicts: Record<string, number> = {};
   const queue = [...checks];
+  let refused: JudgeError | null = null;
   await Promise.all(Array.from({ length: 8 }, async () => {
-    for (let check = queue.shift(); check; check = queue.shift()) {
+    for (let check = queue.shift(); check && !refused; check = queue.shift()) {
       try {
         const { answers } = await client.systemOne({
           state: { brand: `${check.brand.name} (@${lower(check.brand.instagram)} on Instagram)`, creator: `@${check.profile.username}`, bio: check.profile.biography.slice(0, 600) },
@@ -96,11 +97,13 @@ export async function judgeBios(client: Judge, profiles: Profile[], brands: Part
           },
         });
         verdicts[verdictKey(check.brand, check.profile.username)] = (answers.tie as { noul: number }).noul;
-      } catch {
-        // An unread bio just means no bio signal for that creator.
+      } catch (error) {
+        // An unread bio just means no bio signal for that creator; a refused key stops (and says why).
+        refused ??= accountError(error, client.provider);
       }
     }
   }));
+  if (refused) throw refused;
   return verdicts;
 }
 

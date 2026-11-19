@@ -1,8 +1,10 @@
 import type { NextRequest } from "next/server";
 import { ASSET_COLUMNS, type AssetKind } from "@/lib/product-assets";
 import { isResponse, requireUser } from "@/lib/server/auth";
+import { refuseWhenFull } from "@/lib/server/storage";
 import { findProductImages, sortProductAssets } from "@/lib/server/insight";
 import { WORKSPACE_BUCKET } from "@/lib/workspace";
+import { dbFailure } from "@/lib/server/errors";
 
 export const maxDuration = 300;
 
@@ -15,7 +17,7 @@ export async function GET(_request: NextRequest, ctx: RouteContext<"/api/product
   if (isResponse(session)) return session;
   const { id } = await ctx.params;
   const { data, error } = await session.supabase.from("product_assets").select(ASSET_COLUMNS).eq("product_id", id).order("created_at", { ascending: false }).limit(300);
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return dbFailure("assets list", error, "Couldn't load your images. Try again.");
   return Response.json({ assets: data ?? [] });
 }
 
@@ -37,6 +39,8 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/product
   if (body.action === "ticket") {
     const ext = TYPES[body.contentType];
     if (!ext) return Response.json({ error: "Use a PNG, JPEG or WebP image." }, { status: 400 });
+    const full = await refuseWhenFull(session, "upload", { fileBytes: Number(body.size) || 0 });
+    if (full) return full;
     const path = `${folder}upload-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
     const bucket = session.supabase.storage.from(WORKSPACE_BUCKET);
     const { data, error } = await bucket.createSignedUploadUrl(path);
@@ -54,7 +58,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/product
       product_id: id, url, storage_path: path, source: "upload", kind, kind_locked: KINDS.includes(body.kind),
       label: typeof body.label === "string" ? body.label.trim().slice(0, 120) || null : null, width: size(body.width), height: size(body.height),
     }).select(ASSET_COLUMNS).single();
-    if (error) return Response.json({ error: error.message }, { status: 500 });
+    if (error) return dbFailure("asset save", error, "The image was uploaded but couldn't be saved. Try again.");
     return Response.json({ asset: data });
   }
 

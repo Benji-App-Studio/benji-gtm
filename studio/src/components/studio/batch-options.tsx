@@ -55,7 +55,7 @@ export function BatchOptions({ req, set, overview, tiles, picks, onPickRefs, pic
   const aiVideo = { ...DEFAULT_REQUEST.aiVideo!, ...req.aiVideo };
 
   return (
-    <div className="grid gap-5 pt-2">
+    <div className="grid gap-4 pt-2">
       {has("image") && (
         <AdFormatPicker format={req.format ?? "single"} onFormat={(format) => set({ format })} cards={req.cards ?? 3} onCards={(cards) => set({ cards })} />
       )}

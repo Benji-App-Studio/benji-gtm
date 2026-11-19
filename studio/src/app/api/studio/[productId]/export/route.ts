@@ -4,6 +4,7 @@ import { zipName } from "@/lib/export-paths";
 import { zip, type ZipEntry } from "@/lib/zip";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { approvedForExport } from "@/lib/server/export";
+import { caughtFailure } from "@/lib/server/errors";
 
 /** Files fetched at once while building the zip. */
 const PARALLEL = 6;
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/studio/[
   try {
     set = await approvedForExport(session, productId, ids);
   } catch (error) {
-    return Response.json({ error: `Couldn't list the approved creatives: ${error instanceof Error ? error.message : String(error)}` }, { status: 500 });
+    return caughtFailure("export list", error, "Couldn't list the approved creatives. Try again.");
   }
   if (!set.files.length) return Response.json({ error: "No approved creatives to download yet." }, { status: 404 });
 

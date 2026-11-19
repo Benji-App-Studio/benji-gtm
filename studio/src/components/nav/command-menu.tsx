@@ -8,6 +8,7 @@ import { preloadProject, useCached } from "@/lib/client-cache";
 import { applyTheme } from "@/lib/theme";
 import { WORKSPACE_MODULES, workspaceHref } from "@/lib/workspace-schema";
 import { THEME_OPTIONS } from "../appearance";
+import { useLayer } from "../layers";
 import { IconChart, IconHome, IconLayers, IconMegaphone, IconMonitor, IconMoon, IconPlus, IconSearch, IconSettings, IconSun, IconUser } from "../icons";
 import type { ProjectSummary } from "../project-list";
 import { appSettingsHref, SETTINGS_PAGES } from "../settings/pages";
@@ -50,11 +51,9 @@ function CommandDialog() {
   const listRef = useRef<HTMLDivElement>(null);
   const id = useId();
 
-  // Focus goes back to where it was when the menu closes.
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    return () => { previous?.focus?.(); };
-  }, []);
+  // A layer: Escape closes only this, and focus goes back to where it was when the menu closes.
+  const boxRef = useRef<HTMLDivElement>(null);
+  useLayer(boxRef, { onEscape: () => setOpen(false) });
 
   const commands = useMemo<Command[]>(() => {
     const apps = products ?? [];
@@ -95,10 +94,10 @@ function CommandDialog() {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center bg-scrim/25 px-3 pt-[12vh] max-sm:pt-3" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
-      <div role="dialog" aria-modal="true" aria-label="Search and commands" className="page-in flex max-h-[min(460px,calc(100dvh-24px))] w-full max-w-[560px] flex-col overflow-hidden rounded-dialog border border-hairline bg-raised shadow-pop">
-        <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-line px-3.5">
-          <IconSearch className="size-4 shrink-0 text-muted" />
-          <input autoFocus value={query} placeholder="Search pages, apps and analyses" role="combobox" aria-expanded aria-controls={`${id}-list`} aria-autocomplete="list"
+      <div ref={boxRef} role="dialog" aria-modal="true" aria-label="Search and commands" className="page-in flex max-h-[min(460px,calc(100dvh-24px))] w-full max-w-[560px] flex-col overflow-hidden rounded-dialog border border-hairline bg-raised shadow-pop">
+        <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-4">
+          <IconSearch className="size-3.5 shrink-0 text-muted" />
+          <input autoFocus value={query} aria-label="Search pages, apps and analyses" placeholder="Search pages, apps and analyses" role="combobox" aria-expanded aria-controls={`${id}-list`} aria-autocomplete="list"
             aria-activedescendant={results[active] ? `${id}-${results[active].id}` : undefined}
             onChange={(event) => { setQuery(event.target.value); setIndex(0); }}
             onKeyDown={(event) => {
@@ -111,17 +110,17 @@ function CommandDialog() {
               else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOpen(false); }
               else if (event.key === "Tab") event.preventDefault();
             }}
-            className="h-full min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-faint" />
+            className="h-full min-w-0 flex-1 bg-transparent text-lg text-ink outline-none placeholder:text-faint" />
           <Kbd>Esc</Kbd>
         </div>
         <div ref={listRef} id={`${id}-list`} role="listbox" aria-label="Results" className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {results.length === 0 && <p className="px-2 py-6 text-center text-sm text-muted">Nothing matches &ldquo;{query.trim()}&rdquo;.</p>}
           {results.map((command, i) => (
             <div key={command.id}>
-              {(i === 0 || results[i - 1].group !== command.group) && <p className={cx("px-2 pb-1 text-xs text-faint", i === 0 ? "pt-1" : "pt-2.5")}>{command.group}</p>}
+              {(i === 0 || results[i - 1].group !== command.group) && <p className={cx("px-2 pb-1 text-xs text-muted", i === 0 ? "pt-1" : "pt-2.5")}>{command.group}</p>}
               <div id={`${id}-${command.id}`} role="option" aria-selected={i === active} onMouseMove={() => { if (i !== active) setIndex(i); }} onMouseDown={(event) => event.preventDefault()} onClick={() => run(command)}
-                className={cx("flex h-9 cursor-default items-center gap-2.5 rounded-md px-2 text-sm", i === active ? "bg-active text-ink" : "text-label")}>
-                <span className="grid size-[18px] shrink-0 place-items-center text-muted [&>svg]:size-4">{command.icon}</span>
+                className={cx("flex h-9 cursor-default items-center gap-2.5 rounded-control px-2 text-sm", i === active ? "bg-active text-ink" : "text-label")}>
+                <span className="grid size-[18px] shrink-0 place-items-center text-muted [&>svg]:size-3.5">{command.icon}</span>
                 <span className="min-w-0 flex-1 truncate">{command.label}</span>
                 {command.hint && <span className="shrink-0 truncate text-xs text-faint">{command.hint}</span>}
               </div>

@@ -2,6 +2,7 @@ import "server-only";
 // The guard every setup route starts with (the rules themselves are in guard.ts), and what the routes
 // share: where the app's files are and how the local config is written.
 import { getInstallConfig, projectRef, writeInstallConfig } from "@/lib/install/config";
+import { isLocalMode, startedLocalOnly } from "@/lib/install/local-auth";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { appOriginOf, decideSetupAccess, isLocalRequest, type RequestOrigin } from "./guard";
 import { isProjectRef } from "./management-api";
@@ -26,10 +27,15 @@ export function requestOrigin(request: Request): RequestOrigin {
   return { host: request.headers.get("host"), origin: request.headers.get("origin"), forwardedFor: request.headers.get("x-forwarded-for") };
 }
 
-/** True when the app was started bound to this computer only (see release/start.command). */
-export function startedLocalOnly(): boolean {
-  const env = process.env;
-  return env["INSTALL_SETUP_LOCAL"] === "1";
+export { startedLocalOnly };
+
+/**
+ * Whether this request is on a copy in local mode (lib/install/local-auth.ts): the local file config,
+ * started on this computer only, and a request from this computer (Host, Origin and address).
+ */
+export function localModeRequest(request: Request): boolean {
+  const from = requestOrigin(request);
+  return isLocalMode({ source: getInstallConfig()?.source, startedLocal: startedLocalOnly(), host: from.host, origin: from.origin, forwardedFor: from.forwardedFor });
 }
 
 /** Who is calling a setup route, or the response that turns them away. */

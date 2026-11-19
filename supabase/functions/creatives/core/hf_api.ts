@@ -98,6 +98,17 @@ export const outputUrls = (result: ApiResult) => [...(result.images ?? []).map((
 export const isBusy = (status: number, text: string) =>
   status === 429 || status === 502 || status === 503 || (status === 400 && /concurrent requests|rate limit/i.test(text));
 
+/** Where a request is cancelled: Higgsfield's own `cancel_url` when it is on the API host, else the documented path. */
+export function cancelUrlFor(requestId: string, cancelUrl?: string | null): string {
+  const fallback = `${HF_API}/requests/${encodeURIComponent(requestId)}/cancel`;
+  if (!cancelUrl) return fallback;
+  try {
+    return new URL(cancelUrl).origin === new URL(HF_API).origin ? cancelUrl : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export class HiggsfieldApiError extends Error {
   constructor(readonly status: number, message: string, readonly busy = false) { super(message); }
 }
@@ -118,5 +129,19 @@ export function higgsfieldApi(key: string, fetchImpl: Fetch = fetch) {
       call<ApiResult>(`${HF_API}/${req.endpoint}`, { method: "POST", body: JSON.stringify(req.body), headers: { "Idempotency-Key": idempotencyKey } }),
     status: (requestId: string) => call<ApiResult>(`${HF_API}/requests/${encodeURIComponent(requestId)}/status`, { method: "GET" }),
     estimate: (req: ApiRequest) => call<{ credits: string; usd: string }>(`${HF_API}/estimate/${req.endpoint}`, { method: "POST", body: JSON.stringify(req.body) }),
+    /**
+     * Cancels a request (POST to the `cancel_url` Higgsfield gave, else /requests/{id}/cancel). Only a
+     * link on Higgsfield's own API host is used, so the key is never sent elsewhere. True when
+     * Higgsfield accepted the cancel; never throws.
+     */
+    async cancel(requestId: string, cancelUrl?: string | null): Promise<boolean> {
+      const url = cancelUrlFor(requestId, cancelUrl);
+      try {
+        await call<unknown>(url, { method: "POST" });
+        return true;
+      } catch {
+        return false;
+      }
+    },
   };
 }

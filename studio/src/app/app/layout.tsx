@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
+import { localModePage } from "@/lib/server/owner-session";
 import { createClient } from "@/lib/supabase/server";
 
 /** The signed-in app: requires a session and a finished onboarding. */
@@ -10,5 +11,5 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
   if (!user) redirect("/login?next=/app/w");
   const { data: profile } = await supabase.from("profiles").select("full_name, onboarded_at").eq("id", user.id).maybeSingle();
   if (!profile?.onboarded_at) redirect("/onboarding");
-  return <AppShell name={profile.full_name} email={user.email}>{children}</AppShell>;
+  return <AppShell name={profile.full_name} email={user.email} local={await localModePage()}>{children}</AppShell>;
 }

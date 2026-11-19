@@ -96,8 +96,9 @@ export function CapabilityPills({ features, backend }: { features: Features; bac
     { label: "Checks", ok: known ? features.state("ai").ok : Boolean(backend?.typesafe), href: KEYS_HREF },
     { label: "Desktop runner", ok: runner, href: RUNNER_HREF, optional: true },
   ];
+  // In the page's header bar: one row that scrolls sideways instead of pushing the page wider on a narrow screen.
   return (
-    <>
+    <span className="no-scrollbar flex max-w-[calc(100cqi-200px)] items-center gap-1.5 overflow-x-auto">
       {rows.map((row) => row.ok
         ? <StatusPill key={row.label} tone="win">{row.label}<span className="sr-only"> ready</span></StatusPill>
         : (
@@ -105,6 +106,6 @@ export function CapabilityPills({ features, backend }: { features: Features; bac
             <StatusPill tone={row.optional ? "neutral" : "caution"} className="transition-colors hover:bg-hover">{row.label}<span className="font-normal text-muted">{row.optional ? "off" : "not connected"}</span></StatusPill>
           </Link>
         ))}
-    </>
+    </span>
   );
 }

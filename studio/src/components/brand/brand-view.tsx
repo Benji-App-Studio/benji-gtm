@@ -199,7 +199,7 @@ export function BrandView({ productId, tab: linkedTab }: { productId: string; ta
         </>}
       />
 
-      <div role="tablist" aria-label="Brand page" className={cx(segmentTrackClass, "no-scrollbar mb-4 overflow-x-auto")}>
+      <div role="tablist" aria-label="Brand page" className={cx(segmentTrackClass, "no-scrollbar mb-5 overflow-x-auto")}>
         {BRAND_TABS.map((t) => (
           <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => open(t.key)} className={segmentClass(tab === t.key)}>{t.label}</button>
         ))}
@@ -235,7 +235,7 @@ export function BrandView({ productId, tab: linkedTab }: { productId: string; ta
       )}
 
       {pending && drafting && (
-        <Card className="mb-4 grid gap-3 border-accent/40 p-4">
+        <Card className="mb-4 grid gap-3 p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <p className="text-sm font-medium">Import {pending.folder || "this guide"}?</p>
             <p className="text-xs text-muted">{pending.read.length ? "Only the parts below are replaced; the rest of the brand stays. Nothing is saved until you import." : "Nothing to import yet."}</p>
@@ -246,7 +246,7 @@ export function BrandView({ productId, tab: linkedTab }: { productId: string; ta
             {pending.fonts.length > 0 && <span>{pending.fonts.length} font file{pending.fonts.length === 1 ? "" : "s"} go to the product&apos;s storage (composed ads render with them).</span>}
             {pending.images.length > 0 && (
               <label className="flex items-center gap-2 text-ink">
-                <input type="checkbox" className="size-4 accent-ink" checked={withImages} onChange={(e) => setWithImages(e.target.checked)} />
+                <input type="checkbox" checked={withImages} onChange={(e) => setWithImages(e.target.checked)} />
                 Also add {pending.images.length} image{pending.images.length === 1 ? "" : "s"} (product shots and logos) to Assets, linked to their products
               </label>
             )}

@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { appContext, listCards, resolveProduct } from "@/lib/server/formats";
+import { caughtFailure } from "@/lib/server/errors";
 
 const headers = { "Cache-Control": "no-store" };
 
@@ -14,7 +15,7 @@ export async function GET(_request: NextRequest, ctx: RouteContext<"/api/w/[prod
     const [app, library] = await Promise.all([appContext(session, product), listCards(session, product)]);
     return Response.json({ app, ...library }, { headers });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return caughtFailure("formats list", error, "Couldn't load the format library. Try again.");
   }
 }
 
@@ -28,6 +29,6 @@ export async function POST(_request: NextRequest, ctx: RouteContext<"/api/w/[pro
     const [app, library] = await Promise.all([appContext(session, product), listCards(session, product, { rebuild: true })]);
     return Response.json({ app, ...library }, { headers });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return caughtFailure("formats rebuild", error, "Couldn't rebuild the format library. Try again.");
   }
 }

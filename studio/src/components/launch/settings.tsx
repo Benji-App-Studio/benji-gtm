@@ -3,12 +3,14 @@
 // ad sets are "testing" and "scaling" (or create them, paused), budgets and the guardrail, and the
 // promotion rules. Shown in the Launch page's settings drawer (settings-drawer.tsx).
 import { useState, type ReactNode } from "react";
+import { fromMinor } from "@/lib/launch/currency";
 import { DEFAULT_THRESHOLDS, type Thresholds } from "@/lib/launch/promotion";
 import type { LaunchSettings, Objective } from "@/lib/launch/types";
 import { ask, Facts, notice } from "../dialog";
 import { PlaybookTip } from "../playbook-tip";
 import { Button, Card, cx, Field, inputClass, Spinner } from "../ui";
 import { Section, send } from "./parts";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 type Form = Omit<LaunchSettings, "thresholds" | "countries"> & { countries: string; thresholds: Thresholds };
 
@@ -57,7 +59,7 @@ export function LaunchSettingsForm({ productId, settings, saved, onSaved, onCanc
                 ["Campaign", <span key="c" className="font-mono text-[11px]">{String(p.campaign.name)}</span>],
                 ["Ad set", <span key="a" className="font-mono text-[11px]">{String(p.adSet.name)}</span>],
                 ["Objective", String(p.campaign.objective)],
-                ["Daily budget", `${Number(p.adSet.daily_budget ?? p.campaign.daily_budget) / (["JPY", "KRW", "VND", "IDR", "HUF", "CLP", "COP", "TWD"].includes(currency) ? 1 : 100)} ${currency}`],
+                ["Daily budget", `${fromMinor(Number(p.adSet.daily_budget ?? p.campaign.daily_budget), currency).toLocaleString(UI_LOCALE)} ${currency}`],
                 ["Budget on", p.campaign.daily_budget != null ? "Campaign (CBO)" : "Ad set (ABO)"],
                 ["Optimises for", String(p.adSet.optimization_goal) === "OFFSITE_CONVERSIONS" ? `App event: ${String((p.adSet.promoted_object as { custom_event_type?: string } | undefined)?.custom_event_type ?? "").replace("START_TRIAL", "trial start").replace("PURCHASE", "purchase")}` : String(p.adSet.optimization_goal).replace(/_/g, " ").toLowerCase()],
                 ["Status", "Paused"],
@@ -81,7 +83,7 @@ export function LaunchSettingsForm({ productId, settings, saved, onSaved, onCanc
   const t = form.thresholds;
   return (
     <Section title="Setup" hint={saved ? "Where ads go, the testing and scaling ad sets, and the promotion rules." : "Not saved yet: these are the defaults. Fill in the Meta ids and save."}>
-      <Card className="grid gap-6 p-4 @md:p-5">
+      <Card className="grid gap-6 p-4">
         <Group title="Destination">
           <div className="flex flex-wrap gap-2 @xl:col-span-2">
             {(["app_promotion", "website_traffic"] as Objective[]).map((o) => (

@@ -18,14 +18,16 @@ import {
 } from "./engine/discover.ts";
 import { LIBRARY } from "./engine/formats.ts";
 import { runIntake } from "./engine/intake.ts";
+import { pollSearch, type SearchState } from "./engine/openai_search.ts";
+import { RUN_LIMIT_MS, scrapeLimits } from "./engine/run_limits.ts";
 import { bioCandidates, bioDeclares, campaignKeeps, INSTAGRAM_SCRAPER, judgeBios, partnerPrograms, profileFrom, profilesInput } from "./engine/partners.ts";
 import { assemble, nicheInstagramBest, planCollection, planComments, planNicheDetail, planPartnerDetail, reelsFrom, signalPosts, type ScrapeSpec } from "./engine/project.ts";
-import { type AiProvider, JudgeError } from "../_shared/ai/judge.ts";
+import { accountError, type AiProvider, JudgeError } from "../_shared/ai/judge.ts";
 import { modelOverrides, resolveModels } from "../_shared/ai/models.ts";
 import { createJudge, judgeAvailability } from "../_shared/ai/provider.ts";
 import { createAuth, HttpError } from "../_shared/auth.ts";
 import { addKeyMessage, createKeys, sameSecret } from "../_shared/keys.ts";
-import { resolveLimits, workWindowMs } from "../_shared/limits.ts";
+import { resolveLimits, workerLeaseSeconds, workWindowMs } from "../_shared/limits.ts";
 import { clean, PLATFORMS, type Candidate, type Decoded, type DiscoveryProject, type PartnerConfig, type Platform, type Profile, type ProjectWorkflow, type Reel } from "./engine/types.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
@@ -51,12 +53,10 @@ const db = createClient(SUPABASE_URL, serviceKey(), { auth: { persistSession: fa
  * (half of it at most: _shared/limits.ts, from the install's Settings).
  */
 const SLICE_MS = 75_000;
-const LEASE_SECONDS = 120;
 /** How often a waiting worker checks its Apify runs and OpenAI request. */
 const POLL_MS = 2_000;
 /** A scrape that can't start (Apify busy) or doesn't finish in these times is given up on. */
 const QUEUE_LIMIT_MS = 15 * 60_000;
-const RUN_LIMIT_MS = 25 * 60_000;
 const NICHE_TOP = 40;
 const COMMENTS = { top: 20, perPost: 25 };
 
@@ -111,8 +111,8 @@ async function requireAi() {
 /** The model for each step: an environment variable or stored key, else Settings > Models, else the default. */
 const models = async () => resolveModels((await installSettings())?.models, await modelOverrides(secrets));
 
-/** How long a worker keeps taking steps before it hands over. */
-const sliceMs = async () => workWindowMs(resolveLimits(await auth.install(), (name) => Deno.env.get(name)), SLICE_MS);
+/** The plan's limits (Settings, environment overrides): _shared/limits.ts. */
+const planLimits = async () => resolveLimits(await auth.install(), (name) => Deno.env.get(name));
 
 // MARK: HTTP
 
@@ -165,11 +165,22 @@ Deno.serve(async (req) => {
     }
   } catch (error) {
     if (error instanceof HttpError) return json({ error: error.message }, error.status);
-    if (error instanceof UserError) return json({ error: error.message }, 400);
+    const message = readable(error);
+    if (message) return json({ error: message }, 400);
     console.error(error);
     return json({ error: `Something went wrong: ${errorText(error)}` }, 500);
   }
 });
+
+/**
+ * An error the person should read as it is: ours, Apify's, or the AI's when its key is missing or
+ * refused ("OpenAI refused the key: … Check Settings > API keys."). Null for anything else.
+ */
+function readable(error: unknown): string | null {
+  if (error instanceof UserError || error instanceof ApifyError) return error.message;
+  if (error instanceof JudgeError && error.kind === "config") return error.message;
+  return accountError(error)?.message ?? null;
+}
 
 async function health() {
   const set = await secrets.flags(["APIFY_TOKEN", "OPENAI_API_KEY", "RADAR_WORKER_SECRET"]);
@@ -339,7 +350,7 @@ interface RunState {
 interface DiscoverState {
   stage: "search" | "judge";
   project: DiscoveryProject; tasks: Task[]; apifyUsd: number; jevTokens: number;
-  openai?: { status: "pending" | "running" | "done" | "failed"; id?: string; error?: string; startedAt: string };
+  openai?: SearchState;
 }
 
 interface JobRow { id: string; user_id: string; project_id: string; run_id: string | null; kind: "discover" | "run"; state: RunState | DiscoverState; wakes: number; crashes: number }
@@ -365,13 +376,14 @@ class Job {
   readonly id: string;
   readonly deadline: number;
   cancelled = false;
-  constructor(readonly row: JobRow, slice = SLICE_MS) { this.id = row.id; this.deadline = Date.now() + slice; }
+  /** The worker's lease: the whole wall clock plus a margin (_shared/limits.ts workerLeaseSeconds), never shorter than a slow step. */
+  constructor(readonly row: JobRow, slice = SLICE_MS, readonly leaseSeconds = 180) { this.id = row.id; this.deadline = Date.now() + slice; }
   get state() { return this.row.state; }
   get project() { return { id: this.row.project_id, user_id: this.row.user_id }; }
 
   /** Saves the state and renews the lease. False once the job was cancelled or replaced. */
   async save(): Promise<boolean> {
-    const { data } = await db.from("jobs").update({ state: this.state, lease_until: inSeconds(LEASE_SECONDS) }).eq("id", this.id).eq("status", "running").select("id");
+    const { data } = await db.from("jobs").update({ state: this.state, lease_until: inSeconds(this.leaseSeconds) }).eq("id", this.id).eq("status", "running").select("id");
     if (!data?.length) this.cancelled = true;
     return !this.cancelled;
   }
@@ -397,10 +409,12 @@ class Job {
 
 async function advance(jobId: string) {
   if (!/^[0-9a-f-]{36}$/.test(jobId)) return;
-  const { data } = await db.rpc("radar_claim_job", { p_job: jobId, p_seconds: LEASE_SECONDS });
+  const limits = await planLimits();
+  const lease = workerLeaseSeconds(limits);
+  const { data } = await db.rpc("radar_claim_job", { p_job: jobId, p_seconds: lease });
   const row = (data as JobRow[] | null)?.[0];
   if (!row) return;
-  const job = new Job(row, await sliceMs());
+  const job = new Job(row, workWindowMs(limits, SLICE_MS), lease);
   try {
     // A worker that died three times in a row on the same step, or a job that never ends, stops here.
     if (row.crashes >= 3) throw new UserError("This step kept stopping the worker, so the run was stopped. Try fewer accounts or a shorter time frame.");
@@ -422,7 +436,7 @@ async function advance(jobId: string) {
 }
 
 async function failJob(job: Job, error: unknown) {
-  const message = error instanceof UserError || error instanceof ApifyError ? error.message : `Something went wrong: ${errorText(error)}`;
+  const message = readable(error) ?? `Something went wrong: ${errorText(error)}`;
   console.error(job.id, error);
   const { data } = await db.from("jobs").update({ status: "error", error: message, lease_until: null, state: job.state }).eq("id", job.id).eq("status", "running").select("id");
   if (!data?.length) return; // Cancelled meanwhile: nothing to report.
@@ -455,7 +469,8 @@ async function pump(job: Job, apify: Apify | null, store: (task: Task, items: an
     try {
       if (task.status === "pending") {
         if (Date.now() - Date.parse(task.queuedAt) > QUEUE_LIMIT_MS) return failTask(task, "Apify stayed busy for 15 minutes.");
-        const run = await apify.start(task.actor, task.input);
+        // With a timeout and a charge cap, so a run nobody watches any more still ends (engine/run_limits.ts).
+        const run = await apify.start(task.actor, task.input, scrapeLimits(task));
         Object.assign(task, { status: "running", runId: run.id, startedAt: new Date().toISOString() });
         changed = true;
         return;
@@ -750,40 +765,20 @@ async function stepDiscover(job: Job): Promise<"continue" | "wait" | "done"> {
   }
 }
 
-/** OpenAI with web search names competitors; it runs in the background and is polled. True when settled. */
-async function pollOpenAI(job: Job, s: DiscoverState, k: Keys): Promise<boolean> {
-  const ai = s.openai;
-  if (!ai || ai.status === "done" || ai.status === "failed") return true;
-  const headers = { Authorization: `Bearer ${k.OPENAI_API_KEY}`, "Content-Type": "application/json" };
-  const failAI = async (reason: string) => {
-    Object.assign(ai, { status: "failed", error: reason });
-    await job.log(`OpenAI: ${reason}`, "warn");
-    return true;
-  };
-  try {
-    if (ai.status === "pending") {
-      const response = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST", headers, body: JSON.stringify(openAIRequest(s.project, (await models()).text, true)), signal: AbortSignal.timeout(20_000),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) return failAI(data?.error?.message ?? `error ${response.status}`);
-      Object.assign(ai, { status: "running", id: data.id });
-      if (data.status !== "completed") return false;
-    }
-    if (Date.now() - Date.parse(ai.startedAt) > 10 * 60_000) return failAI("took longer than 10 minutes.");
-    const response = await fetch(`https://api.openai.com/v1/responses/${ai.id}`, { headers, signal: AbortSignal.timeout(15_000) });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) return response.status >= 500 ? false : failAI(data?.error?.message ?? `error ${response.status}`);
-    if (data.status === "queued" || data.status === "in_progress") return false;
-    if (data.status !== "completed") return failAI(`the search ${data.status}${data.error?.message ? `: ${data.error.message}` : ""}`);
-    const found = openAICandidates(data);
-    await job.put("out:openai", found);
-    ai.status = "done";
-    await job.log(`OpenAI named ${found.length} competitor${found.length === 1 ? "" : "s"}`);
-    return true;
-  } catch (error) {
-    // A timeout or network blip: ask again on the next poll.
-    if (error instanceof DOMException || error instanceof TypeError) return false;
-    return failAI(errorText(error));
-  }
+/**
+ * OpenAI with web search names competitors; it runs in the background and is polled (engine/openai_search.ts:
+ * sent at most once, a lost answer fails plainly instead of paying again). True when settled.
+ */
+function pollOpenAI(job: Job, s: DiscoverState, k: Keys): Promise<boolean> {
+  return pollSearch(s.openai, {
+    apiKey: k.OPENAI_API_KEY ?? "",
+    body: async () => openAIRequest(s.project, (await models()).text, true),
+    markSent: () => job.save(),
+    store: async (data) => {
+      const found = openAICandidates(data);
+      await job.put("out:openai", found);
+      await job.log(`OpenAI named ${found.length} competitor${found.length === 1 ? "" : "s"}`);
+    },
+    log: (message) => job.log(message, "warn"),
+  });
 }

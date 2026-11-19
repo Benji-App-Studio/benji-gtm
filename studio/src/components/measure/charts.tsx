@@ -56,7 +56,7 @@ export function HatchedBars({ points, target, format, height = 190, name }: { po
   const dense = points.length > 40;
   return (
     <div>
-      <div className="relative mt-7" style={{ height }} onPointerLeave={() => setHover(null)}>
+      <div className="relative mt-6" style={{ height }} onPointerLeave={() => setHover(null)}>
         {target && target.value > 0 && (
           <div className="pointer-events-none absolute inset-x-0 z-[1] border-t border-dashed border-ink/60" style={{ bottom: pct(target.value) }}>
             <span className="absolute right-0 bottom-1.5 rounded-full border border-hairline bg-raised px-2 py-0.5 text-xs text-ink">{target.label}</span>
@@ -123,7 +123,7 @@ export function Waterfall({ start, steps, end, format }: { start: Step; steps: S
 
   return (
     <div>
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4">
         {row(start.label, <span className="text-ink">{format(start.value)}</span>, start.note,
           <span className="absolute inset-y-0 rounded-xs" style={{ ...bar(0, start.value), ...hatch(NEUTRAL, false) }} />, start.value)}
         {rows.map((r) => (

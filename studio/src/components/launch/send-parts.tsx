@@ -170,7 +170,7 @@ export function PlacementPicker({ value, onChange, objective }: { value: Placeme
               <div className="mt-2 flex flex-wrap gap-1.5 pl-6">
                 {POSITIONS[p].map((pos) => (
                   <button key={pos} type="button" onClick={() => togglePosition(p, pos)} aria-pressed={positions.includes(pos)}
-                    className={cx("rounded-full border px-2 py-0.5 text-xs", positions.includes(pos) ? "border-transparent bg-primary text-on-ink" : "border-line text-muted hover:border-ink/30 hover:text-ink")}>
+                    className={cx("h-6 rounded-full border px-2 text-xs transition-colors", positions.includes(pos) ? "border-hairline bg-control font-medium text-ink" : "border-transparent text-muted hover:bg-hover hover:text-ink")}>
                     {POSITION_LABEL[pos] ?? pos}
                   </button>
                 ))}
@@ -189,7 +189,7 @@ export function Choice<T extends string>({ value, onChange, options, name }: { v
   return (
     <div role="radiogroup" className="grid gap-1.5">
       {options.map((o) => (
-        <label key={o.value} className={cx("flex cursor-pointer gap-2.5 rounded-inner border px-3 py-2 text-sm", value === o.value ? "border-ink/40 bg-raised" : "border-line hover:border-ink/20", o.disabled && "pointer-events-none opacity-50")}>
+        <label key={o.value} className={cx("flex cursor-pointer gap-2.5 rounded-inner border px-3 py-2 text-sm", value === o.value ? "border-accent/60 bg-raised ring-1 ring-accent/30" : "border-line hover:border-hairline hover:bg-hover", o.disabled && "pointer-events-none opacity-50")}>
           <input type="radio" name={name} checked={value === o.value} disabled={o.disabled} onChange={() => onChange(o.value)} className="mt-0.5 accent-[var(--color-accent)]" />
           <span className="min-w-0">
             <span className="font-medium">{o.label}</span>

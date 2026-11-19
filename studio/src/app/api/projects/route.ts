@@ -3,6 +3,7 @@ import { APP_NAME } from "@/lib/brand-config";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { radar } from "@/lib/server/radar";
 import { PLATFORMS, type Candidate, type Platform, type ProjectType } from "@/lib/types";
+import { dbFailure } from "@/lib/server/errors";
 
 const TIMEFRAMES = [7, 14, 30, 60, 90, 180, 365];
 
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
   let query = session.supabase.from("projects").select("*").order("created_at", { ascending: false });
   if (type) query = query.eq("type", type);
   const { data: rows, error } = await query.returns<ProjectRow[]>();
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return dbFailure("projects list", error, "Couldn't load your projects. Try again.");
   const { data: runs } = await session.supabase.from("runs").select("project_id, status, posts, started_at").order("started_at", { ascending: false });
   return Response.json(rows.map((row) => {
     const mine = (runs ?? []).filter((r) => r.project_id === row.id);
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
     const { data: row, error } = await supabase.from("projects").insert({
       type, name: product.name, description: product.description, product_id: product.id, settings, status: "discovering", message: "Finding competitors…",
     }).select().single<ProjectRow>();
-    if (error || !row) return Response.json({ error: error?.message ?? "Couldn't create the project." }, { status: 500 });
+    if (error || !row) return dbFailure("project create (discover)", error, "Couldn't create the project. Try again.");
     // The search runs in the background; the project page follows it live.
     const started = await radar(session, "discover", { projectId: row.id });
     if (!started.ok) await supabase.from("projects").update({ status: "error", message: started.data.error ?? "Couldn't start the search." }).eq("id", row.id);
@@ -96,6 +97,6 @@ export async function POST(request: Request) {
   const { data: row, error } = await supabase.from("projects").insert({
     type, name, description, product_id: body?.productId ?? null, settings, candidates: accounts, status: "review",
   }).select().single<ProjectRow>();
-  if (error || !row) return Response.json({ error: error?.message ?? "Couldn't create the project." }, { status: 500 });
+  if (error || !row) return dbFailure("project create", error, "Couldn't create the project. Try again.");
   return Response.json({ id: row.id });
 }

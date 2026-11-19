@@ -17,9 +17,9 @@ export function SettingsPage({ page, title, description, children }: { page?: Se
     <div>
       <header className="mb-8">
         <h1 className="text-display font-medium">{title ?? known?.label}</h1>
-        <p className="mt-1.5 max-w-xl text-sm text-muted">{description ?? known?.description}</p>
+        <p className="mt-1 max-w-xl text-sm text-muted">{description ?? known?.description}</p>
       </header>
-      <div className="grid gap-8">{children}</div>
+      <div className="grid gap-10">{children}</div>
     </div>
   );
 }
@@ -27,13 +27,13 @@ export function SettingsPage({ page, title, description, children }: { page?: Se
 /** The shape of a settings page while it loads: a couple of groups of rows. */
 export function SettingsRowsSkeleton({ groups = 2, rows = 3 }: { groups?: number; rows?: number }) {
   return (
-    <Skeleton label="Loading settings" className="grid gap-8">
+    <Skeleton label="Loading settings" className="grid gap-10">
       {Array.from({ length: groups }, (_, g) => (
         <div key={g}>
-          <SkeletonLine size="title" width="w-28" className="mb-2.5" />
+          <SkeletonLine size="title" width="w-28" className="mb-4" />
           <Card className="divide-y divide-line">
             {Array.from({ length: rows }, (_, r) => (
-              <div key={r} className="flex items-center justify-between gap-6 px-4 py-3">
+              <div key={r} className="flex min-h-[66px] items-center justify-between gap-6 px-4 py-3.5">
                 <div className="min-w-0 flex-1"><SkeletonLine size="sm" width={r % 2 ? "w-32" : "w-24"} /><SkeletonLine size="sm" width="w-3/4" className="mt-0.5" /></div>
                 <Bone className="h-7 w-16 rounded-control" />
               </div>
@@ -80,8 +80,8 @@ export function WithInstall({ children }: { children: (install: InstallState, ma
 export function ReadOnlyNote({ install, what, legacy }: { install: InstallState; what: string; legacy?: ReactNode }) {
   if (canManage(install)) return null;
   return (
-    <div className="flex items-start gap-2.5 rounded-card border border-line bg-card px-4 py-3 text-sm">
-      <IconLock className="mt-0.5 size-4 shrink-0 text-muted" />
+    <div className="flex items-start gap-2.5 rounded-small border border-line bg-card px-3 py-2.5 text-sm">
+      <IconLock className="mt-[3px] size-3.5 shrink-0 text-muted" />
       {install.owned
         ? <p className="text-label"><span className="font-medium text-ink">Only the owner can change {what}.</span> You can see what is set; ask the owner to change it.</p>
         : <p className="text-label">{legacy ?? <><span className="font-medium text-ink">This workspace has no owner yet, so {what} can&apos;t be changed here.</span> Run setup to make it yours. <Link href="/setup" className="font-medium text-accent hover:underline">Open setup</Link></>}</p>}

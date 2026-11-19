@@ -6,7 +6,7 @@ import { goInstant } from "./instant";
 import { createClient } from "@/lib/supabase/client";
 import { TYPE_COPY, type Platform, type ProjectStatus, type ProjectType } from "@/lib/types";
 import { Skeleton, SkeletonProjectCards } from "./skeleton";
-import { Badge, ButtonLink, Card, EmptyState, Gear, Page, PageHeader, PlatformBadge } from "./ui";
+import { Badge, ButtonLink, Card, EmptyState, Gear, Page, PageHeader, PlatformBadge, cx } from "./ui";
 
 export interface ProjectSummary {
   id: string; type: ProjectType; name: string; description: string; status: ProjectStatus; message: string | null; demo: boolean;
@@ -59,10 +59,10 @@ export function ProjectCard({ p, index = 0 }: { p: ProjectSummary; index?: numbe
     <Link href={`/app/p/${p.id}`} className="rise group rounded-card" style={{ "--i": index } as React.CSSProperties}
       onMouseEnter={() => preloadProject(p.id)} onFocus={() => preloadProject(p.id)} onTouchStart={() => preloadProject(p.id)}
       onClick={(event) => { preloadProject(p.id); goInstant(event, `/app/p/${p.id}`); }}>
-      <Card className="flex h-full flex-col gap-3 p-4 transition-colors group-hover:border-hairline group-hover:bg-hover">
+      <Card className="flex h-full flex-col gap-2.5 p-3 transition-colors group-hover:border-hairline group-hover:bg-hover">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="truncate text-title font-medium">{p.name}</h3>
+            <h3 className="truncate text-sm font-medium">{p.name}</h3>
             <p className="mt-0.5 text-caption text-muted">{copy.label} · last {p.sinceDays} days</p>
           </div>
           <Badge tone={STATUS[p.status].tone}>
@@ -71,7 +71,7 @@ export function ProjectCard({ p, index = 0 }: { p: ProjectSummary; index?: numbe
           </Badge>
         </div>
         <div className="flex flex-wrap gap-3">{p.platforms.map((platform) => <PlatformBadge key={platform} platform={platform} />)}</div>
-        <div className="mt-auto flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-3 text-sm">
+        <div className="mt-auto flex flex-wrap gap-x-4 gap-y-1 text-xs">
           <span><b className="font-medium tabular-nums">{p.competitors}</b> <span className="text-muted">{copy.nouns}</span></span>
           <span><b className="font-medium tabular-nums">{p.runs}</b> <span className="text-muted">run{p.runs === 1 ? "" : "s"}</span></span>
           {p.posts != null && <span><b className="font-medium tabular-nums">{p.posts}</b> <span className="text-muted">posts</span></span>}
@@ -79,6 +79,48 @@ export function ProjectCard({ p, index = 0 }: { p: ProjectSummary; index?: numbe
         </div>
       </Card>
     </Link>
+  );
+}
+
+/** One analysis as a list row (Linear's projects list): name and kind at left, channels, counts and status at right. */
+export function ProjectRow({ p, index = 0 }: { p: ProjectSummary; index?: number }) {
+  const copy = TYPE_COPY[p.type];
+  return (
+    <Link href={`/app/p/${p.id}`} className="rise group flex min-h-12 items-center gap-3 rounded-control px-2 py-1.5 transition-colors hover:bg-hover" style={{ "--i": index } as React.CSSProperties}
+      onMouseEnter={() => preloadProject(p.id)} onFocus={() => preloadProject(p.id)} onTouchStart={() => preloadProject(p.id)}
+      onClick={(event) => { preloadProject(p.id); goInstant(event, `/app/p/${p.id}`); }}>
+      <span className="min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium">{p.name}</span>
+          {p.demo && <Badge>demo</Badge>}
+        </span>
+        <span className="block truncate text-xs text-muted">{copy.label} · last {p.sinceDays} days</span>
+      </span>
+      <span className="hidden shrink-0 items-center gap-3 @2xl:flex">{p.platforms.map((platform) => <PlatformBadge key={platform} platform={platform} />)}</span>
+      <span className="hidden w-[200px] shrink-0 justify-end gap-3 text-xs text-muted tabular-nums @xl:flex">
+        <span><span className="text-ink">{p.competitors}</span> {copy.nouns}</span>
+        <span><span className="text-ink">{p.runs}</span> run{p.runs === 1 ? "" : "s"}</span>
+        {p.posts != null && <span><span className="text-ink">{p.posts}</span> posts</span>}
+      </span>
+      <Badge tone={STATUS[p.status].tone} className="shrink-0">
+        {(p.status === "discovering" || p.status === "analyzing") && <Gear className="size-3" />}
+        {STATUS[p.status].label}
+      </Badge>
+    </Link>
+  );
+}
+
+/** Analyses as a list: rows back to back, full width, under a quiet column header. */
+export function ProjectRows({ projects, offset = 0, className }: { projects: ProjectSummary[]; offset?: number; className?: string }) {
+  return (
+    <div className={cx("-mx-2", className)}>
+      <div className="flex h-8 items-center gap-3 border-b border-line px-2 text-xs text-muted">
+        <span className="flex-1">Name</span>
+        <span className="hidden w-[200px] text-right @xl:block">Size</span>
+        <span className="w-[104px] text-right">Status</span>
+      </div>
+      <div className="pt-1">{projects.map((p, i) => <ProjectRow key={p.id} p={p} index={i + offset} />)}</div>
+    </div>
   );
 }
 
@@ -97,7 +139,7 @@ export function WorkflowPage({ type }: { type: ProjectType }) {
         : projects.length === 0 ? (
           <EmptyState title={`No ${type === "competitors" ? "competitor analyses" : type === "account" ? "account analyses" : "campaign analyses"} yet`} body="Start one and every run of it is kept here."
             action={<ButtonLink href={`/app/new?type=${type}`} variant="secondary">{start}</ButtonLink>} />
-        ) : <div className="grid gap-3 @xl:grid-cols-2 @5xl:grid-cols-3">{projects.map((p, i) => <ProjectCard key={p.id} p={p} index={i} />)}</div>}
+        ) : <ProjectRows projects={projects} />}
     </Page>
   );
 }

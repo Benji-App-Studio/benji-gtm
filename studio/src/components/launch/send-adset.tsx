@@ -68,7 +68,7 @@ export function AdSetStep({ productId, value: a, onChange, parent, currency, con
   const block = a.schedule?.[0] ?? null;
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4">
       <Group title="Ad set">
         <Labeled label="Name" hint="Follows the naming convention; it updates with the places you pick unless you rename it.">
           <input className={inputClass} value={a.name} maxLength={400} onChange={(e) => set({ name: e.target.value })} />
@@ -233,7 +233,7 @@ export function AdSetStep({ productId, value: a, onChange, parent, currency, con
               <div className="flex flex-wrap items-center gap-2">
                 {DAYS.map((d, i) => (
                   <button key={d} type="button" aria-pressed={block.days.includes(i)} onClick={() => set({ schedule: [{ ...block, days: block.days.includes(i) ? block.days.filter((x) => x !== i) : [...block.days, i] }] })}
-                    className={cx("rounded-full border px-2 py-0.5 text-xs", block.days.includes(i) ? "border-transparent bg-primary text-on-ink" : "border-line text-muted")}>{d}</button>
+                    className={cx("h-6 rounded-full border px-2 text-xs transition-colors", block.days.includes(i) ? "border-hairline bg-control font-medium text-ink" : "border-transparent text-muted hover:bg-hover hover:text-ink")}>{d}</button>
                 ))}
                 <select aria-label="From" className={cx(inputClass, "max-w-fit")} value={block.startMinute} onChange={(e) => set({ schedule: [{ ...block, startMinute: Number(e.target.value) }] })}>{Array.from({ length: 24 }, (_, h) => <option key={h} value={h * 60}>{String(h).padStart(2, "0")}:00</option>)}</select>
                 <span className="text-xs text-muted">to</span>

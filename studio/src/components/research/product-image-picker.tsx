@@ -62,7 +62,7 @@ export function ProductImagePicker({ productId, tiles, picked, onChange, onUploa
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
-          className="inline-flex h-8 items-center gap-1.5 rounded-control border border-hairline bg-raised px-2.5 text-xs font-medium text-ink transition-colors hover:bg-hover">
+          className="inline-flex h-7 items-center gap-1.5 rounded-control border border-hairline bg-raised px-2.5 text-xs font-medium text-ink transition-colors hover:bg-hover">
           <IconChevronDown className={cx("size-3.5 transition", !open && "-rotate-90")} />
           {open ? "Hide images" : tiles.length ? `Show ${tiles.length} image${tiles.length === 1 ? "" : "s"}` : "Add images"}
           {picked.length > 0 && <span className="rounded-full bg-accent-soft px-1.5 text-xs text-accent tabular-nums">{picked.length} picked</span>}

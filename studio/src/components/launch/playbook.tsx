@@ -29,7 +29,7 @@ function usePlaybookSave(productId: string, playbook: Playbook, onSaved: () => P
 
 const Step = ({ n, done, children }: { n: number; done?: boolean; children: React.ReactNode }) => (
   <li className="flex gap-2.5">
-    <span className={cx("grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-medium", done ? "bg-win text-on-ink" : "bg-control text-muted")}>{done ? "✓" : n}</span>
+    <span className={cx("grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-medium", done ? "bg-win-soft text-win" : "bg-control text-muted")}>{done ? "✓" : n}</span>
     <span className="min-w-0 text-sm">{children}</span>
   </li>
 );
@@ -49,8 +49,8 @@ export function WarmupCard({ productId, overview, onSaved }: { productId: string
 
   if (warmup.status === "done" || warmup.status === "skipped") {
     return (
-      <Card className="flex flex-wrap items-center gap-2 p-4 text-sm">
-        <IconCheckCircle className="size-4 text-win" />
+      <Card className="flex flex-wrap items-center gap-2 px-3 py-2.5 text-sm">
+        <IconCheckCircle className="size-3.5 text-win" />
         <span className="font-medium">Account warm-up</span>
         <span className="text-muted">{warmup.status === "done" ? "done" : "skipped (the account has history)"}</span>
         <button type="button" disabled={busy} onClick={() => set("not_started")} className="ml-auto text-xs font-medium text-accent hover:underline">Undo</button>
@@ -58,7 +58,7 @@ export function WarmupCard({ productId, overview, onSaved }: { productId: string
     );
   }
   return (
-    <Card className="p-5">
+    <Card className="p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">Warm up the ad account</span>
         <Badge tone="neutral">optional</Badge>
@@ -98,7 +98,7 @@ export function AttributionCard({ productId, overview, thresholds, onSaved }: { 
   const e = EVENT_LABEL[thresholds.conversionEvent];
   const enough = overview.volume.last7 >= 50;
   return (
-    <Card className="p-5">
+    <Card className="p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">Attribution: SDK first, MMP later</span>
         <Badge tone="neutral">optional</Badge>
@@ -106,8 +106,8 @@ export function AttributionCard({ productId, overview, thresholds, onSaved }: { 
       <p className="mt-1 text-sm text-muted">Not SDK <em>or</em> MMP: the SDK gets campaigns learning now; the MMP gives better attribution once it has data. Starting on the MMP from day one usually starves learning.</p>
       <ol className="mt-3 grid gap-2.5">
         {ATTRIBUTION.map((a, i) => (
-          <li key={a.step} className={cx("flex gap-2.5 rounded-md p-2", i === index && "bg-hover")}>
-            <span className={cx("grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-medium", i < index ? "bg-win text-on-ink" : i === index ? "bg-primary text-on-ink" : "bg-control text-muted")}>{i < index ? "✓" : i + 1}</span>
+          <li key={a.step} className={cx("flex gap-2.5 rounded-control p-2", i === index && "bg-hover")}>
+            <span className={cx("grid size-5 shrink-0 place-items-center rounded-full text-[11px] font-medium", i < index ? "bg-win-soft text-win" : i === index ? "border border-hairline bg-raised text-ink" : "bg-control text-muted")}>{i < index ? "✓" : i + 1}</span>
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
                 {a.title}
@@ -143,9 +143,9 @@ export function ScalingCard({ advice, status, thresholds }: { advice: ScalingAdv
   const m = MOVE[advice.move];
   return (
     <Section title="Scaling" hint="Advice for the scaling ad set from the playbook. Budgets are changed by you in Ads Manager; nothing here changes them.">
-      <Card className="p-5">
+      <Card className="p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <IconTrendUp className="size-4 text-muted" />
+          <IconTrendUp className="size-3.5 text-muted" />
           <Badge tone={m.tone}>{m.label}</Badge>
           <span className="text-sm font-medium">{advice.summary}</span>
         </div>

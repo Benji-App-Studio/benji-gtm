@@ -86,7 +86,7 @@ export function FormatStart({ productId, initialCardId, onPick }: { productId: s
   }
 
   if (data?.error) return <p className="text-sm text-warn">{data.error}</p>;
-  if (!data) return <div className="grid gap-2"><span className="skeleton h-9 w-full" /><span className="skeleton h-16 w-full" /></div>;
+  if (!data) return <div className="grid gap-2"><span className="skeleton h-7 w-full" /><span className="skeleton h-16 w-full" /></div>;
   const groups = (["paid", "organic"] as const).map((source) => ({ source, list: cards.filter((c) => c.source === source) })).filter((g) => g.list.length);
 
   return (
@@ -102,7 +102,7 @@ export function FormatStart({ productId, initialCardId, onPick }: { productId: s
       ) : (
         <div className="flex flex-wrap items-end gap-2">
           <label className="flex min-w-0 flex-1 flex-col gap-1.5">
-            <span className="text-sm font-medium text-ink">Format</span>
+            <span className="text-xs font-medium text-muted">Format</span>
             <select className={inputClass} value={cardId} onChange={(e) => choose(e.target.value, null)}>
               <option value="">Pick one of {cards.length} format{cards.length === 1 ? "" : "s"}</option>
               {groups.map((g) => (
@@ -131,7 +131,7 @@ export function FormatStart({ productId, initialCardId, onPick }: { productId: s
               <div className="flex flex-wrap gap-1.5">
                 {angles.map((a) => (
                   <button key={a.id} type="button" aria-pressed={recipe.angle.id === a.id} onClick={() => choose(card.id, a.id)}
-                    className={cx("h-6 rounded-full border px-2.5 text-xs transition-colors", recipe.angle.id === a.id ? "border-transparent bg-primary font-medium text-on-ink" : "border-hairline text-muted hover:bg-hover hover:text-ink")}>
+                    className={cx("h-6 rounded-full border px-2.5 text-xs transition-colors", recipe.angle.id === a.id ? "border-hairline bg-control font-medium text-ink" : "border-transparent text-muted hover:bg-hover hover:text-ink")}>
                     {a.label}{best?.id === a.id ? " · best fit" : ""}
                   </button>
                 ))}

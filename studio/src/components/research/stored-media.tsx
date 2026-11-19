@@ -8,9 +8,10 @@ import { formatBytes, storedMediaLine, type MediaCounts, type MediaStatus } from
 import { ask, Facts, notice } from "../dialog";
 import { IconStack } from "../icons";
 import { Button, cx, Spinner } from "../ui";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 const POLL_MS = 20_000;
-const n = (value: number) => value.toLocaleString();
+const n = (value: number) => value.toLocaleString(UI_LOCALE);
 const filesOf = (c: MediaCounts) => c.queued + c.downloading + c.done + c.failed;
 
 async function post<T>(url: string, body: unknown): Promise<T & { error?: string }> {
@@ -86,7 +87,7 @@ export function StoredMediaCard({ productId, status: initial, advertisers, onCha
     <div className={cx("grid gap-1.5 rounded-inner border border-line bg-card py-1.5 pr-1.5 pl-3 text-xs leading-relaxed", className)} role="region" aria-label="Stored media">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
         <p className="flex min-w-0 items-center gap-2.5 py-1">
-          {working ? <Spinner className="shrink-0 text-muted" /> : <IconStack className="size-4 shrink-0 text-faint" />}
+          {working ? <Spinner className="shrink-0 text-muted" /> : <IconStack className="size-3.5 shrink-0 text-faint" />}
           <span><span className="font-medium text-ink">Stored media</span> <span className="text-muted tabular-nums">· {line}</span></span>
         </p>
         {pages.length <= 1 && (

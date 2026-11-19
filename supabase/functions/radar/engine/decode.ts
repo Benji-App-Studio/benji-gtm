@@ -2,7 +2,7 @@
 // whether it names a product, its hook, the job each sentence of its script does (hook, setup, method,
 // CTA…) and what's on screen meanwhile, and what each comment is about. Every question about a post
 // goes in that one call (on OpenAI the judge splits a long script into a few parallel requests).
-import type { Judge } from "../../_shared/ai/judge.ts";
+import { accountError, type Judge, type JudgeError } from "../../_shared/ai/judge.ts";
 import { choice, noul, type Questions } from "../../_shared/ai/questions.ts";
 import { NO_FORMAT } from "./formats.ts";
 import type { Decoded, Format, Reel, Role, Workflow } from "./types.ts";
@@ -179,15 +179,19 @@ export function decoder(client: Judge, workflow: Workflow, formats: Format[], o:
   async function decodeAll(reels: Reel[], o: { concurrency?: number; onDecoded?: (result: Decoded) => void | Promise<void>; onFailed?: (reel: Reel, error: unknown) => void; shouldStop?: () => boolean } = {}) {
     const queue = [...reels];
     let tokens = 0, failed = 0;
+    // A refused key (revoked, out of credit) stops every lane and is thrown: skipping each post would
+    // turn it into a run with no breakdowns and no reason.
+    let refused: JudgeError | null = null;
     await Promise.all(Array.from({ length: o.concurrency ?? 8 }, async () => {
-      for (let reel = queue.shift(); reel; reel = queue.shift()) {
+      for (let reel = queue.shift(); reel && !refused; reel = queue.shift()) {
         if (o.shouldStop?.()) return;
         let result: Decoded | null = null;
-        for (let attempt = 0; attempt < 2 && !result; attempt++) {
+        for (let attempt = 0; attempt < 2 && !result && !refused; attempt++) {
           try {
             result = await decode(reel);
           } catch (error) {
-            if (attempt === 1) { failed++; o.onFailed?.(reel, error); }
+            refused ??= accountError(error, client.provider);
+            if (attempt === 1 && !refused) { failed++; o.onFailed?.(reel, error); }
           }
         }
         if (result) {
@@ -196,6 +200,7 @@ export function decoder(client: Judge, workflow: Workflow, formats: Format[], o:
         }
       }
     }));
+    if (refused) throw refused;
     return { tokens, failed };
   }
 

@@ -78,12 +78,15 @@ The six steps below have the same numbers and titles as the setup page.
 Setup needs to create tables and install the backend in your project. It does that with an access token.
 
 1. Click **Access Tokens in Supabase** on the setup page (it opens https://supabase.com/dashboard/account/tokens).
-2. Press **Generate new token**. Give it any name, for example "setup". If Supabase asks how long
-   it should last, pick the shortest time.
-3. Press **Copy**. The token starts with `sbp_`.
-4. Paste it into the **Access token** box on the setup page and click **Check**.
-5. Under "The token works. Pick your project:", choose your new project and click **Check this project**.
-6. When the page says your project "is empty and ready to be prepared", click **Continue**.
+2. Click **Generate new token** and name it "setup".
+3. Choose your new project, and the **Full access** preset.
+4. Pick the shortest expiry, create it, and click **Copy**. The token starts with `sbp_`.
+5. Paste it into the **Access token** box on the setup page and click **Check**.
+6. Under "The token works. Pick your project:", choose your new project and click **Check this project**.
+7. When the page says your project "is empty and ready to be prepared", click **Continue**.
+
+If **Check** says the token isn't allowed, create it again with **Full access**. A "Read-only" token
+fails. More about tokens: [keys/supabase.md](keys/supabase.md).
 
 What the token allows: it gives Benji GTM, on this computer, temporary access to your Supabase
 account. It is used only while the setup page works and is **not saved anywhere**. The last step
@@ -102,22 +105,33 @@ If the page says "This step didn't finish", click **Retry**. Parts that already 
 
 ## Step 4. Create your account
 
-1. Type your email and choose a password (at least 8 characters).
+1. Type your email and choose a password (at least 8 characters). **Show** lets you check what you typed.
 2. Click **Create my account**.
+3. A box called **Your sign-in details** shows your email and password once. Click **Copy** and save
+   them somewhere safe, like your notes or a password manager. Then click **Continue**.
 
-This account is the **owner** of your copy: the only one that can change keys and settings. Nobody
-else can sign up afterwards. You can add people later in **Settings > Members**.
+This is your own account in your own Supabase project, and it is the **owner** of your copy: the only
+one that can change keys and settings. Nobody else can sign up afterwards. You can add people later
+in **Settings > Members**.
 
-✅ **Checkpoint:** the page reloads and step 5, "Add your keys", is open. If it shows a sign-in page first, sign in with the email and password you just chose.
+On this computer the app signs you in by itself from now on, so you won't type the password here
+again. You need it only if you put the app online later ([DEPLOY-VERCEL.md](DEPLOY-VERCEL.md)).
+
+✅ **Checkpoint:** after **Continue**, step 5, "Add your keys", is open.
 
 ## Step 5. Add your keys
 
-1. **OpenAI (Required).** Click **OpenAI** on the setup page (it opens
-   https://platform.openai.com/api-keys). Choose **Create new secret key**, copy the key (it starts
-   with `sk-`), paste it into the **OpenAI key** box and click **Check and save**.
+1. **OpenAI (Required).** First add credit under **Billing** at https://platform.openai.com (the
+   minimum is $5). Then click **OpenAI** on the setup page (it opens
+   https://platform.openai.com/api-keys) and choose **Create new secret key**. Keep **Permissions**
+   on **All**: the app's check fails for a Restricted key. Copy the key (new keys start with
+   `sk-proj-`), paste it into the **OpenAI key** box and click **Save and check**.
+   Full guide: [keys/openai.md](keys/openai.md).
 2. **Apify (Recommended).** It collects competitors' posts and ads for you. Click **Apify** on the
-   setup page (it opens https://console.apify.com/settings/integrations). Copy the personal API
-   token (it starts with `apify_api_`), paste it into the **Apify key** box and click **Check and save**.
+   setup page (it opens https://console.apify.com/settings/integrations). Under
+   **Personal API tokens** click **Create a new token**, leave **Limit token permissions** off, click
+   **Create**, and copy the token right away: Apify shows it only once. Paste it into the
+   **Apify key** box and click **Save and check**. Full guide: [keys/apify.md](keys/apify.md).
 3. Click **Continue**.
 
 Each key is checked the moment you save it, then stored in your own Supabase project, never on this
@@ -125,7 +139,13 @@ computer. The app never shows a saved key again, only its last four characters.
 
 ✅ **Checkpoint:** OpenAI shows a "Saved" badge and the line "This key works. It is saved in your project".
 
-You can add the other keys later in **Settings > API keys**. Each one says what it unlocks and how to get it.
+You can add the other keys later in **Settings > API keys**. Each one says what it unlocks and how
+to get it. Step-by-step guides for every key:
+[Supabase](keys/supabase.md), [OpenAI](keys/openai.md), [Apify](keys/apify.md),
+[Typesafe](keys/typesafe.md), [Higgsfield](keys/higgsfield.md),
+[Meta Ad Library](keys/meta-ad-library.md), [Meta ads](keys/meta-ads.md),
+[RevenueCat](keys/revenuecat.md), [AppStack](keys/appstack.md),
+[Google Drive](keys/google-drive.md), [TikTok](keys/tiktok.md).
 
 ## Step 6. Create your first app
 
@@ -139,8 +159,9 @@ You can add the other keys later in **Settings > API keys**. Each one says what 
 
 ## Next time
 
-Run the same two lines from "Start the app" (`cd` into the folder, then `bash start.command`). It starts in a few seconds and opens the app. If it asks, sign in
-with the email and password from step 4.
+Run the same two lines from "Start the app" (`cd` into the folder, then `bash start.command`). It
+starts in a few seconds and opens your dashboard, already signed in. There is no login page on your
+own Mac.
 
 ## Troubleshooting
 

@@ -4,7 +4,7 @@
 import { ImageResponse } from "next/og";
 
 /** The light theme's --color-accent in app/globals.css (an image can't read a CSS variable; a test keeps the two in step). */
-export const ICON_ACCENT = "#3358d4";
+export const ICON_ACCENT = "#5e6ad2";
 /** Bar heights, as shares of the icon's height, left to right. */
 const BARS = [0.28, 0.44, 0.6];
 

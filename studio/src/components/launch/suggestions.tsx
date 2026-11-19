@@ -75,11 +75,11 @@ export function Suggestions({ productId, suggestions, thresholds, range, onChang
         <EmptyState className="py-8" title="No numbers yet" body={`Suggestions appear once Measure has spend and ${e.many} for ads in the testing ad set.`}
           action={<ButtonLink href={workspaceHref(productId, "measure")} variant="secondary" size="sm">Open Measure</ButtonLink>} />
       ) : (
-        <div className="grid gap-3 @3xl:grid-cols-2">
+        <div className="grid gap-2 @3xl:grid-cols-2">
           {shown.map((s) => {
             const v = VERDICT[s.verdict];
             return (
-              <Card key={s.adId} className="flex min-w-0 flex-col gap-3 p-4">
+              <Card key={s.adId} className="flex min-w-0 flex-col gap-2 p-3">
                 <div className="flex items-start justify-between gap-3">
                   <p className="min-w-0 font-mono text-[11px] break-all text-muted">{s.adName}</p>
                   <Badge tone={v.tone}>{v.label}</Badge>

@@ -34,20 +34,20 @@ import { PlaybookTip } from "../playbook-tip";
 import { uploadProductAsset } from "../product/upload-asset";
 import { FitDot, guessSells } from "./fit";
 import { LockedNote } from "./gates";
-import { useEscape } from "./escape";
 import { ProductImagePicker } from "./product-image-picker";
 import { PlacementSketch } from "../studio/placement-picker";
 import { Badge, Button, cx, Field, inputClass, Segmented, Spinner } from "../ui";
 import { MODAL, MODAL_OVERLAY, PanelPortal } from "../panel-portal";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
 function Section({ title, hint, children, className }: { title: string; hint?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
     // min-w-0 on the children: a wide row (the Closeness control) scrolls inside instead of widening the sheet.
-    <section className={cx("grid min-w-0 gap-3 border-t border-line pt-5 [&>*]:min-w-0", className)}>
+    <section className={cx("grid min-w-0 gap-3 border-t border-line pt-4 [&>*]:min-w-0", className)}>
       <div>
-        <h3 className="text-title font-medium">{title}</h3>
+        <h3 className="text-sm font-medium">{title}</h3>
         {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
       </div>
       {children}
@@ -79,7 +79,7 @@ function ReadStatus({ scanning, stage, error, scannedAt, stale, posterOnly, onRe
     <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted">
       {scanning ? <><Spinner className="size-3.5" /> {stage ?? "Reading their ad…"}</>
         : error ? <><span className="text-warn">{error}</span> {link("Try again")}</>
-          : scannedAt ? <>Read {new Date(scannedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}{posterOnly ? " (the poster frame only)" : ""} · {link(posterOnly ? "Read the whole video" : "Rescan")}</>
+          : scannedAt ? <>Read {new Date(scannedAt).toLocaleDateString(UI_LOCALE, { day: "numeric", month: "short" })}{posterOnly ? " (the poster frame only)" : ""} · {link(posterOnly ? "Read the whole video" : "Rescan")}</>
             : <>{stale ? "The last read is of an earlier version of this ad" : "Not read yet"} · {link("Read the ad")}</>}
     </p>
   );
@@ -107,7 +107,7 @@ function FlagRow({ flag, decision, auto, draft, onDraft, onDecide }: { flag: Fla
       <p className="text-xs text-muted">{flag.why || FLAG_WHY[flag.kind]}</p>
       <div className="flex flex-wrap items-center gap-2">
         <input
-          className={cx(inputClass, "h-9 min-w-40 flex-1 py-1.5")} value={draft} placeholder={placeholder} aria-label={`Replacement for ${flag.text}`}
+          className={cx(inputClass, "min-w-40 flex-1")} value={draft} placeholder={placeholder} aria-label={`Replacement for ${flag.text}`}
           onChange={(e) => { onDraft(e.target.value); if (decision?.action === "replace") onDecide({ action: "replace", with: e.target.value }); }}
         />
         <Button size="sm" variant={decision?.action === "replace" ? "primary" : "secondary"} aria-pressed={decision?.action === "replace"} onClick={() => onDecide({ action: "replace", with: draft })}>Replace</Button>
@@ -132,7 +132,7 @@ function ColorChips({ colors, onChange }: { colors: string[]; onChange: (colors:
           <button type="button" onClick={() => onChange(colors.filter((x) => x !== c))} aria-label={`Remove ${c}`} className="grid size-5 place-items-center rounded-full text-faint hover:bg-hover hover:text-ink"><IconX className="size-3" /></button>
         </span>
       ))}
-      <input className={cx(inputClass, "h-8 w-28! px-2.5 py-1 text-xs")} value={add} placeholder="#5BA8E0" aria-label="Add a colour" onChange={(e) => setAdd(e.target.value)}
+      <input className={cx(inputClass, "h-7 w-28! px-2.5 py-1 text-xs")} value={add} placeholder="#5BA8E0" aria-label="Add a colour" onChange={(e) => setAdd(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter" && ok) { e.preventDefault(); onChange([...colors, value.toUpperCase()]); setAdd(""); } }} />
       <Button size="sm" variant="ghost" disabled={!ok} onClick={() => { onChange([...colors, value.toUpperCase()]); setAdd(""); }}>Add</Button>
     </div>
@@ -161,7 +161,7 @@ function FitPanel({ fit, scanned, applied, onUse }: { fit: AdFit | undefined; sc
         <div className="mt-0.5 flex flex-wrap items-start gap-x-3 gap-y-2">
           <p className="min-w-48 flex-1 [overflow-wrap:anywhere]"><span className="font-medium">A way to make it yours: </span>{fit.adaptation}</p>
           {applied
-            ? <span className="inline-flex h-8 shrink-0 items-center gap-1 text-muted"><IconCheck className="size-3.5 text-win" />In Custom instructions</span>
+            ? <span className="inline-flex h-7 shrink-0 items-center gap-1 text-muted"><IconCheck className="size-3.5 text-win" />In Custom instructions</span>
             : <Button size="sm" variant="secondary" onClick={onUse} title="Adds it to Custom instructions, where you can edit or remove it">Use this adaptation</Button>}
         </div>
       )}
@@ -188,7 +188,7 @@ function LogoPanel({ logos, chosen, onChoose, place, onPlace, position, onPositi
             {" "}Sent to Higgsfield right after their image, labelled as our logo, so it&apos;s copied rather than invented.
           </span>
           {logos.length > 1 && (
-            <select className={cx(inputClass, "h-9 py-1.5 text-xs")} value={chosen.url} aria-label="Which logo" onChange={(e) => onChoose(e.target.value)}>
+            <select className={cx(inputClass, "text-xs")} value={chosen.url} aria-label="Which logo" onChange={(e) => onChoose(e.target.value)}>
               {logos.map((l) => <option key={l.url} value={l.url}>{l.label}{l.source === "icon" ? "" : l.width && l.height ? ` (${l.width} × ${l.height})` : ""}</option>)}
             </select>
           )}
@@ -202,7 +202,7 @@ function LogoPanel({ logos, chosen, onChoose, place, onPlace, position, onPositi
         </span>
       </label>
       {place && (
-        <select className={cx(inputClass, "h-9 w-48! py-1.5 text-xs")} value={position} aria-label="Logo position" onChange={(e) => onPosition(e.target.value as LogoPosition)}>
+        <select className={cx(inputClass, "w-48! text-xs")} value={position} aria-label="Logo position" onChange={(e) => onPosition(e.target.value as LogoPosition)}>
           {LOGO_POSITIONS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
       )}
@@ -233,7 +233,7 @@ function SwapsEditor({ swaps, onChange, scanning, scanned, typography, fonts }: 
           <li key={i} className={cx("grid gap-1.5 rounded-inner border border-line p-2.5 text-xs @xl:grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)_auto] @xl:items-center", w.keep ? "bg-card opacity-70" : "bg-raised")}>
             <span className="font-medium text-ink">{SWAP_LABEL[w.element] ?? "Element"}</span>
             <span className="min-w-0 text-muted [overflow-wrap:anywhere]" title={w.style || undefined}>&ldquo;{w.theirs}&rdquo;{w.style ? <span className="block text-xs text-faint">{w.style}</span> : null}</span>
-            <input className={cx(inputClass, "h-8 py-1 text-xs")} value={w.keep ? w.theirs : w.ours} disabled={w.keep} aria-label={`Ours instead of ${w.theirs}`} placeholder="Empty: remove it"
+            <input className={cx(inputClass, "h-7 py-1 text-xs")} value={w.keep ? w.theirs : w.ours} disabled={w.keep} aria-label={`Ours instead of ${w.theirs}`} placeholder="Empty: remove it"
               onChange={(e) => edit(i, { ours: e.target.value })} />
             <label className="flex items-center gap-1.5 text-muted">
               <input type="checkbox" className="size-3.5 accent-ink" checked={w.keep} onChange={(e) => edit(i, { keep: e.target.checked, ours: e.target.checked ? w.theirs : w.ours })} /> Keep
@@ -308,8 +308,10 @@ export function VideoReading({ video, transcript = "collapsed" }: { video: AdVid
   );
 }
 
-export function RecreateAd({ productId, ad, brand, avatars, placement, measured, preview, references = [], assets = [], onAssetAdded, onClose, onScanned }: {
+export function RecreateAd({ productId, ad, brand, avatars, placement, measured, preview, references = [], assets = [], onAssetAdded, onClose, onScanned, onMake }: {
   productId: string;
+  /** Back to the simpler "Make this for <app>" sheet (a ready-made prompt, one image, or Send to Studio). */
+  onMake?: () => void;
   ad: RankedAdRow;
   brand?: ResearchBrand;
   avatars: ResearchAvatar[];
@@ -384,7 +386,6 @@ export function RecreateAd({ productId, ad, brand, avatars, placement, measured,
   const sentFrames = useMemo(() => pickFrames(scan?.video?.frames ?? [], STYLE_REFERENCES), [scan]);
   const framesOn = target.kind === "ai_video" && useFrames && sentFrames.length > 0;
 
-  useEscape(onClose);
 
   const referencing = target.kind === "image" && useReference && sentRefs.length > 0;
   // Exact needs their image as the reference; without it (or for a video) it's Very close.
@@ -554,22 +555,25 @@ export function RecreateAd({ productId, ad, brand, avatars, placement, measured,
   );
 
   return (
-    <PanelPortal>
+    <PanelPortal onClose={onClose}>
     <div className={`${MODAL_OVERLAY} z-[45]`} onClick={(e) => { e.stopPropagation(); onClose(); }}>
       <aside className={`${MODAL} max-w-3xl`} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Recreate this ad">
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-line bg-card px-5 py-3">
+        <div className="sticky top-0 z-10 flex min-h-11 items-center justify-between gap-3 border-b border-line bg-card px-4 py-2">
           <div className="min-w-0">
             <p className="text-sm font-medium">Recreate this ad for {kit.appName}</p>
             <p className="truncate text-xs text-muted">{src.competitor ?? src.pageName}&apos;s ad: its style, structure and pattern, never its brand or assets</p>
           </div>
-          <button onClick={onClose} className="grid size-7 shrink-0 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink" aria-label="Close"><IconX className="size-4" /></button>
+          <button onClick={onClose} className="grid size-7 shrink-0 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink" aria-label="Close"><IconX className="size-3.5" /></button>
         </div>
 
         {/* One column that can shrink: on a phone a long line wrapped in a wide track pushed the sheet's content past its edge. */}
-        <div className="grid grid-cols-1 gap-5 p-5">
+        <div className="grid grid-cols-1 gap-4 p-4">
+          {onMake && (
+            <p className="text-xs text-muted">Want it quicker? <button type="button" onClick={onMake} className="rounded-xs font-medium text-accent hover:underline">Make this for {kit.appName}</button> gives a ready-made prompt, one image here, or a Studio batch.</p>
+          )}
           {/* 1. Their ad, and what to make from it */}
           <section className="grid grid-cols-1 gap-4 @xl:grid-cols-[140px_minmax(0,1fr)]">
-            <div className="overflow-hidden rounded-inner bg-canvas">
+            <div className="overflow-hidden rounded-small bg-canvas">
               {preview?.type === "video"
                 ? <video src={preview.url} poster={preview.thumbnail_url ?? undefined} muted playsInline controls preload="metadata" className="max-h-56 w-full object-contain" />
                 : preview || ad.thumb
@@ -597,7 +601,7 @@ export function RecreateAd({ productId, ad, brand, avatars, placement, measured,
                   <>
                     <div className="flex flex-wrap items-center gap-2">
                       <Segmented label="Make it as" value={kind} onChange={setKind} options={[{ value: "ugc_video", label: "AI UGC video" }, { value: "ai_video", label: "AI video" }]} />
-                      <select className={cx(inputClass, "h-8 w-auto! py-1 text-xs")} value={inputs.length} aria-label="Length" onChange={(e) => set({ length: Number(e.target.value) })}>
+                      <select className={cx(inputClass, "h-7 w-auto! py-1 text-xs")} value={inputs.length} aria-label="Length" onChange={(e) => set({ length: Number(e.target.value) })}>
                         {VIDEO_LENGTHS.map((s) => <option key={s} value={s}>{s} seconds</option>)}
                       </select>
                     </div>
@@ -685,11 +689,11 @@ export function RecreateAd({ productId, ad, brand, avatars, placement, measured,
 
           {/* Everything else: defaulted, and one click away */}
           <details open={more} onToggle={(e) => setMore(e.currentTarget.open)} className="group/more rounded-inner border border-line">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
-              <span className="flex items-center gap-2 text-sm font-medium"><IconChevronDown className="size-4 -rotate-90 transition group-open/more:rotate-0" />More options</span>
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 [&::-webkit-details-marker]:hidden">
+              <span className="flex items-center gap-2 text-sm font-medium"><IconChevronDown className="size-3.5 -rotate-90 transition group-open/more:rotate-0" />More options</span>
               <span className="min-w-0 truncate text-xs text-muted">Their ad, {exact ? "your name and logo" : "your brand"}, images, custom instructions, the prompt</span>
             </summary>
-            <div className="grid grid-cols-1 gap-5 px-4 pb-4 [&>section:first-child]:border-t-0">
+            <div className="grid grid-cols-1 gap-4 px-3 pb-3 [&>section:first-child]:border-t-0">
               <Section title="Their ad" hint="What the read found, and how their ad guides yours.">
                 {target.kind === "image" && refImages.length > 0 ? (
                   <label className="flex items-start gap-2.5 rounded-inner bg-accent-soft/60 px-3 py-2 text-xs text-ink">
@@ -727,7 +731,7 @@ export function RecreateAd({ productId, ad, brand, avatars, placement, measured,
                       One AI call (it sees their {src.video ? "frames and audio" : "image"}): it reads the image and the text for logos, words on the image, numbers and faces, lists what to swap, and suggests copy in their style for {kit.appName}.
                       {src.video && " For a video it takes key frames from the saved copy and transcribes what they say, then reads the hook, every shot and the pacing. A minute or two."}
                       {posterOnly && !scanning && " The last read saw only the poster frame."}
-                      {scan && scannedAt && !scanning && ` Last read ${new Date(scannedAt).toLocaleString()}.`}
+                      {scan && scannedAt && !scanning && ` Last read ${new Date(scannedAt).toLocaleString(UI_LOCALE)}.`}
                       {!scan && staleScan && !scanning && " The last read was of an earlier version of this ad (it was edited since), so it isn't used here."}
                     </p>
                   </div>
@@ -911,13 +915,13 @@ export function RecreateAd({ productId, ad, brand, avatars, placement, measured,
               )}
 
               <Section title="Custom instructions" hint="Your preferences. They win over matching their ad.">
-                <textarea className={cx(inputClass, "min-h-20")} value={inputs.custom} maxLength={800} onChange={(e) => set({ custom: e.target.value })} placeholder="Make it feel airier than theirs; show the progress screen, not the settings." />
+                <textarea aria-label="Custom instructions" className={cx(inputClass, "min-h-20")} value={inputs.custom} maxLength={800} onChange={(e) => set({ custom: e.target.value })} placeholder="Make it feel airier than theirs; show the progress screen, not the settings." />
               </Section>
 
               <Section title="Prompt" hint={edited != null ? "You edited the prompt: changes to the fields don't reach it until you rebuild it." : "Written from everything above. Edit it if you like."}>
                 <textarea className={cx(inputClass, "min-h-72 font-mono text-xs leading-relaxed")} value={prompt} maxLength={PROMPT_MAX} onChange={(e) => setEdited(e.target.value)} aria-label="Prompt" />
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-                  <span className="tabular-nums">{prompt.length.toLocaleString()} / {PROMPT_MAX.toLocaleString()} characters</span>
+                  <span className="tabular-nums">{prompt.length.toLocaleString(UI_LOCALE)} / {PROMPT_MAX.toLocaleString(UI_LOCALE)} characters</span>
                   {edited != null && <Button size="sm" variant="ghost" onClick={() => setEdited(null)}>Rebuild from the fields</Button>}
                 </div>
                 {warnings.map((w) => <p key={w} className="text-xs text-caution-ink">{w}</p>)}
@@ -940,7 +944,7 @@ export function RecreateAd({ productId, ad, brand, avatars, placement, measured,
             </span>
           </label>
 
-          <div className="sticky bottom-0 -mx-5 flex flex-wrap items-center justify-end gap-2 border-t border-line bg-card px-5 py-3">
+          <div className="sticky bottom-0 -mx-4 flex flex-wrap items-center justify-end gap-2 border-t border-line bg-card px-4 py-2.5">
             <div className="mr-auto grid min-w-0 gap-0.5 text-xs text-muted">
               {!ready && <p>{open.length ? `${open.length} flagged item${open.length === 1 ? "" : "s"} to decide` : leaks.length ? "Their text is still in the prompt" : "Write the prompt"}</p>}
               {ready && !checked && <p>Tick &ldquo;I&apos;ve checked every replacement&rdquo; to continue</p>}

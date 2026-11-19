@@ -20,6 +20,11 @@ export interface KeyState {
 
 export interface InstallModels { text: string; vision: string; transcribe: string; image: string }
 export interface InstallLimits { wallClockSec: number; uploadLimitMb: number; storageQuotaGb: number }
+/** Settings > Research sources: each source on, off or automatic (null, follows its key), and the Meta actor. Twin: lib/research-sources.ts. */
+export interface InstallResearch {
+  metaApify: boolean | null; metaActor: "community" | "official"; google: boolean | null; metaApi: boolean | null;
+  tiktokLibrary: boolean | null; tiktokEu: boolean | null; tiktokTopAds: boolean | null;
+}
 
 export interface InstallState {
   role: InstallRole;
@@ -32,7 +37,21 @@ export interface InstallState {
   /** What actually runs, once the server's environment overrides apply. Absent on an older backend. */
   resolvedModels?: InstallModels;
   limits: InstallLimits;
+  /** Absent on an older backend (every source automatic then). */
+  research?: InstallResearch;
   keys: Record<string, KeyState>;
+  /** The older research switches set on the project (RESEARCH_TIKTOK, RESEARCH_META_APIFY_ACTOR): they win over `research`. */
+  researchEnv?: { tiktok: string | null; metaActor: string | null };
+  /**
+   * True when this copy of the app carries database changes the project doesn't have yet: the code was
+   * updated (git pull, Sync fork) but /setup's "Apply the update" wasn't run. Added by the studio's
+   * GET /api/install (lib/install/update-needed.ts); false when it can't tell.
+   */
+  updateNeeded?: boolean;
+  /** What updateNeeded compared: the newest migration applied to the project and the newest one in this copy (14-digit versions). */
+  schema?: { applied: string | null; bundled: string | null };
+  /** From the install function: the newest version in public.install_migrations (null without a ledger). The studio turns it into `schema`. */
+  schemaVersion?: string | null;
 }
 
 export interface InstallMember { userId: string; email: string | null; role: "owner" | "member"; createdAt: string }

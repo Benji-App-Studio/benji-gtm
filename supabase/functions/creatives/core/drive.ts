@@ -14,7 +14,8 @@
 // OAuth on behalf of a person would also work, but needs a consent screen and refresh-token
 // storage; the service account is simpler for an internal tool.
 //
-// The token exchange is the standard service-account JWT grant (RS256), scope drive.file.
+// The token exchange is the standard service-account JWT grant (RS256), scope drive: a service
+// account only ever sees what is shared with it, and drive.file would hide a shared folder it didn't create.
 
 export interface ServiceAccount { client_email: string; private_key: string; token_uri?: string }
 
@@ -36,7 +37,7 @@ function pemToDer(pem: string): ArrayBuffer {
 export async function signedAssertion(account: ServiceAccount, now = Math.floor(Date.now() / 1000)): Promise<string> {
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claims = b64url(JSON.stringify({
-    iss: account.client_email, scope: "https://www.googleapis.com/auth/drive.file",
+    iss: account.client_email, scope: "https://www.googleapis.com/auth/drive",
     aud: account.token_uri ?? "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600,
   }));
   const key = await crypto.subtle.importKey("pkcs8", pemToDer(account.private_key), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);

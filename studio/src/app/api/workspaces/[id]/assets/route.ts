@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
+import { refuseWhenFull } from "@/lib/server/storage";
 import { loadRow } from "@/lib/server/workspaces";
 import { WORKSPACE_BUCKET } from "@/lib/workspace";
 
@@ -15,11 +16,13 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/workspa
   if (isResponse(session)) return session;
   const row = await loadRow(session, (await ctx.params).id);
   if (isResponse(row)) return row;
-  const { kind, contentType } = await request.json().catch(() => ({}));
+  const { kind, contentType, size } = await request.json().catch(() => ({}));
   if (kind !== "icon" && kind !== "screenshot") return Response.json({ error: "Upload an icon or a screenshot." }, { status: 400 });
   const ext = TYPES[contentType];
   if (!ext) return Response.json({ error: "Use a PNG, JPEG or WebP image." }, { status: 400 });
 
+  const full = await refuseWhenFull(session, "upload", { fileBytes: Number(size) || 0 });
+  if (full) return full;
   const path = `${session.user.id}/${row.id}/brand/${kind}-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
   const bucket = session.supabase.storage.from(WORKSPACE_BUCKET);
   const { data, error } = await bucket.createSignedUploadUrl(path);

@@ -6,9 +6,11 @@
 //   SUPABASE_ACCESS_TOKEN=... node scripts/provision.mjs --list
 //   SUPABASE_ACCESS_TOKEN=... node scripts/provision.mjs --project <ref> --owner-email you@example.com
 //   SUPABASE_ACCESS_TOKEN=... node scripts/provision.mjs --adopt --project <ref> --dry-run     an existing install
+//   node scripts/provision.mjs --reset-password --project <ref>      a forgotten password, no email needed
 //
 // The access token is read from SUPABASE_ACCESS_TOKEN (or asked for), used for this run and not saved.
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 import readline from "node:readline";
@@ -31,7 +33,9 @@ Options
   --project <ref>          The project to prepare: the 20 letters in its dashboard address.
   --list                   Show the projects the token can see, then stop.
   --owner-email <email>    The account that will own this install.
-  --owner-password <text>  Its password. Better: set OWNER_PASSWORD, or leave it out to be asked.
+  --owner-password <text>  Its password. Better: set OWNER_PASSWORD. Left out, a strong password is
+                           made up and saved on this computer for automatic sign-in (it is never
+                           shown; choose your own later in Settings > Account).
   --app-origin <url>       Where the app runs. Default: http://localhost:3000
   --functions <a,b,c>      Install only these backend functions.
   --steps <a,b,c>          Run only these steps: project, keys, migrations, function-urls,
@@ -39,6 +43,14 @@ Options
   --no-config              Don't save the connection on this computer (for testing).
   --dry-run                Print what would be done. Calls nothing and needs no token.
   --help                   Show this text.
+
+A forgotten password (no email needed)
+  npm run provision -- --reset-password --project <ref>
+
+  --reset-password         Sets a new password for the install's owner. Asks for the access token
+                           and the new password in Terminal, hidden. Never put them in the command.
+                           Saves the new password on this computer, so the app signs in by itself.
+                           If the owner's account is gone, it offers to create it again.
 
 Adopting an install that already exists (docs/ADOPTING-AN-EXISTING-INSTALL.md)
   SUPABASE_ACCESS_TOKEN=<token> node scripts/provision.mjs --adopt --project <ref> --dry-run
@@ -66,7 +78,7 @@ Try --dry-run first: it only prints the plan. If a real run stops, run the same 
 finished steps are skipped.`;
 
 function parseArgs(argv) {
-  const flags = new Set(["list", "dry-run", "no-config", "help", "adopt", "yes", "set-function-urls", "schedule-jobs", "deploy-functions", "no-assets", "write-config"]);
+  const flags = new Set(["list", "dry-run", "no-config", "help", "adopt", "reset-password", "yes", "set-function-urls", "schedule-jobs", "deploy-functions", "no-assets", "write-config"]);
   const options = {};
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -139,6 +151,7 @@ async function main() {
   const adoptOnly = ["members", "yes", "set-function-urls", "schedule-jobs", "deploy-functions", "no-assets", "write-config"].filter((name) => name in options);
   if (!options.adopt && adoptOnly.length) throw new Error(`--${adoptOnly[0]} only works together with --adopt. Run with --help to see the options.`);
   if (options.adopt) return adoptInstall(options, lib, config, files, functions);
+  if (options["reset-password"]) return resetPassword(options, lib, config);
 
   if (options["dry-run"]) {
     const plan = await lib.planProvision(files, { steps, functions, ref: options.project });
@@ -172,9 +185,15 @@ async function main() {
   if (!options.project) throw new Error("Say which project: --project <ref>. Run with --list to see your projects.");
   const wantsOwner = !steps || steps.includes("owner");
   let owner;
+  let generated = false;
   if (wantsOwner && options["owner-email"]) {
-    const password = options["owner-password"] ?? process.env.OWNER_PASSWORD ?? await ask(`Password for ${options["owner-email"]} (hidden, at least 8 characters): `, true);
-    if (!password) throw new Error("A password is needed for the owner account. Set OWNER_PASSWORD, or run this in a terminal to be asked.");
+    let password = options["owner-password"] ?? process.env.OWNER_PASSWORD;
+    if (!password) {
+      // Nobody has to remember it: it is saved on this computer, and the app signs in with it by itself.
+      if (options["no-config"]) throw new Error("With --no-config nothing is saved on this computer, so give the owner's password: set OWNER_PASSWORD.");
+      password = randomBytes(18).toString("base64url");
+      generated = true;
+    }
     owner = { email: options["owner-email"], password };
   } else if (wantsOwner && steps) {
     throw new Error("The owner step needs --owner-email.");
@@ -195,7 +214,59 @@ async function main() {
   }
   console.log(`\nDone. ${result.project.name} (${result.supabaseUrl}) is ready on the ${result.plan} plan.`);
   if (!owner) console.log("No owner account was created. Run again with --owner-email to create it.");
-  if (!options["no-config"] && result.completed.includes("config")) console.log(`The connection is saved in ${config.installConfigPath()}. Start the app and sign in.`);
+  if (!options["no-config"] && result.completed.includes("config")) {
+    if (owner) {
+      config.writeStoredOwner(owner);
+      if (generated) console.log("A password was generated for the owner and saved for automatic sign-in on this computer. It is not shown; choose your own any time in Settings > Account.");
+      console.log(`The connection is saved in ${config.installConfigPath()}. Start the app: on this computer it signs you in by itself.`);
+    } else {
+      console.log(`The connection is saved in ${config.installConfigPath()}. Start the app.`);
+    }
+  }
+  return 0;
+}
+
+/**
+ * `--reset-password`: a new password for the install's owner, with an access token, no email. Both are
+ * typed into hidden Terminal prompts, never taken from the command line, and never printed.
+ */
+async function resetPassword(options, lib, config) {
+  const notHere = ["owner-email", "owner-password", "steps", "list", "dry-run", "functions", "no-config"].filter((name) => name in options);
+  if (notHere.length) throw new Error(`--${notHere[0]} isn't used with --reset-password. It asks for the token and the new password in Terminal.`);
+  if (!options.project) throw new Error("Say which project: --reset-password --project <ref> (the 20 letters in its dashboard address).");
+  if (!process.stdin.isTTY) throw new Error("Run this in Terminal: it asks for the access token and the new password there, hidden.");
+  const current = config.getInstallConfig();
+  if (current?.source === "env") throw new Error("This copy takes its project from environment variables, so there is nothing to save here. Reset the password from the app on your Mac instead.");
+  const connected = current ? config.projectRef(current.supabaseUrl) : null;
+  if (connected && connected !== options.project) throw new Error(`This computer is connected to the project ${connected}, not ${options.project}. Use --project ${connected}.`);
+
+  console.log("Create an access token at https://supabase.com/dashboard/account/tokens and paste it below. It is used once and not saved.");
+  const accessToken = process.env.SUPABASE_ACCESS_TOKEN?.trim() || await ask("Supabase access token (hidden): ", true);
+  if (!accessToken) throw new Error("No access token was given.");
+  const password = await ask("New password (hidden, at least 8 characters): ", true);
+  if (password.length < 8) throw new Error("Use a password with at least 8 characters.");
+  if ((await ask("Type the new password again (hidden): ", true)) !== password) throw new Error("The two passwords weren't the same. Run the command again.");
+
+  const input = { accessToken, ref: options.project, password, storedEmail: config.readStoredOwner()?.email ?? null, appOrigin: options["app-origin"] ?? lib.DEFAULT_APP_ORIGIN };
+  let result;
+  try {
+    result = await lib.localReset(input, { fetch });
+  } catch (error) {
+    if (error?.code !== "no_account") throw error;
+    console.log("The owner's account is no longer in your Supabase project. It can be created again; your workspace and its data stay.");
+    const email = await ask("Your email: ");
+    if (!lib.isEmail(email)) throw new Error("That doesn't look like an email address. Run the command again.");
+    result = await lib.localReset({ ...input, recreateEmail: email }, { fetch });
+  }
+  if (!current) {
+    const api = lib.managementApi(fetch, accessToken);
+    const project = (await lib.listProjects(api)).find((candidate) => candidate.ref === options.project);
+    const { plan } = await lib.detectPlan(api, project);
+    config.writeInstallConfig({ supabaseUrl: lib.projectUrl(options.project), publishableKey: result.publishableKey, publicOrigin: null, imageTransforms: plan === "paid" });
+    console.log(`This computer is now connected to the project (saved in ${config.installConfigPath()}).`);
+  }
+  config.writeStoredOwner({ email: result.email, password });
+  console.log(`\nDone. ${result.recreated ? "The owner's account was created again" : "The password is changed"} for ${result.email}, and saved on this computer so the app signs you in by itself. Start the app, or reload it.`);
   return 0;
 }
 

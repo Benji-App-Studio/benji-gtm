@@ -94,6 +94,5 @@ export function scalingAdvice(o: {
   return { ...base, move: "hold", summary: "Hold: it's around target.", why: `${money(cpa!)} against ${money(t.targetCac)}. Raise again once it settles under target.` };
 }
 
-const NO_OFFSET = new Set(["CLP", "COP", "CRC", "HUF", "ISK", "IDR", "JPY", "KRW", "PYG", "TWD", "VND"]);
 /** Meta reports budgets in the currency's minor unit (cents); the studio works in major units. */
-export const fromMinor = (minor: number, currency: string) => minor / (NO_OFFSET.has(currency.toUpperCase()) ? 1 : 100);
+export { fromMinor } from "./currency";

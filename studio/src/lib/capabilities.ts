@@ -12,6 +12,10 @@ export type Feature =
   | "ai"
   | "research.collect"
   | "research.metaApi"
+  | "research.google"
+  | "research.tiktokEu"
+  | "research.tiktokTopAds"
+  | "research.tiktokLibrary"
   | "studio.images"
   | "studio.video"
   | "studio.runner"
@@ -19,7 +23,9 @@ export type Feature =
   | "launch"
   | "measure.meta"
   | "measure.revenuecat"
-  | "measure.appstack";
+  | "measure.appstack"
+  | "market.summary"
+  | "market.play";
 
 interface Need {
   /** What the feature is called in a sentence: "Connect OpenAI to <what>". */
@@ -34,6 +40,10 @@ const NEEDS: Record<Feature, Need> = {
   ai: { what: "read ads and posts, write the analysis and check creatives", keys: [["OPENAI_API_KEY"]] },
   "research.collect": { what: "collect competitors' posts and ads automatically", keys: [["APIFY_TOKEN"]] },
   "research.metaApi": { what: "pull ads from Meta's Ad Library API", keys: [["META_AD_LIBRARY_TOKEN"]] },
+  "research.google": { what: "collect competitors' Google search and YouTube ads", keys: [["APIFY_TOKEN"]] },
+  "research.tiktokEu": { what: "collect competitors' TikTok ads shown in Europe", keys: [["APIFY_TOKEN"]] },
+  "research.tiktokTopAds": { what: "collect TikTok's top ads by keyword", keys: [["APIFY_TOKEN"]] },
+  "research.tiktokLibrary": { what: "pull TikTok ads from TikTok's official API", keys: [["TIKTOK_RESEARCH_CLIENT_KEY", "TIKTOK_RESEARCH_CLIENT_SECRET"]] },
   "studio.images": { what: "generate images", keys: [["HIGGSFIELD_API_KEY"], ["OPENAI_API_KEY"]] },
   "studio.video": { what: "generate videos", keys: [["HIGGSFIELD_API_KEY"]] },
   "studio.runner": { what: "make creator-style videos and cut-outs with the desktop runner", keys: [["CREATIVES_RUNNER_SECRET"]] },
@@ -57,6 +67,9 @@ const NEEDS: Record<Feature, Need> = {
     what: "read installs from AppStack", keys: [["APPSTACK_API_KEY"]],
     connections: [{ key: "appstack", field: "appId", label: "your AppStack app" }],
   },
+  // Market reads the App Store with no key; these two are its extras.
+  "market.summary": { what: "write the AI summaries of app reviews and top charts", keys: [["OPENAI_API_KEY"]] },
+  "market.play": { what: "read Google Play reviews (Google has no free official API)", keys: [["APIFY_TOKEN"]] },
 };
 
 export interface FeatureState {

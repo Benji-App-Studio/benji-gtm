@@ -6,6 +6,7 @@ import { isResponse, requireUser } from "@/lib/server/auth";
 import { setCreativeFile } from "@/lib/server/creative-file";
 import { creativesBackend } from "@/lib/server/creatives-backend";
 import { placeLogo } from "@/lib/server/logo-overlay";
+import { caughtFailure, logDbError } from "@/lib/server/errors";
 
 export const runtime = "nodejs";
 
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/
     const { error: uploadError } = await supabase.storage.from(CREATIVES_BUCKET).upload(path, out.bytes, { contentType: out.mime, upsert: false });
     if (uploadError && !/exists|duplicate/i.test(uploadError.message)) {
       const rls = /row-level security|policy/i.test(uploadError.message);
-      throw new Error(rls ? `Storage refused the upload (${uploadError.message}). Apply migration 20261003900000_creatives_storage_policies_fix.sql.` : `Couldn't store the image: ${uploadError.message}`);
+      throw new Error(rls ? logDbError("logo upload", uploadError, "Storage refused the upload. Open /setup and press Apply the update, then try again.") : logDbError("logo upload", uploadError, "Couldn't store the image. Try again."));
     }
     const record: PlacedLogo = { url: wanted.url, position, box: out.box, at: new Date().toISOString(), original };
     const saved = await setCreativeFile(supabase, id, { url: publicUrl(path), storage_path: path, size_bytes: out.bytes.length, mime: out.mime, copy: { ...copy, logo: record, logoRemoved: false } });
@@ -94,6 +95,6 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/
     await recheck();
     return Response.json({ creative: saved.creative });
   } catch (error) {
-    return Response.json({ error: `Couldn't place the logo: ${error instanceof Error ? error.message : String(error)}` }, { status: 502 });
+    return caughtFailure("logo", error, "Couldn't place the logo. Try again.", 502);
   }
 }

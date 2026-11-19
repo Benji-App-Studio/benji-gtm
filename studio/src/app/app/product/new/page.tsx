@@ -1,14 +1,14 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { ProductForm } from "@/components/product-form";
-import { Page, PageHeader } from "@/components/ui";
+import { columnClass, Page, PageHeader } from "@/components/ui";
 import { refresh } from "@/lib/client-cache";
 import { workspaceHref } from "@/lib/workspace-schema";
 
 export default function NewProduct() {
   const router = useRouter();
   return (
-    <Page className="max-w-3xl">
+    <Page className={columnClass}>
       <PageHeader crumbs={[{ label: "Home", href: "/app" }, { label: "New app" }]} title="Add an app"
         subtitle="Each app keeps its own profile, brand, competitors and creatives. You can change every answer later." />
       {/* Lands on the new app's Home (its setup list and next step), like the first app does. `replace`, so Back

@@ -90,26 +90,26 @@ export function ProductForm({ product, onDone }: { product?: ProductRow; onDone?
 
   return (
     <div>
-      <ol className="mb-6 flex flex-wrap items-center gap-2 text-xs">
+      <ol className="mb-5 flex flex-wrap items-center gap-2 text-xs">
         {STEPS.map((label, i) => (
           <li key={label} className="flex items-center gap-2">
             <button type="button" disabled={i > step && !product} onClick={() => (i < step || product) && setStep(i)}
-              className={cx("grid size-6 place-items-center rounded-full text-xs", i < step ? "bg-win text-on-ink" : i === step ? "bg-primary text-on-ink" : "bg-control text-muted")}>{i < step ? "✓" : i + 1}</button>
+              className={cx("grid size-5 place-items-center rounded-full text-[11px] font-medium", i < step ? "bg-win text-on-ink" : i === step ? "bg-accent-fill text-on-accent" : "bg-control text-muted")}>{i < step ? "✓" : i + 1}</button>
             <span className={cx(i === step ? "font-medium text-ink" : "text-muted", "hidden @xl:inline")}>{label}</span>
             {i < STEPS.length - 1 && <span className="h-px w-4 bg-line" />}
           </li>
         ))}
       </ol>
 
-      <Card className="p-5">
+      <Card className="p-4">
         {step === 0 && (
           <>
             <h2 className="text-title font-medium">What are you building?</h2>
             <p className="mt-1 text-sm text-muted">Pick the closest. It decides a couple of the questions we ask next.</p>
-            <div className="mt-6 grid gap-2 @xl:grid-cols-3">
+            <div className="mt-4 grid gap-2 @xl:grid-cols-3">
               {(Object.keys(KIND_LABEL) as ProductKind[]).map((kind) => (
                 <button key={kind} type="button" onClick={() => set({ kind })}
-                  className={cx("rounded-control border px-4 py-3 text-left text-sm transition", draft.kind === kind ? "border-accent/60 bg-accent-soft font-medium" : "border-line bg-card hover:bg-hover")}>{KIND_LABEL[kind]}</button>
+                  className={cx("rounded-control border px-3 py-2.5 text-left text-sm transition", draft.kind === kind ? "border-accent/60 bg-accent-soft font-medium" : "border-line bg-card hover:bg-hover")}>{KIND_LABEL[kind]}</button>
               ))}
             </div>
           </>
@@ -119,8 +119,8 @@ export function ProductForm({ product, onDone }: { product?: ProductRow; onDone?
           <>
             <h2 className="text-title font-medium">The basics</h2>
             <p className="mt-1 text-sm text-muted">What it is, who it&apos;s for and how people buy it, in a few honest lines.</p>
-            <div className="mt-6 grid gap-5">
-              <div className="grid gap-5 @xl:grid-cols-2">
+            <div className="mt-4 grid gap-4">
+              <div className="grid gap-4 @xl:grid-cols-2">
                 <Field label="Product or brand name"><input className={inputClass} value={draft.name} maxLength={120} onChange={(e) => set({ name: e.target.value })} placeholder="Volt" /></Field>
                 <Field label="Website (optional)"><input className={inputClass} value={draft.website} onChange={(e) => set({ website: e.target.value })} placeholder="https://volt.drinks" /></Field>
               </div>
@@ -142,7 +142,7 @@ export function ProductForm({ product, onDone }: { product?: ProductRow; onDone?
           <>
             <div className="flex flex-wrap items-center gap-2"><h2 className="text-title font-medium">About {draft.name || "it"}</h2>{draft.category_label && <Badge tone="accent">{draft.category_label}</Badge>}</div>
             <p className="mt-1 text-sm text-muted">{filled ? "We've filled in what we could from your description; fix anything that's off." : "Fill in what you know. You can change any of it later."}</p>
-            <div className="mt-6">
+            <div className="mt-4">
               <p className="mb-2 text-sm font-medium">Where are you today?</p>
               <div className="grid gap-2 @xl:grid-cols-4">
                 {(Object.keys(STAGE_LABEL) as Stage[]).map((stage) => (
@@ -150,7 +150,7 @@ export function ProductForm({ product, onDone }: { product?: ProductRow; onDone?
                 ))}
               </div>
             </div>
-            <div className="mt-6 grid gap-5 @xl:grid-cols-2">
+            <div className="mt-4 grid gap-4 @xl:grid-cols-2">
               {KIND_QUESTIONS[draft.kind].map((q) => (
                 <Field key={q.key} label={q.label}>
                   {q.options ? (
@@ -177,7 +177,7 @@ export function ProductForm({ product, onDone }: { product?: ProductRow; onDone?
           <>
             <h2 className="text-title font-medium">Your channels</h2>
             <p className="mt-1 text-sm text-muted">Where you already post, if anywhere. We use these to compare you with your competitors later; leave any blank.</p>
-            <div className="mt-6 grid gap-3 @xl:grid-cols-2">
+            <div className="mt-4 grid gap-3 @xl:grid-cols-2">
               {SOCIALS.map((key) => (
                 <label key={key} className="flex items-center gap-3 text-sm">
                   <span className="w-32 shrink-0">{key === "facebook" ? <span className="inline-flex items-center gap-1.5 text-xs font-medium"><span className="size-2.5 rounded-full bg-accent" />Facebook</span> : <PlatformBadge platform={key} />}</span>
@@ -193,12 +193,12 @@ export function ProductForm({ product, onDone }: { product?: ProductRow; onDone?
           <>
             <h2 className="text-title font-medium">Competitors you already know</h2>
             <p className="mt-1 text-sm text-muted">Optional. Names, @handles or links, separated by commas. Don&apos;t know any yet? That&apos;s what {APP_NAME} is for: leave it empty.</p>
-            <textarea className={cx(inputClass, "mt-6 min-h-28")} value={draft.known_competitors} onChange={(e) => set({ known_competitors: e.target.value })} placeholder="@celsiusofficial, Liquid Death, monster.energy…" />
+            <textarea aria-label="Competitors you already know" className={cx(inputClass, "mt-4 min-h-28")} value={draft.known_competitors} onChange={(e) => set({ known_competitors: e.target.value })} placeholder="@celsiusofficial, Liquid Death, monster.energy…" />
             <p className="mt-2 text-xs text-muted">This is the product&apos;s one competitor list, the same one as Research → Competitors. Ones you follow there or that have a Facebook Page are removed there.</p>
             {draft.keywords.length > 0 && (
-              <div className="mt-6">
+              <div className="mt-4">
                 <p className="mb-2 text-sm font-medium">Your niche, in search terms</p>
-                <div className="flex flex-wrap gap-1.5">{draft.keywords.map((k) => <span key={k} className="rounded-full bg-primary px-2.5 py-1 text-xs text-on-ink">{k}</span>)}</div>
+                <div className="flex flex-wrap gap-1.5">{draft.keywords.map((k) => <span key={k} className="rounded-full border border-hairline bg-control px-2 py-0.5 text-xs text-ink">{k}</span>)}</div>
                 <p className="mt-2 text-xs text-muted">Picked by the AI from your description. Used to find competitors, and the best content in your niche if there are none.</p>
               </div>
             )}
@@ -206,7 +206,7 @@ export function ProductForm({ product, onDone }: { product?: ProductRow; onDone?
         )}
 
         {error && <p className="mt-5 text-sm text-warn">{error}</p>}
-        <div className="mt-6 flex justify-between">
+        <div className="mt-4 flex justify-between">
           {step > 0 ? <Button variant="ghost" onClick={() => setStep(step - 1)}>Back</Button> : <span />}
           {step === 1 ? <Button onClick={readProduct} disabled={busy || !canNext}>{busy ? <><Spinner /> Reading your description…</> : "Continue"}</Button>
             : step < STEPS.length - 1 ? <Button onClick={() => setStep(step + 1)} disabled={!canNext}>Continue</Button>

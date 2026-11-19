@@ -6,6 +6,7 @@ import type { LaunchSettings } from "@/lib/launch/types";
 import { ask, notice } from "../dialog";
 import { Card, cx, Field, inputClass, Spinner, Toggle } from "../ui";
 import { Section, send } from "./parts";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 export function Automation({ productId, settings, onSaved }: { productId: string; settings: LaunchSettings | null; onSaved: () => Promise<unknown> }) {
   const on = settings?.automation_enabled ?? false;
@@ -54,7 +55,7 @@ export function Automation({ productId, settings, onSaved }: { productId: string
           </span>
         </div>
         {settings?.automation_last_run_at && (
-          <p className="text-xs text-muted @xl:col-span-2">Last run {new Date(settings.automation_last_run_at).toLocaleString()}: {settings.automation_last_note}</p>
+          <p className="text-xs text-muted @xl:col-span-2">Last run {new Date(settings.automation_last_run_at).toLocaleString(UI_LOCALE)}: {settings.automation_last_note}</p>
         )}
       </Card>
     </Section>

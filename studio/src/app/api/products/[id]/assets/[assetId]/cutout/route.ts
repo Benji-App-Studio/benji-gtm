@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { canCutOut, CUTOUT_CREDITS, CUTOUT_MODEL, cutoutParams, type ProductAsset } from "@/lib/product-assets";
 import { isResponse, requireUser, type Session } from "@/lib/server/auth";
+import { dbFailure } from "@/lib/server/errors";
 
 type Asset = Pick<ProductAsset, "id" | "product_id" | "url" | "kind" | "cutout_url" | "cutout_path">;
 interface CutoutJob { id: string; status: string; error: string | null; created_at: string }
@@ -55,6 +56,6 @@ export async function POST(_request: NextRequest, ctx: RouteContext<"/api/produc
     product_id: id, batch_id: null, format_card_id: null, kind: "image", model: CUTOUT_MODEL, prompt: "",
     params: cutoutParams(asset), aspect: "1:1", variant: 1, backend: "local", cost_estimate: CUTOUT_CREDITS,
   }).select("id, status, error, created_at").single<CutoutJob>();
-  if (error || !job) return Response.json({ error: `Couldn't queue the cut-out: ${error?.message ?? "no job"}` }, { status: 500 });
+  if (error || !job) return dbFailure("cutout queue", error, "Couldn't queue the cut-out. Try again.");
   return Response.json({ job });
 }

@@ -9,9 +9,12 @@ import {
   TEMPLATE_NAME_MAX, TEMPLATE_UPLOAD_TYPES, templateFromRow, templateRemakeRequest, templateRemakeSettings, templateUploadProblem, type TemplateRow,
 } from "@/lib/playground-templates-plan";
 import { isResponse, requireUser, type Session } from "@/lib/server/auth";
+import { refuseWhenFull } from "@/lib/server/storage";
+import { uploadErrorText } from "@/lib/storage-usage";
 import { BatchError, createBatch } from "@/lib/server/creative-batches";
 import { research } from "@/lib/server/research";
 import { WORKSPACE_BUCKET } from "@/lib/workspace";
+import { logCaught, logDbError } from "@/lib/server/errors";
 
 // A product's own Playground template library (contract: lib/playground-templates.ts). Every query is
 // scoped to this product, and the product must be the signed-in user's: nothing here is global.
@@ -211,7 +214,7 @@ async function addStarter(session: Session, productId: string, starterId: unknow
     // Added at the same moment from another tab: the unique (product, starter) index kept one.
     const again = error.code === "23505" ? await existing() : null;
     if (again) return Response.json({ template: templateFromRow(again) });
-    return bad(`Couldn't add it: ${error.message}`, 500);
+    return bad(logDbError("template add starter", error, "Couldn't add it. Try again."), 500);
   }
   return Response.json({ template: templateFromRow(data) });
 }
@@ -239,7 +242,7 @@ async function importTemplate(session: Session, productId: string, templateId: u
   if ((current ?? []).filter((r) => r.kind === "custom").length >= MAX_CUSTOM_TEMPLATES) return bad(`This product already has ${MAX_CUSTOM_TEMPLATES} of your own templates. Delete one first.`, 409);
 
   const { data, error } = await supabase.from("product_templates").insert(importedRow(source, productId)).select(TEMPLATE_COLUMNS).single<TemplateRow>();
-  if (error || !data) return bad(`Couldn't import it: ${error?.message ?? "no row"}`, 500);
+  if (error || !data) return bad(logDbError("template import", error, "Couldn't import it. Try again."), 500);
   return Response.json({ template: templateFromRow(data, new Map([[from.id, from.name]])) });
 }
 
@@ -251,6 +254,8 @@ async function upload(session: Session, productId: string, file: FormDataEntryVa
   const { count } = await supabase.from("product_templates").select("id", { count: "exact", head: true }).eq("product_id", productId).eq("kind", "custom");
   if ((count ?? 0) >= MAX_CUSTOM_TEMPLATES) return bad(`This product already has ${MAX_CUSTOM_TEMPLATES} uploaded templates. Delete one first.`, 409);
 
+  const full = await refuseWhenFull(session, "upload", { fileBytes: file.size });
+  if (full) return full;
   const bytes = new Uint8Array(await file.arrayBuffer());
   const sniffed = templateUploadProblem({ type: file.type, size: bytes.byteLength }, bytes.subarray(0, 16));
   if (sniffed) return bad(sniffed);
@@ -258,7 +263,7 @@ async function upload(session: Session, productId: string, file: FormDataEntryVa
   const path = `${session.user.id}/${productId}/playground/templates/${crypto.randomUUID()}.${TEMPLATE_UPLOAD_TYPES[type]}`;
   const bucket = supabase.storage.from(WORKSPACE_BUCKET);
   const { error: uploadError } = await bucket.upload(path, bytes, { contentType: type, upsert: false });
-  if (uploadError) return bad(`Couldn't store the image: ${uploadError.message}`, 500);
+  if (uploadError) return bad(uploadErrorText(uploadError), 500);
   const sourceUrl = bucket.getPublicUrl(path).data.publicUrl;
 
   const { data: row, error } = await supabase.from("product_templates").insert({
@@ -266,7 +271,7 @@ async function upload(session: Session, productId: string, file: FormDataEntryVa
   }).select(TEMPLATE_COLUMNS).single<TemplateRow>();
   if (error || !row) {
     await bucket.remove([path]);
-    return bad(`Couldn't add it: ${error?.message ?? "no row"}`, 500);
+    return bad(logDbError("template upload row", error, "Couldn't add it. Try again."), 500);
   }
   return Response.json({ template: templateFromRow(await startAnalysis(session, productId, row)) });
 }
@@ -324,7 +329,7 @@ async function remake(session: Session, productId: string, templateId: unknown, 
   } catch (error) {
     await revert(row.error);
     if (error instanceof BatchError) return Response.json({ error: error.message, credits: error.plan?.credits }, { status: error.status });
-    return bad(`Couldn't start: ${error instanceof Error ? error.message : String(error)}`, 500);
+    return bad(logCaught("template remake", error, "Couldn't start. Try again."), 500);
   }
 }
 
@@ -340,7 +345,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/playgr
   const row = await loadTemplate(session, productId, body?.templateId);
   if (!row) return noTemplate();
   const { row: updated, error } = await updateTemplate(session, productId, row.id, { name });
-  if (error || !updated) return bad(`Couldn't rename it: ${error?.message ?? "no row"}`, 500);
+  if (error || !updated) return bad(logDbError("template rename", error, "Couldn't rename it. Try again."), 500);
   return Response.json({ template: (await named(session, [updated]))[0] });
 }
 
@@ -361,7 +366,7 @@ async function removeRemake(session: Session, productId: string, batchId: string
     .returns<{ id: string; storage_path: string; poster_path: string | null }[]>();
   if (made?.length) {
     const { error } = await supabase.from("creatives").delete().in("id", made.map((c) => c.id));
-    if (error) return { ok: false, error: `Couldn't delete the remake: ${error.message}`, status: 500 };
+    if (error) return { ok: false, error: logDbError("template delete remake", error, "Couldn't delete the remake. Try again."), status: 500 };
     const files = made.flatMap((c) => [c.storage_path, c.poster_path]).filter((p): p is string => Boolean(p) && p!.startsWith(`${productId}/`) && !p!.includes(".."));
     if (files.length && !keepFiles) await supabase.storage.from(CREATIVES_BUCKET).remove(files);
   }
@@ -399,7 +404,7 @@ export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/playg
   }
 
   const { error } = await supabase.from("product_templates").delete().eq("id", row.id).eq("product_id", productId);
-  if (error) return bad(`Couldn't delete it: ${error.message}`, 500);
+  if (error) return bad(logDbError("template delete", error, "Couldn't delete it. Try again."), 500);
   const ownFolder = `${session.user.id}/${productId}/playground/templates/`;
   if (remove.source && row.source_path && row.source_path.startsWith(ownFolder) && !row.source_path.includes("..")) await supabase.storage.from(WORKSPACE_BUCKET).remove([row.source_path]);
   return Response.json({ ok: true });

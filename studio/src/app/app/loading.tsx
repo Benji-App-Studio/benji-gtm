@@ -1,7 +1,7 @@
 "use client";
 import { usePathname } from "next/navigation";
 import {
-  BrandSkeleton, DashboardSkeleton, FormatsSkeleton, GenericPageSkeleton, LaunchSkeleton, MeasureSkeleton, ProductsSkeleton, ProjectSkeleton,
+  BrandSkeleton, DashboardSkeleton, FormatsSkeleton, GenericPageSkeleton, LaunchSkeleton, MarketSkeleton, MeasureSkeleton, ProductsSkeleton, ProjectSkeleton,
   PlaygroundSkeleton, ResearchSkeleton, StudioSkeleton, WorkflowListSkeleton, WorkspaceOverviewSkeleton, WorkspaceSettingsSkeleton,
 } from "@/components/page-skeletons";
 import { SettingsLoading } from "@/components/settings/settings-ui";
@@ -12,6 +12,7 @@ const PRODUCT_PAGES: Record<WorkspaceModule | "", () => React.ReactNode> = {
   "": WorkspaceOverviewSkeleton,
   brand: BrandSkeleton,
   research: ResearchSkeleton,
+  market: MarketSkeleton,
   formats: FormatsSkeleton,
   studio: StudioSkeleton,
   playground: PlaygroundSkeleton,

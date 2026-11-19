@@ -2,7 +2,7 @@
 // built from the kit in ./skeleton. A page shows its own while its data loads, and app/app/loading.tsx
 // shows the same one while the route loads, so the switch from one to the other is invisible.
 import { UNLOCKABLE } from "@/lib/capabilities";
-import { pageClass } from "./ui";
+import { columnClass, pageClass } from "./ui";
 import {
   Bone, Skeleton, SkeletonAdGrid, SkeletonBadge, SkeletonButton, SkeletonCard, SkeletonFilterBar, SkeletonForm, SkeletonLine,
   SkeletonList, SkeletonPageHeader, SkeletonProductCard, SkeletonProjectCards, SkeletonStats, SkeletonTable, SkeletonTabs, SkeletonText,
@@ -39,7 +39,7 @@ export function ResearchSkeleton() {
 
 export function ProductsSkeleton() {
   return (
-    <Skeleton label="Loading your apps" className={`${pageClass} max-w-4xl`}>
+    <Skeleton label="Loading your apps" className={`${pageClass} ${columnClass}`}>
       <SkeletonPageHeader eyebrow="w-28" title="w-44" subtitleWidth="w-80" actions={["w-28"]} actionSize="sm" />
       <div className="grid gap-3"><SkeletonProductCard /></div>
     </Skeleton>
@@ -56,7 +56,7 @@ export function FormatsBodySkeleton() {
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="flex min-w-0 flex-col gap-1">
             <SkeletonLine size="xs" width="w-14" />
-            <Bone className="h-8 w-full rounded-control @2xl:w-28" />
+            <Bone className="h-[30px] w-full rounded-control @2xl:w-28" />
           </div>
         ))}
         <SkeletonLine size="xs" width="w-28" className="col-span-2 @2xl:ml-auto @2xl:self-center" />
@@ -104,7 +104,7 @@ export function StudioSkeleton() {
             {[0, 1, 2].map((i) => (
               <div key={i} className="grid gap-2">
                 <SkeletonLine size="sm" width="w-32" />
-                <div className="flex flex-wrap gap-2">{[96, 120, 88, 110].map((w, j) => <Bone key={j} className="h-8 rounded-control" style={{ width: w }} />)}</div>
+                <div className="flex flex-wrap gap-2">{[96, 120, 88, 110].map((w, j) => <Bone key={j} className="h-7 rounded-control" style={{ width: w }} />)}</div>
               </div>
             ))}
           </div>
@@ -135,14 +135,14 @@ export function StudioSkeleton() {
 
 /** The Playground: header, the form card (tabs, reference box, image strip, prompt, options, Generate) and the results grid. */
 export function PlaygroundSkeleton() {
-  const row = (w: number) => <div className="flex items-center justify-between gap-2"><SkeletonLine size="xs" width="w-14" /><Bone className="h-8 rounded-inner" style={{ width: w }} /></div>;
+  const row = (w: number) => <div className="flex items-center justify-between gap-2"><SkeletonLine size="xs" width="w-14" /><Bone className="h-[30px] rounded-inner" style={{ width: w }} /></div>;
   return (
     <Skeleton label="Loading the playground" className={pageClass}>
       {productHeader({ title: "w-44", subtitle: 1, subtitleWidth: "w-3/4",
         aside: <div className="flex flex-wrap gap-2"><SkeletonBadge width="w-36" /><SkeletonBadge width="w-32" /></div> })}
       <div className="grid items-start gap-3 @4xl:grid-cols-[minmax(340px,400px)_minmax(0,1fr)]">
         <SkeletonCard className="grid gap-4 p-4">
-          <Bone className="h-8 w-full rounded-inner" />
+          <Bone className="h-[30px] w-full rounded-inner" />
           <div className="grid gap-1.5"><SkeletonLine size="xs" width="w-20" /><Bone className="h-36 w-full rounded-inner" /></div>
           <div className="grid gap-1.5"><SkeletonLine size="xs" width="w-24" /><div className="flex gap-1.5">{[0, 1, 2].map((i) => <Bone key={i} className="size-14 rounded-inner" />)}</div></div>
           <div className="grid gap-1.5"><SkeletonLine size="xs" width="w-32" /><Bone className="h-28 w-full rounded-inner" /></div>
@@ -183,7 +183,7 @@ export function LaunchSkeleton() {
           {[0, 1].map((i) => (
             <SkeletonCard key={i} className="grid min-w-0 gap-4 p-4 @3xl:grid-cols-[minmax(0,1fr)_320px]">
               <div className="flex min-w-0 gap-4"><Bone className="aspect-[4/5] w-24 rounded-inner" /><SkeletonText lines={3} className="flex-1" /></div>
-              <div className="grid content-start gap-2"><Bone className="h-8 w-full rounded-control" /><SkeletonButton size="sm" width="w-40" /></div>
+              <div className="grid content-start gap-2"><Bone className="h-[30px] w-full rounded-control" /><SkeletonButton size="sm" width="w-40" /></div>
             </SkeletonCard>
           ))}
         </div>
@@ -238,7 +238,7 @@ export function MeasureSkeleton() {
 /** An app's Home: header, the next step, the three setup steps and what can be unlocked, with the recent creatives beside them. */
 export function WorkspaceOverviewSkeleton() {
   const rows = (keys: string[], lines: 1 | 2) => keys.map((key) => (
-    <div key={key} className={`flex gap-3 border-t border-line px-4 ${lines === 2 ? "py-3" : "items-center py-2.5"}`}>
+    <div key={key} className={`flex min-h-11 gap-3 ${lines === 2 ? "py-1.5" : "items-center py-1.5"}`}>
       <Bone className={`size-4 rounded-full ${lines === 2 ? "mt-0.5" : ""}`} />
       <span className="min-w-0 flex-1"><SkeletonLine size="sm" width={lines === 2 ? "w-28" : "w-2/3"} />{lines === 2 && <SkeletonLine size="sm" width="w-3/4" className="mt-0.5" />}</span>
       {lines === 1 && <SkeletonBadge width="w-14" />}
@@ -247,21 +247,21 @@ export function WorkspaceOverviewSkeleton() {
   return (
     <Skeleton label="Loading the app" className={pageClass}>
       {productHeader({ title: "w-48", subtitle: 1, subtitleWidth: "w-80", actions: ["w-16"], actionSize: "sm" })}
-      <div className="grid items-start gap-3 @4xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      <div className="grid items-start gap-x-10 gap-y-8 @4xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="grid min-w-0 gap-3">
-          <SkeletonCard className="flex items-center gap-3 p-4">
-            <Bone className="size-8 rounded-md" />
-            <div className="min-w-0 flex-1"><SkeletonLine size="caption" width="w-16" /><SkeletonLine size="title" width="w-56" /><SkeletonLine size="sm" width="w-3/4" className="mt-0.5" /></div>
+          <SkeletonCard className="flex flex-wrap items-center gap-3 p-4">
+            <Bone className="size-6 rounded-md" />
+            <div className="min-w-0 flex-1 basis-48"><SkeletonLine size="caption" width="w-16" /><SkeletonLine size="title" width="w-56" /><SkeletonLine size="sm" width="w-3/4" className="mt-0.5" /></div>
             <SkeletonButton width="w-32" />
           </SkeletonCard>
-          <SkeletonCard className="p-0">
-            <div className="px-4 pt-4"><SkeletonLine size="title" width="w-16" /><SkeletonLine size="caption" width="w-24" className="mt-0.5" /></div>
-            <div className="mt-3">{rows(["profile", "brand", "competitors"], 2)}</div>
-          </SkeletonCard>
-          <SkeletonCard className="p-0">
-            <div className="px-4 pt-4"><SkeletonLine size="title" width="w-28" /><SkeletonLine size="caption" width="w-40" className="mt-0.5" /></div>
-            <div className="mt-3">{rows(UNLOCKABLE.map((u) => u.feature), 1)}</div>
-          </SkeletonCard>
+          <div className="mt-3">
+            <div className="mb-2 flex min-h-7 items-center"><SkeletonLine size="sm" width="w-16" /></div>
+            {rows(["profile", "brand", "competitors"], 2)}
+          </div>
+          <div className="mt-3">
+            <div className="mb-2 flex min-h-7 items-center"><SkeletonLine size="sm" width="w-28" /></div>
+            {rows(UNLOCKABLE.map((u) => u.feature), 1)}
+          </div>
         </div>
         <SkeletonCard className="p-4">
           <SkeletonLine size="title" width="w-20" />
@@ -276,9 +276,9 @@ export function WorkspaceSettingsSkeleton() {
   return (
     <Skeleton label="Loading settings" className={pageClass}>
       {productHeader({ title: "w-36", subtitle: 2 })}
-      <div className="grid max-w-4xl gap-4">
+      <div className="grid max-w-[700px] gap-4">
         <SkeletonCard className="flex flex-wrap items-center gap-3 p-4">
-          <Bone className="size-10 rounded-[22%]" />
+          <Bone className="size-8 rounded-md" />
           <div className="min-w-0 flex-1"><SkeletonLine size="title" width="w-20" /><SkeletonLine size="sm" width="w-3/4" className="mt-0.5" /></div>
           <SkeletonButton size="sm" width="w-40" />
         </SkeletonCard>
@@ -302,9 +302,9 @@ export function BrandSkeleton() {
       <SkeletonTabs widths={[60, 70, 62, 74]} className="mb-4" />
       <div className="grid gap-4">
         <SkeletonForm fields={4} />
-        <SkeletonCard className="p-5">
+        <SkeletonCard className="p-4">
           <SkeletonLine size="title" width="w-32" /><SkeletonLine size="sm" width="w-2/3" className="mt-0.5" />
-          <div className="mt-4 flex flex-wrap gap-3"><Bone className="size-14 rounded-[22%]" />{[0, 1, 2, 3].map((i) => <Bone key={i} className="aspect-[9/19.5] w-20 rounded-inner" />)}</div>
+          <div className="mt-4 flex flex-wrap gap-3"><Bone className="size-10 rounded-[22%]" />{[0, 1, 2, 3].map((i) => <Bone key={i} className="aspect-[9/19.5] w-20 rounded-inner" />)}</div>
         </SkeletonCard>
         <SkeletonForm fields={3} />
       </div>
@@ -333,7 +333,7 @@ export function ReportSkeleton() {
         <SkeletonLine size="caption" width="w-64" />
       </div>
       <SkeletonCard className="flex flex-wrap gap-px overflow-hidden bg-line [&>*]:flex-[1_1_160px] [&>*]:bg-card">
-        {Array.from({ length: 5 }, (_, i) => <div key={i} className="flex flex-col gap-1.5 px-4 py-3.5"><SkeletonLine size="caption" width="w-16" /><Bone className="h-6 w-14" /></div>)}
+        {Array.from({ length: 5 }, (_, i) => <div key={i} className="flex flex-col gap-1 px-4 py-3"><SkeletonLine size="caption" width="w-16" /><span className="flex h-[22px] items-center"><Bone className="h-4 w-14" /></span></div>)}
       </SkeletonCard>
       <div className="mt-4 grid gap-3 @4xl:grid-cols-[1.6fr_1fr]">
         <SkeletonCard className="p-4"><SkeletonLine size="title" width="w-40" /><SkeletonLine size="caption" width="w-56" className="mt-0.5" /><Bone className="mt-4 h-44 w-full rounded-inner" /></SkeletonCard>
@@ -355,28 +355,25 @@ export function ProjectSkeleton() {
 
 // MARK: Home
 
-/** Home below its header while the apps and the latest report load: the apps row, then the overview's three columns. */
+/** Home below its header while the apps and the latest report load: the apps as list rows, then the overview's cards. */
 export function OverviewSkeleton() {
   return (
     <Skeleton label="Loading Home">
-      <div className="mb-6">
-        <div className="mb-2.5 flex items-end justify-between"><SkeletonLine size="title" width="w-24" /><SkeletonLine size="sm" width="w-16" /></div>
-        <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @5xl:grid-cols-3">
-          {[0, 1].map((i) => (
-            <SkeletonCard key={i} className="flex flex-col gap-3 p-4">
-              <div className="flex items-center gap-3"><Bone className="size-8 rounded-[22%]" /><span className="min-w-0 flex-1"><SkeletonLine size="sm" width="w-1/2" /><SkeletonLine size="caption" width="w-3/4" /></span></div>
-              <div className="flex gap-4 border-t border-line pt-3"><SkeletonLine size="sm" width="w-16" /><SkeletonLine size="sm" width="w-12" /><SkeletonLine size="sm" width="w-12" /></div>
-            </SkeletonCard>
-          ))}
-        </div>
+      <div className="mb-8">
+        <div className="mb-2 flex min-h-7 items-center justify-between"><SkeletonLine size="sm" width="w-20" /><SkeletonLine size="sm" width="w-16" /></div>
+        {[0, 1].map((i) => (
+          <div key={i} className="flex h-12 items-center gap-3">
+            <Bone className="size-6 rounded-md" />
+            <span className="min-w-0 flex-1"><SkeletonLine size="sm" width="w-40" /><SkeletonLine size="xs" width="w-64" /></span>
+          </div>
+        ))}
       </div>
-      <div className="grid grid-cols-1 gap-3 @4xl:grid-cols-3">
-        {[0, 1, 2].map((i) => (
-          <SkeletonCard key={i} className="flex h-80 flex-col gap-3 p-4">
+      <div className="grid grid-cols-1 gap-3 @4xl:grid-cols-2">
+        {[0, 1].map((i) => (
+          <SkeletonCard key={i} className="flex flex-col gap-2 p-4">
             <SkeletonLine size="title" width="w-40" />
             <SkeletonLine size="caption" width="w-28" />
-            <Bone className="mt-4 h-10 w-40" />
-            <div className="mt-auto grid gap-0">{[0, 1, 2].map((j) => <div key={j} className="flex min-h-10 items-center justify-between gap-3 border-t border-line py-2"><SkeletonLine size="sm" width="w-24" /><SkeletonLine size="sm" width="w-14" /></div>)}</div>
+            <div className="mt-2 grid gap-0">{[0, 1, 2].map((j) => <div key={j} className="flex h-9 items-center justify-between gap-3"><SkeletonLine size="sm" width="w-24" /><SkeletonLine size="sm" width="w-14" /></div>)}</div>
           </SkeletonCard>
         ))}
       </div>
@@ -390,8 +387,8 @@ export function DashboardSkeleton() {
       <SkeletonPageHeader eyebrow={false} title="w-16" subtitleWidth="w-80" actions={["w-32"]} />
       <OverviewSkeleton />
       <section className="mt-8">
-        <div className="mb-2.5"><SkeletonLine size="title" width="w-24" /><SkeletonLine size="caption" width="w-20" className="mt-0.5" /></div>
-        <Skeleton label="Loading analyses"><SkeletonProjectCards className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @5xl:grid-cols-3" /></Skeleton>
+        <div className="mb-2 flex min-h-7 items-center"><SkeletonLine size="sm" width="w-24" /></div>
+        <Skeleton label="Loading analyses"><SkeletonProjectCards /></Skeleton>
       </section>
     </div>
   );
@@ -415,7 +412,7 @@ export function CompetitorFormSkeleton() {
   const check = (lines: number) => <div className="flex items-start gap-2"><Bone className="mt-0.5 size-4 rounded-xs" /><SkeletonText lines={lines} className="flex-1" /></div>;
   return (
     <Skeleton label="Loading your apps">
-      <SkeletonCard className="p-5">
+      <SkeletonCard className="p-4">
         <SkeletonText lines={2} />
         <div className="mt-5">{label("w-10")}<div className="grid gap-2 @xl:grid-cols-2">{[0, 1].map((i) => <Bone key={i} className="h-[62px] rounded-control" />)}</div></div>
         <div className="mt-6">{label()}<div className="grid gap-2 @xl:grid-cols-2">{[0, 1, 2, 3, 4].map((i) => <Bone key={i} className="h-11 rounded-control" />)}</div></div>
@@ -429,5 +426,35 @@ export function CompetitorFormSkeleton() {
         <div className="mt-6 flex justify-between"><SkeletonButton width="w-14" /><SkeletonButton width="w-40" /></div>
       </SkeletonCard>
     </Skeleton>
+  );
+}
+
+// MARK: Market
+
+/** Market below its header: the tabs, then a list of apps (icon, name and developer, rating, price, version). */
+export function MarketBodySkeleton() {
+  return (
+    <Skeleton label="Loading apps">
+      <SkeletonTabs widths={[120, 92, 112]} className="mb-5" />
+      <div aria-hidden className="grid">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="flex h-12 items-center gap-3">
+            <Bone className="size-8 rounded-[22%]" />
+            <span className="flex min-w-0 flex-1 flex-col gap-1"><SkeletonLine size="sm" width="w-48" /><SkeletonLine size="xs" width="w-32" /></span>
+            <SkeletonLine size="sm" width="w-20" className="max-sm:hidden" />
+            <SkeletonLine size="sm" width="w-24" className="max-md:hidden" />
+          </div>
+        ))}
+      </div>
+    </Skeleton>
+  );
+}
+
+export function MarketSkeleton() {
+  return (
+    <div className={pageClass}>
+      {productHeader({ title: "w-28", subtitle: 1, subtitleWidth: "w-96", actions: ["w-28"] })}
+      <MarketBodySkeleton />
+    </div>
   );
 }

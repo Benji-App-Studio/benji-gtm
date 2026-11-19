@@ -5,6 +5,7 @@
 import type { ReactNode } from "react";
 import { FACT_SOURCE_KINDS, isVerified, sourceAgeDays, sourceLabel, type FactSource, type FactSourceKind } from "@/lib/brand-system";
 import { createClient } from "@/lib/supabase/client";
+import { uploadErrorText } from "@/lib/storage-usage";
 import { IconX } from "../icons";
 import { Badge, Button, Card, cx, Field, inputClass } from "../ui";
 
@@ -77,11 +78,11 @@ export function SourceField({ value, onChange, label = "Source" }: { value?: Fac
         <Badge tone={tone}>{sourceLabel(value)}</Badge>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <select className={cx(inputClass, "h-9 w-40! py-1.5")} aria-label="Where it was checked" value={source.kind} onChange={(e) => set({ kind: e.target.value as FactSourceKind })}>
+        <select className={cx(inputClass, "w-40!")} aria-label="Where it was checked" value={source.kind} onChange={(e) => set({ kind: e.target.value as FactSourceKind })}>
           {FACT_SOURCE_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
         </select>
-        <input className={cx(inputClass, "h-9 min-w-48 flex-1 py-1.5")} aria-label="Link" placeholder="https://… (the live ad, the App Store page)" value={source.url ?? ""} onChange={(e) => set({ url: e.target.value })} />
-        <input className={cx(inputClass, "h-9 w-40! py-1.5")} type="date" aria-label="Verified on" value={source.verifiedAt?.slice(0, 10) ?? ""} onChange={(e) => set({ verifiedAt: e.target.value || undefined })} />
+        <input className={cx(inputClass, "min-w-48 flex-1")} aria-label="Link" placeholder="https://… (the live ad, the App Store page)" value={source.url ?? ""} onChange={(e) => set({ url: e.target.value })} />
+        <input className={cx(inputClass, "w-40!")} type="date" aria-label="Verified on" value={source.verifiedAt?.slice(0, 10) ?? ""} onChange={(e) => set({ verifiedAt: e.target.value || undefined })} />
         <Button size="sm" variant="ghost" onClick={() => set({ verifiedAt: new Date().toISOString() })}>Verified today</Button>
         {value && <RemoveButton label="Remove the source" onClick={() => onChange(undefined)} />}
       </div>
@@ -95,7 +96,7 @@ export async function uploadFont(productId: string, file: File): Promise<string>
     .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({ error: "Couldn't reach the server. Try again." })) }));
   if (!ticket.ok) throw new Error(ticket.data.error);
   const { error } = await createClient().storage.from(ticket.data.bucket).uploadToSignedUrl(ticket.data.path, ticket.data.token, file, { contentType: ticket.data.contentType });
-  if (error) throw new Error(`${file.name}: ${error.message}`);
+  if (error) throw new Error(`${file.name}: ${uploadErrorText(error)}`);
   return ticket.data.url as string;
 }
 
@@ -103,10 +104,10 @@ export async function uploadFont(productId: string, file: File): Promise<string>
 export async function uploadBrandImage(productId: string, kind: "icon" | "screenshot", file: File): Promise<string> {
   if (!IMAGE_TYPES.includes(file.type)) throw new Error(`${file.name} isn't a PNG, JPEG or WebP image.`);
   if (file.size > IMAGE_MAX_BYTES) throw new Error(`${file.name} is over 15 MB.`);
-  const response = await fetch(`/api/workspaces/${productId}/assets`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, contentType: file.type }) });
+  const response = await fetch(`/api/workspaces/${productId}/assets`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, contentType: file.type, size: file.size }) });
   const ticket = await response.json().catch(() => ({ error: "Couldn't start the upload." }));
   if (!response.ok) throw new Error(ticket.error);
   const { error } = await createClient().storage.from(ticket.bucket).uploadToSignedUrl(ticket.path, ticket.token, file, { contentType: file.type });
-  if (error) throw new Error(`${file.name}: ${error.message}`);
+  if (error) throw new Error(`${file.name}: ${uploadErrorText(error)}`);
   return ticket.url as string;
 }

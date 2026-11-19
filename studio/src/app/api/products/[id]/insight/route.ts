@@ -4,6 +4,7 @@ import { backupOf, insightChanges, type ProductInsight } from "@/lib/product-ins
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { syncCompetitors } from "@/lib/server/competitors";
 import { fetchAppStoreReviews, startInsight } from "@/lib/server/insight";
+import { dbFailure } from "@/lib/server/errors";
 
 const COLUMNS = "*";
 
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/product
       insight_backup: backup,
       insight_applied_at: new Date().toISOString(),
     }).eq("id", id).select(COLUMNS).single<ProductRow>();
-    if (error) return Response.json({ error: error.message }, { status: 500 });
+    if (error) return dbFailure("insight apply", error, "Couldn't apply the profile. Try again.");
     return Response.json({ product: data, changes: patch.changes });
   }
 
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/product
       insight_backup: null,
       insight_applied_at: null,
     }).eq("id", id).select(COLUMNS).single<ProductRow>();
-    if (error) return Response.json({ error: error.message }, { status: 500 });
+    if (error) return dbFailure("insight undo", error, "Couldn't undo it. Try again.");
     return Response.json({ product: data });
   }
 

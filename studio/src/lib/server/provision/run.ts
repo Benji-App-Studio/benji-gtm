@@ -2,7 +2,7 @@
 // step is safe to repeat, so "resume" is simply running again: finished work is skipped or redone
 // harmlessly.
 import { collectFunctionFiles, deployFunctions, FUNCTION_NAMES } from "./functions";
-import { createOwner, detectPlan, limitsFor, listAdStyleAssets, listProjects, prepareStorage, projectProblem, readKeys, scheduleJobs } from "./install";
+import { createOwner, detectPlan, limitsFor, listAdStyleAssets, listProjects, prepareStorage, projectProblem, readKeys, refreshPlanLimits, scheduleJobs } from "./install";
 import { isProjectRef, managementApi, projectApi, projectUrl } from "./management-api";
 import { applyMigrations, inspect, listMigrations, retargetSql, setFunctionUrls, type ProjectInspection } from "./migrations";
 import { ProvisionError, redact, STEP_IDS, type Emit, type FetchLike, type Plan, type ProgressEvent, type ProjectKeys, type ProjectSummary, type RepoFiles, type StepId } from "./types";
@@ -114,7 +114,13 @@ export async function provision(input: ProvisionInput, deps: ProvisionDeps, onEv
       const owner = await createOwner(api, await projectClient(), ref, { ...input.owner, appOrigin, limits: limitsFor(detected), workspaceName: input.workspaceName }, emit);
       result.ownerUserId = owner.userId;
     },
-    storage: async () => { const { plan: detected } = await needProject(false); await prepareStorage(api, await projectClient(), deps.files, ref, detected, emit); },
+    storage: async () => {
+      const { plan: detected } = await needProject(false);
+      const { uploadLimitMb } = await prepareStorage(api, await projectClient(), deps.files, ref, detected, emit);
+      // The plan was detected again for this run: after an upgrade (or a downgrade) the stored limits
+      // follow it, unless the owner changed them by hand (install.ts limitsToWrite).
+      await refreshPlanLimits(api, ref, detected, uploadLimitMb, emit);
+    },
     jobs: async () => { await needProject(false); await scheduleJobs(api, ref, emit); },
     config: async () => {
       if (!deps.writeConfig) { emit({ step: "config", status: "skipped", message: "The connection wasn't saved on this computer." }); return; }

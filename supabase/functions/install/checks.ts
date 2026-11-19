@@ -291,7 +291,7 @@ export async function checkHiggsfield(key: string, fetchImpl: Fetch): Promise<Ch
     return ok("Higgsfield accepted the key.");
   } catch (error) {
     if (error instanceof HiggsfieldApiError) {
-      if (error.status === 401 || error.status === 403) return failed("Higgsfield rejected this key. Create an API key in the Higgsfield console and paste the key ID and secret together, as ID:SECRET.");
+      if (error.status === 401 || error.status === 403) return failed("Higgsfield refused this key. Check that your API balance has funds (open.higgsfield.ai > Billing) and that the key is active, then click Copy API key there and paste it again.");
       return unreachable("Higgsfield", `it answered ${error.status}`);
     }
     return unreachable("Higgsfield", reason(error));

@@ -7,6 +7,7 @@ import { isResponse, requireUser } from "@/lib/server/auth";
 import { ComposeError, composeAd } from "@/lib/server/compose";
 import { setCreativeFile } from "@/lib/server/creative-file";
 import { creativesBackend } from "@/lib/server/creatives-backend";
+import { caughtFailure, logDbError } from "@/lib/server/errors";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/
     const stem = `${plate.path.replace(/\.[^./]+$/, "")}-composed-${Date.now().toString(36)}`;
     const upload = async (path: string, bytes: Buffer | string, type: string) => {
       const { error } = await supabase.storage.from(CREATIVES_BUCKET).upload(path, typeof bytes === "string" ? new Blob([bytes], { type }) : bytes, { contentType: type, upsert: true });
-      if (error) throw new Error(/row-level security|policy/i.test(error.message) ? `Storage refused the upload (${error.message}).` : `Couldn't store ${path.split("/").pop()}: ${error.message}`);
+      if (error) throw new Error(/row-level security|policy/i.test(error.message) ? logDbError("compose upload", error, "Storage refused the upload. Open /setup and press Apply the update, then try again.") : logDbError("compose upload", error, `Couldn't store ${path.split("/").pop()}. Try again.`));
       return publicUrl(path);
     };
     const pngUrl = await upload(`${stem}.png`, out.png, "image/png");
@@ -117,9 +118,12 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/
     if (error instanceof ComposeError) {
       // Recorded on the creative, so the card shows "text to shorten" and approval waits for a fix.
       const saved = await setCreativeFile(supabase, id, { copy: { ...(creative.copy ?? {}), composeError: { problems: error.problems, at: new Date().toISOString(), copy, layout: layout.id } } });
-      if ("error" in saved) return Response.json({ error: `${error.message} (and the problems couldn't be saved on the creative: ${saved.error})`, problems: error.problems }, { status: 502 });
+      if ("error" in saved) {
+        console.error("[api] compose save problems:", saved.error);
+        return Response.json({ error: `${error.message} (and the problems couldn't be saved on the creative)`, problems: error.problems }, { status: 502 });
+      }
       return Response.json({ error: error.message, problems: error.problems }, { status: 422 });
     }
-    return Response.json({ error: `Couldn't compose the ad: ${error instanceof Error ? error.message : String(error)}` }, { status: 502 });
+    return caughtFailure("compose", error, "Couldn't compose the ad. Try again.", 502);
   }
 }

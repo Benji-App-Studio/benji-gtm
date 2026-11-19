@@ -7,14 +7,14 @@ import { useState, type ComponentProps, type ReactNode } from "react";
 import { cx, segmentClass, segmentTrackClass } from "@/components/ui";
 
 export function Panel({ className, ...props }: ComponentProps<"section">) {
-  return <section className={cx("min-w-0 rounded-card border border-line bg-card shadow-card", className)} {...props} />;
+  return <section className={cx("min-w-0 rounded-card border border-line bg-card", className)} {...props} />;
 }
 
 export function PanelHead({ title, sub, right, className }: { title: ReactNode; sub?: ReactNode; right?: ReactNode; className?: string }) {
   return (
     <div className={cx("flex flex-wrap items-start justify-between gap-x-4 gap-y-2", className)}>
       <div className="min-w-0">
-        <h2 className="text-title font-medium text-ink">{title}</h2>
+        <h2 className="text-sm font-medium text-ink">{title}</h2>
         {sub && <p className="mt-0.5 text-caption text-muted">{sub}</p>}
       </div>
       {right}
@@ -30,7 +30,7 @@ export function DeltaChip({ value, goodWhenUp = true, suffix = "%", className }:
   const good = flat ? null : up === goodWhenUp;
   const shown = suffix === "%" ? Math.abs(value * 100) : Math.abs(value);
   return (
-    <span className={cx("inline-flex h-[22px] items-center gap-1 rounded-full border border-hairline bg-raised px-2 text-xs font-medium whitespace-nowrap text-ink tabular-nums", className)}>
+    <span className={cx("inline-flex h-5 items-center gap-1 rounded-full border border-hairline bg-raised px-1.5 text-xs font-medium whitespace-nowrap text-ink tabular-nums", className)}>
       <span aria-hidden className={cx("text-[9px]", good === null ? "text-muted" : good ? "text-win" : "text-warn")}>{flat ? "■" : up ? "▲" : "▼"}</span>
       <span className="sr-only">{flat ? "No change" : up ? "Up" : "Down"}</span>
       {shown < 10 ? shown.toFixed(1) : Math.round(shown)}{suffix}
@@ -57,16 +57,16 @@ export function HowLabel({ label, how, className }: { label: ReactNode; how?: st
   );
 }
 
-/** A KPI inside a strip: label, a big number, and one line under it. */
+/** A KPI inside a strip: label, an 18 px number, and one line under it. */
 export function Kpi({ label, value, hint, delta, how, tone }: { label: string; value: ReactNode; hint?: ReactNode; delta?: ReactNode; how?: string; tone?: "warn" | "win" }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 bg-card px-4 py-3.5">
+    <div className="flex min-w-0 flex-col gap-1 bg-card px-4 py-3">
       <HowLabel label={<span className="text-caption text-muted">{label}</span>} how={how} />
-      <div className="flex flex-wrap items-center gap-2.5">
+      <div className="flex flex-wrap items-center gap-2">
         <span className={cx("text-figure font-medium tabular-nums", tone === "warn" ? "text-warn" : tone === "win" ? "text-win" : "text-ink")}>{value}</span>
         {delta}
       </div>
-      {hint && <span className="text-caption text-label">{hint}</span>}
+      {hint && <span className="text-caption text-muted">{hint}</span>}
     </div>
   );
 }
@@ -74,7 +74,7 @@ export function Kpi({ label, value, hint, delta, how, tone }: { label: string; v
 /** Label on the left, value (and an optional chip) on the right, with a hairline between rows. */
 export function KeyValue({ label, value, chip, how }: { label: string; value: ReactNode; chip?: ReactNode; how?: string }) {
   return (
-    <div className="flex min-h-10 items-start justify-between gap-4 border-t border-line py-2.5 first:border-t-0">
+    <div className="flex min-h-9 items-start justify-between gap-4 border-t border-line py-2 first:border-t-0">
       <HowLabel label={<span className="text-sm text-label">{label}</span>} how={how} className="min-w-0" />
       <span className="flex shrink-0 items-center gap-2 text-sm font-medium text-ink tabular-nums">{value}{chip}</span>
     </div>
@@ -98,7 +98,7 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
 /** "● On target" — a dot for the tone and the words, in a rounded chip (as in the jobs table). */
 export function StatusChip({ label, tone }: { label: string; tone: "win" | "warn" | "neutral" | "accent" }) {
   return (
-    <span className="inline-flex h-[22px] items-center gap-1.5 rounded-full border border-hairline bg-raised px-2 text-xs leading-none font-medium whitespace-nowrap text-ink">
+    <span className="inline-flex h-5 items-center gap-1.5 rounded-full border border-hairline bg-raised px-2 text-xs leading-none font-medium whitespace-nowrap text-ink">
       <span aria-hidden className={cx("size-1.5 rounded-full", tone === "win" ? "bg-win" : tone === "warn" ? "bg-warn" : tone === "accent" ? "bg-accent" : "bg-faint")} />
       {label}
     </span>
@@ -115,14 +115,14 @@ const ICON: Record<NeedsYouItem["tone"], ReactNode> = {
 
 /** The "Needs you" list: what to look at first, each with a way into the table. */
 export function NeedsYou({ items, empty }: { items: NeedsYouItem[]; empty: ReactNode }) {
-  if (!items.length) return <p className="mt-4 text-sm text-muted">{empty}</p>;
+  if (!items.length) return <p className="mt-3 text-sm text-muted">{empty}</p>;
   return (
-    <ul className="mt-2 divide-y divide-line">
+    <ul className="mt-2 flex flex-col">
       {items.map((item) => {
         const body = (
           <>
-            <span className={cx("grid size-8 shrink-0 place-items-center rounded-md", item.tone === "warn" ? "bg-warn-soft text-warn" : item.tone === "win" ? "bg-win-soft text-win" : "bg-accent-soft text-accent")}>
-              <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>{ICON[item.tone]}</svg>
+            <span className={cx("grid size-6 shrink-0 place-items-center rounded-md", item.tone === "warn" ? "bg-warn-soft text-warn" : item.tone === "win" ? "bg-win-soft text-win" : "bg-accent-soft text-accent")}>
+              <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>{ICON[item.tone]}</svg>
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-medium text-ink">{item.title}</span>
@@ -134,8 +134,8 @@ export function NeedsYou({ items, empty }: { items: NeedsYouItem[]; empty: React
         return (
           <li key={item.id}>
             {item.onClick
-              ? <button type="button" onClick={item.onClick} className="flex w-full items-center gap-3 py-2.5 text-left transition-opacity hover:opacity-80">{body}</button>
-              : <div className="flex items-center gap-3 py-2.5">{body}</div>}
+              ? <button type="button" onClick={item.onClick} className="-mx-2 flex min-h-11 w-[calc(100%+1rem)] items-center gap-3 rounded-control px-2 py-1.5 text-left transition-colors hover:bg-hover">{body}</button>
+              : <div className="flex min-h-11 items-center gap-3 py-1.5">{body}</div>}
           </li>
         );
       })}

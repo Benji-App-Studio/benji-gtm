@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { ButtonLink, Card } from "@/components/ui";
 import { APP_NAME } from "@/lib/brand-config";
 import { getInstallConfig } from "@/lib/install/config";
+import { localModePage } from "@/lib/server/owner-session";
 import { isLocalRequest } from "@/lib/server/provision/guard";
 import { createClient } from "@/lib/supabase/server";
 import { SetupChecklist } from "./setup-checklist";
@@ -22,8 +23,8 @@ async function viewer(): Promise<"signed-out" | "member" | "owner"> {
 
 function Notice({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Card className="space-y-3 p-5">
-      <h2 className="text-base font-medium">{title}</h2>
+    <Card className="space-y-3 p-4">
+      <h2 className="text-sm font-medium">{title}</h2>
       {children}
     </Card>
   );
@@ -40,12 +41,13 @@ export default async function SetupPage({ searchParams }: PageProps<"/setup">) {
   const local = isLocalRequest({ host: head.get("host"), origin: null, forwardedFor: head.get("x-forwarded-for") });
   const who = config ? await viewer() : null;
   const finishing = who === "owner" && step === "keys";
+  const localMode = config ? await localModePage() : false;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pt-5 pb-10 sm:px-6 md:pt-[27px] md:pb-[34px]">
+    <div className="mx-auto w-full max-w-[748px] px-4 pt-10 pb-16 sm:px-6 md:pt-16">
       <p className="eyebrow">{config && !finishing ? "Your install" : `Welcome to ${APP_NAME}`}</p>
-      <h1 className="mt-1 text-[clamp(1.5rem,3cqi,2rem)] leading-[1.1] font-normal tracking-[-0.03em]">{config && !finishing ? "Setup" : `Set up ${APP_NAME}`}</h1>
-      <p className="mt-1 mb-6 text-sm text-muted">
+      <h1 className="mt-1 text-display font-semibold">{config && !finishing ? "Setup" : `Set up ${APP_NAME}`}</h1>
+      <p className="mt-1 mb-8 text-sm text-muted">
         {config && !finishing
           ? `${APP_NAME} is connected to your Supabase project.`
           : "Six short steps, about ten minutes. You don't need to write any code. Everything you create here belongs to you."}
@@ -58,7 +60,13 @@ export default async function SetupPage({ searchParams }: PageProps<"/setup">) {
       )}
       {!config && local && <SetupChecklist appName={APP_NAME} start="project" />}
 
-      {who === "signed-out" && (
+      {who === "signed-out" && localMode && (
+        <Notice title="Setup is finished">
+          <p className="text-sm text-muted">Open {APP_NAME}: on this computer it signs you in by itself. If it can&apos;t, it says why and what to do.</p>
+          <ButtonLink href="/app">Open {APP_NAME}</ButtonLink>
+        </Notice>
+      )}
+      {who === "signed-out" && !localMode && (
         <Notice title="Setup is finished">
           <p className="text-sm text-muted">Sign in to use {APP_NAME}. The owner can also come back here to install updates.</p>
           <ButtonLink href={`/login?next=${encodeURIComponent("/setup")}`}>Sign in</ButtonLink>

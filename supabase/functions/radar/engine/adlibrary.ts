@@ -7,14 +7,15 @@ import type { Format, Reel, Segment } from "./types.ts";
 
 // MARK: Shapes
 
-export type AdNetwork = "meta" | "tiktok";
+export type AdNetwork = "meta" | "tiktok" | "google";
 /**
  * Where the ad was read from. `meta_mcp` is a manual import of the Meta Ads MCP's `ads_library_search`
  * output; `meta_local` an import of the local Ad Library scraper's file (scripts/meta-ad-library).
  */
-export type AdSource = "meta_api" | "meta_apify" | "meta_mcp" | "meta_local" | "tiktok_library" | "tiktok_creative_center" | "tiktok_apify";
-/** Where Meta shows the ad. TikTok ads are always `tiktok`. */
-export type AdPlacement = "facebook" | "instagram" | "audience_network" | "messenger" | "threads" | "whatsapp" | "tiktok";
+export type AdSource = "meta_api" | "meta_apify" | "meta_mcp" | "meta_local" | "tiktok_library" | "tiktok_creative_center" | "tiktok_apify" | "google_apify";
+/** Where the ad is shown. TikTok ads are always `tiktok`; Google's are its surfaces (search, YouTube…). */
+export type AdPlacement = "facebook" | "instagram" | "audience_network" | "messenger" | "threads" | "whatsapp" | "tiktok"
+  | "google_search" | "youtube" | "google_shopping" | "google_maps" | "google_play";
 export type AdMediaType = "video" | "image" | "carousel" | "dco" | "text" | "unknown";
 
 export interface AdMedia {
@@ -50,6 +51,8 @@ export interface AdLibraryDetails {
   sensitive?: boolean;
   /** Special ad categories (housing, employment, credit, politics…); UNKNOWN is dropped. */
   categories?: string[];
+  /** Google: the Transparency Center's own preview of a text, video or rich ad (it has no file to save). */
+  previewUrl?: string | null;
 }
 
 /** The attribution or deep-link tool behind a link, from its host. */
@@ -186,6 +189,9 @@ const tidy = (text: string) => text.replace(/\{\{[^}]+\}\}/g, "").replace(/\s+\n
 const PLACEMENTS: Record<string, AdPlacement> = {
   facebook: "facebook", instagram: "instagram", audience_network: "audience_network", messenger: "messenger",
   threads: "threads", whatsapp: "whatsapp", tiktok: "tiktok",
+  // Google Ads Transparency Center's surfaces.
+  search: "google_search", google_search: "google_search", youtube: "youtube", shopping: "google_shopping", google_shopping: "google_shopping",
+  maps: "google_maps", google_maps: "google_maps", play: "google_play", google_play: "google_play",
 };
 const placementsOf = (value: unknown): AdPlacement[] =>
   [...new Set(list(value).map((p) => PLACEMENTS[str(p).toLowerCase()]).filter(Boolean))];
@@ -319,12 +325,13 @@ export function fromMetaMcp(payload: unknown, countries: string[] = []): PaidAd[
 /**
  * Apify actors that read the public Ad Library web pages (every active commercial ad in any country,
  * with media, start date, platforms and Meta's collation count). Both bill per ad and need no
- * Facebook login; neither is run without the user confirming the cost.
+ * Facebook login; neither is run without the user confirming the cost. Ids, input fields and prices
+ * checked on the Apify Store on 19 November 2026 (both actors updated that week).
  */
 export const META_APIFY_ACTORS = {
-  /** Default: ~$0.75 per 1,000 ads. Input `urls` (Ad Library search or Page URLs) + `count`; raw snake_case output. */
+  /** Default (the community actor): $0.75 per 1,000 ads. Input `urls` (Ad Library search or Page URLs) + `count`; raw snake_case output. */
   curious: "curious_coder~facebook-ads-library-scraper",
-  /** Apify's own, the fallback: ~$5.80 per 1,000 on the free plan ($3.40 on Business). Input `startUrls`; camelCase output. */
+  /** Apify's own: $5.80 per 1,000 on the free plan ($3.40 on Business). Input `startUrls` + `resultsLimit` per URL; camelCase output. */
   official: "apify~facebook-ads-scraper",
 } as const;
 
@@ -347,7 +354,8 @@ export function adLibraryUrl(o: { pageId?: string; searchTerms?: string; country
 export function metaApifyInput(o: { urls: string[]; limitPerUrl: number; actor?: keyof typeof META_APIFY_ACTORS }) {
   const actor = o.actor ?? "curious";
   return actor === "official"
-    ? { startUrls: o.urls.map((url) => ({ url })), resultsLimit: o.limitPerUrl * o.urls.length, activeStatus: "active" }
+    // `resultsLimit` is per URL on Apify's actor (its input schema: "Results limit per URL").
+    ? { startUrls: o.urls.map((url) => ({ url })), resultsLimit: o.limitPerUrl, activeStatus: "active" }
     : { urls: o.urls.map((url) => ({ url })), count: o.limitPerUrl * o.urls.length, limitPerSource: o.limitPerUrl, scrapeAdDetails: false, "scrapePageAds.activeStatus": "active" };
 }
 
@@ -473,20 +481,29 @@ export function fromTikTokLibrary(raw: Record<string, any>, competitor?: string 
 }
 
 /**
- * Apify actors for TikTok (no TikTok login needed). Creative Center "Top Ads" covers ~60 markets
- * including the US but ranks by performance (no dates); the Ad Library scraper has first/last shown
- * dates but only for ads served in the EU/UK/CH. US-only ads outside Top Ads aren't visible anywhere.
+ * Apify actors for TikTok (no TikTok login needed), checked on the Apify Store on 19 November 2026.
+ * Creative Center "Top Ads" covers 24 markets including the US but ranks by performance, by industry
+ * and keyword, never by brand, and has no dates. A brand's own ads are only listed in TikTok's Ad
+ * Library, which holds ads shown in the EU/EEA, the UK and Switzerland; US-only ads aren't visible anywhere.
  */
 export const TIKTOK_APIFY_ACTORS = {
-  /** ~$1 per 1,000 (+$2/1,000 with details). Input countryCode, period (7/30/180), industry, keyword, maxItems. Video links expire in 1–2 days. */
+  /** $1 per 1,000 + $0.005 per run (+$2/1,000 with details). Input countryCode (24 markets), period "7"/"30"/"180" (text), keyword, maxItems. Video links expire in 1–2 days. */
   topAds: "azzouzana~tiktok-creative-center-top-ads-scraper",
-  /** ~$0.49 per 1,000. Ad Library (EU/UK/CH): query or advertiser, country, date range. */
-  library: "lexis-solutions~tiktok-ads-scraper",
+  /** $3 per 1,000. TikTok's Ad Library (Europe): advertiser name (`search`) or business id (`adv_biz_ids`), region, status. */
+  library: "s-r~tiktok-ads-library",
 } as const;
 
-export const tiktokTopAdsInput = (o: { country?: string; periodDays?: 7 | 30 | 180; keyword?: string; max?: number }) => ({
-  countryCode: (o.country ?? "US").toUpperCase(), period: o.periodDays ?? 30, ...(o.keyword ? { keyword: o.keyword } : {}), maxItems: o.max ?? 100,
-});
+/** The markets the Top Ads actor offers (its input schema's `countryCode` list). */
+export const TIKTOK_TOP_ADS_COUNTRIES = ["US", "CA", "MX", "BR", "GB", "DE", "FR", "IT", "ES", "NL", "PL", "SE", "TR", "SA", "AE", "AU", "JP", "KR", "ID", "TH", "VN", "MY", "PH", "SG"];
+
+export const tiktokTopAdsInput = (o: { country?: string; periodDays?: 7 | 30 | 180; keyword?: string; max?: number }) => {
+  const country = (o.country ?? "US").toUpperCase();
+  return {
+    countryCode: TIKTOK_TOP_ADS_COUNTRIES.includes(country) ? country : "US",
+    // The actor's schema takes the period as text ("7", "30" or "180"); a number fails its input check.
+    period: String(o.periodDays ?? 30), ...(o.keyword ? { keyword: o.keyword } : {}), maxItems: o.max ?? 100,
+  };
+};
 
 /** One Creative Center "Top Ads" item → PaidAd. There's no start date, so these rank by TikTok's own CTR/likes instead. */
 export function fromTikTokTopAd(raw: Record<string, any>): PaidAd | null {
@@ -506,6 +523,108 @@ export function fromTikTokTopAd(raw: Record<string, any>): PaidAd | null {
     snapshotUrl: `https://ads.tiktok.com/business/creativecenter/topads/${adId}/pc/en`,
     countries: list(raw.country_code).map(str).filter(Boolean), languages: [], collationId: null, variants: 1, reach: null,
     metrics: { ctr: Number(raw.ctr) || null, likes: Number(raw.like) || null, budget: str(raw.cost) || null },
+  };
+}
+
+/** Days since a date at which an ad still counts as running (the libraries refresh their dates daily, some later). */
+const RUNNING_WITHIN_DAYS = 3;
+const shownRecently = (iso: string | null, now = Date.now()) => Boolean(iso) && now - Date.parse(iso as string) < RUNNING_WITHIN_DAYS * 86_400_000;
+const httpsOn = (value: unknown, host: RegExp): string | null => {
+  const url = str(value);
+  try { return url && new URL(url).protocol === "https:" && host.test(new URL(url).hostname) ? url : null; } catch { return null; }
+};
+
+/**
+ * One ad from TikTok's Ad Library read through Apify (`s-r~tiktok-ads-library`): ads shown in Europe,
+ * by advertiser name or business id. Count, link-only and summary rows are skipped.
+ */
+export function fromTikTokEuAd(raw: Record<string, any>, competitor?: string | null): PaidAd | null {
+  if (raw.result_type && raw.result_type !== "ad") return null;
+  const adId = str(raw.ad_id ?? raw.id);
+  if (!adId || !/^\d{5,30}$/.test(adId)) return null;
+  const media: AdMedia[] = [
+    ...list(raw.videos).map((v: any) => ({ type: "video" as const, url: str(v?.video_url ?? v?.url), thumb: str(v?.cover_image ?? v?.cover_image_url) || null })),
+    ...list(raw.image_urls).map((url) => ({ type: "image" as const, url: str(url) })),
+  ].filter((m) => m.url);
+  const last = isoDate(raw.last_shown);
+  const active = shownRecently(last);
+  return {
+    adId, network: "tiktok", source: "tiktok_apify",
+    pageId: str(raw.adv_biz_id ?? raw.advertiser_id ?? raw.business_id) || null, pageName: str(raw.advertiser_name) || "Unknown advertiser", competitor: competitor ?? null,
+    startedAt: isoDate(raw.first_shown), stoppedAt: active ? null : last, active,
+    placements: ["tiktok"], mediaType: mediaTypeOf(media, str(raw.ad_type)),
+    body: tidy(str(raw.ad_text)), headline: "", description: "", cta: "", linkUrl: null,
+    media, thumb: media.find((m) => m.thumb)?.thumb ?? media.find((m) => m.type === "image")?.url ?? null,
+    snapshotUrl: httpsOn(raw.deeplink, /(^|\.)tiktok\.com$/) ?? `https://library.tiktok.com/ads/detail/?ad_id=${adId}`,
+    countries: str(raw.region) && str(raw.region) !== "all" ? [str(raw.region).toUpperCase()] : [], languages: [], collationId: null, variants: 1,
+    reach: null,
+  };
+}
+
+/** Input for the TikTok Ad Library actor: one advertiser, by business id when known, else by name; one European country or all. */
+export function tiktokEuInput(o: { businessId?: string | null; name?: string | null; country?: string | null; max?: number }) {
+  return {
+    // The business id narrows the search on its own only when the name box is empty.
+    ...(o.businessId ? { adv_biz_ids: o.businessId } : { search: (o.name ?? "").slice(0, 100), query_type: "1" }),
+    region: o.country ? o.country.toUpperCase() : "all",
+    ad_status: "active", sort: "last_shown_date,desc", limit: Math.min(500, o.max ?? 100),
+  };
+}
+
+// MARK: Google Ads Transparency Center (through Apify)
+
+/**
+ * Google's ad library: search, YouTube, Shopping, Maps and Play ads by advertiser, in every country
+ * Google serves (dates for the last 12 months). Read through `scrapesage~google-ads-transparency-scraper`
+ * (checked on the Apify Store on 19 November 2026: $2 per 1,000 ads, $2 per 1,000 for the text of text ads).
+ */
+export const GOOGLE_APIFY_ACTOR = "scrapesage~google-ads-transparency-scraper";
+
+/** One advertiser's ads: by advertiser id (AR…), else every ad pointing at a website, else a name search (its best match). */
+export function googleAdsInput(o: { advertiserId?: string | null; domain?: string | null; name?: string | null; country?: string | null; max?: number }) {
+  const target = o.advertiserId ? { advertiserIds: [o.advertiserId] } : o.domain ? { domains: [o.domain] } : { queries: [(o.name ?? "").slice(0, 100)], maxAdvertisersPerQuery: 1 };
+  return {
+    ...target, resultType: "ads", region: o.country ? o.country.toUpperCase() : "ANYWHERE", adFormat: "ALL",
+    maxAdsPerSearch: Math.min(1000, o.max ?? 100), includeAdText: true, includeDetails: false,
+  };
+}
+
+const GOOGLE_FORMAT: Record<string, AdMediaType> = { TEXT: "text", IMAGE: "image", VIDEO: "video" };
+
+/** One Google Ads Transparency Center ad → PaidAd. */
+export function fromGoogleAd(raw: Record<string, any>, competitor?: string | null): PaidAd | null {
+  const adId = str(raw.creativeId ?? raw.creative_id);
+  if (!/^CR\d{5,40}$/.test(adId)) return null;
+  const advertiserId = str(raw.advertiserId ?? raw.advertiser_id);
+  const format = str(raw.format).toUpperCase();
+  const image = httpsOn(raw.imageUrl ?? raw.image_url, /(^|\.)googlesyndication\.com$|(^|\.)googleusercontent\.com$|(^|\.)ytimg\.com$/);
+  const media: AdMedia[] = image ? [{ type: "image", url: image }] : [];
+  const last = isoDate(raw.lastShown ?? raw.last_shown);
+  const active = shownRecently(last);
+  const domain = str(raw.domain ?? raw.target_domain).toLowerCase().replace(/^www\./, "");
+  const region = str(raw.region).toUpperCase();
+  const text = list(raw.adTextLines).map(str).filter(Boolean);
+  const variations = Number(raw.variationCount);
+  return {
+    adId, network: "google", source: "google_apify",
+    pageId: /^AR\d{5,40}$/.test(advertiserId) ? advertiserId : null, pageName: str(raw.advertiserName ?? raw.advertiser_name) || "Unknown advertiser",
+    competitor: competitor ?? null,
+    startedAt: isoDate(raw.firstShown ?? raw.first_shown), stoppedAt: active ? null : last, active,
+    placements: placementsOf(raw.platforms), mediaType: GOOGLE_FORMAT[format] ?? (image ? "image" : "unknown"),
+    body: tidy(str(raw.adDescription) || (raw.adHeadline ? "" : text.slice(1).join("\n"))),
+    headline: tidy(str(raw.adHeadline) || (raw.adDescription ? "" : text[0] ?? "")),
+    description: str(raw.adDisplayUrl), cta: "",
+    linkUrl: /^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain) ? `https://${domain}` : null,
+    media, thumb: image,
+    snapshotUrl: httpsOn(raw.adUrl, /^adstransparency\.google\.com$/)
+      ?? (advertiserId ? `https://adstransparency.google.com/advertiser/${advertiserId}/creative/${adId}` : null),
+    countries: /^[A-Z]{2}$/.test(region) ? [region] : [], languages: [], collationId: null,
+    variants: Number.isFinite(variations) && variations > 1 ? variations : 1,
+    reach: Number(raw.impressionsMin) || null,
+    library: {
+      landingDomain: domain || null, linkHost: domain || null, tracking: null,
+      previewUrl: httpsOn(raw.previewUrl, /(^|\.)google\.com$|(^|\.)googleusercontent\.com$|(^|\.)googlesyndication\.com$/),
+    },
   };
 }
 
@@ -586,7 +705,7 @@ export function adToReel(ad: PaidAd & { daysRunning?: number | null }, transcrip
   return {
     id: `ad:${ad.network}:${ad.adId}`,
     // The Reel union has no Facebook: Meta ads read as Instagram (both are Meta video/image feeds).
-    platform: ad.network === "tiktok" ? "tiktok" : "instagram",
+    platform: ad.network === "tiktok" ? "tiktok" : ad.network === "google" && ad.mediaType === "video" ? "youtube" : "instagram",
     url: ad.snapshotUrl ?? "",
     owner: ad.pageName,
     account: ad.competitor ?? ad.pageName,

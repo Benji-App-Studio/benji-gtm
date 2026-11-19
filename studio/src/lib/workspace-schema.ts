@@ -82,7 +82,7 @@ export const CONNECTION_FIELDS: Record<ConnectionKey, { label: string; blurb: st
         clean: (v) => { const id = v.trim().match(/^(?:act[_=])?(\d{5,20})$/)?.[1] ?? v.match(/act[_=](\d{5,20})/)?.[1]; return id ? `act_${id}` : null; } },
       { key: "pageId", label: "Facebook Page ID", placeholder: "102345678901234", hint: "Page → About → Page transparency, or Business settings → Pages.", clean: digits(5, 25) },
       { key: "instagramId", label: "Instagram account ID", placeholder: "17841400000000000", hint: "Business settings → Instagram accounts. The numeric ID, not the handle.", clean: digits(5, 25) },
-      { key: "pixelId", label: "Pixel / dataset ID", placeholder: "1234567890", hint: "Events Manager → Data sources. For app events this is the app's dataset.", clean: digits(5, 25) },
+      { key: "pixelId", label: "Pixel / dataset ID", placeholder: "1234567890", hint: "Events Manager → Data sources → your dataset → Settings tab → Dataset ID.", clean: digits(5, 25) },
       { key: "appId", label: "Meta app ID", placeholder: "1234567890", hint: "developers.facebook.com → your app. Needed for app install campaigns.", clean: digits(5, 25) },
     ],
   },
@@ -90,15 +90,16 @@ export const CONNECTION_FIELDS: Record<ConnectionKey, { label: string; blurb: st
     label: "RevenueCat",
     blurb: "Trials, subscriptions and revenue, so Measure can work out LTV and payback.",
     fields: [
-      { key: "projectId", label: "Project ID", placeholder: "proj1a2b3c4d", hint: "In the dashboard URL: app.revenuecat.com/projects/<id>/…",
-        clean: (v) => { const id = v.match(/projects\/([A-Za-z0-9_-]{3,64})/)?.[1] ?? v.trim(); return /^[A-Za-z0-9_-]{3,64}$/.test(id) ? id : null; } },
+      { key: "projectId", label: "Project ID", placeholder: "proj1a2b3c4d", hint: "Project settings > General, starts with proj. A link from the dashboard works too.",
+        // The dashboard address shows the id without its "proj" prefix; the API needs it.
+        clean: (v) => { const raw = v.match(/projects\/([A-Za-z0-9_-]{3,64})/)?.[1] ?? v.trim(); const id = /^proj/.test(raw) ? raw : `proj${raw}`; return /^proj[A-Za-z0-9_-]{3,64}$/.test(id) ? id : null; } },
     ],
   },
   appstack: {
     label: "AppStack",
     blurb: "Install attribution from the App Store, matched to campaigns.",
     fields: [
-      { key: "appId", label: "App ID", placeholder: "Your AppStack app ID", hint: "From AppStack's app settings.",
+      { key: "appId", label: "App ID", placeholder: "com.example.app", hint: "Your app's bundle ID (iOS) or package name (Android).",
         clean: (v) => (/^[A-Za-z0-9._:-]{1,100}$/.test(v.trim()) ? v.trim() : null) },
     ],
   },
@@ -253,7 +254,7 @@ export function cleanBrandKit(input: unknown): Partial<Record<keyof BrandKit, un
 
 // MARK: Modules and navigation
 
-export type WorkspaceModule = "brand" | "research" | "formats" | "studio" | "playground" | "launch" | "measure" | "settings";
+export type WorkspaceModule = "brand" | "research" | "market" | "formats" | "studio" | "playground" | "launch" | "measure" | "settings";
 
 /**
  * A product's pages in sidebar order: its brand first (every generator reads it), then the loop
@@ -263,6 +264,7 @@ export type WorkspaceModule = "brand" | "research" | "formats" | "studio" | "pla
 export const WORKSPACE_MODULES: { key: WorkspaceModule; label: string; blurb: string; group?: "create"; hidden?: true }[] = [
   { key: "brand", label: "Brand", blurb: "Name, icon, screenshots, look, voice, offers and the claims a creative must never make: every creative follows it." },
   { key: "research", label: "Research", blurb: "Your competitors' paid ads from Meta's Ad Library: what's running, for how long, and why it works." },
+  { key: "market", label: "Market", blurb: "Your competitors' apps on the App Store: ratings, prices, how often they ship, what reviewers love and hate, and the top charts." },
   { key: "formats", label: "Formats", blurb: "A library of proven ad formats, each with a recreate prompt ready for the Studio (now the Studio's Start from).", group: "create", hidden: true },
   { key: "studio", label: "Studio", blurb: "Make creatives from a format and the brand, then check them against the forbidden claims before they go anywhere.", group: "create" },
   { key: "playground", label: "Playground", blurb: "Bring a reference ad and say what to change: new images in its exact style, with your product and brand.", group: "create" },
@@ -282,6 +284,7 @@ export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 export const MODULE_NEEDS: Record<Exclude<WorkspaceModule, "settings">, { connections: ConnectionKey[]; brandKit: boolean }> = {
   brand: { connections: [], brandKit: false },
   research: { connections: [], brandKit: false },
+  market: { connections: [], brandKit: false },
   formats: { connections: [], brandKit: false },
   studio: { connections: ["storage"], brandKit: true },
   playground: { connections: [], brandKit: true },

@@ -8,9 +8,11 @@ import type { CatalogItem } from "@/lib/creative-types";
 import { PAID_AD_COLUMNS, type LocalRunRow, type PaidAdRow, type PullRow, type ResearchData, type ResearchHealth, type Suggestion, type WatchRow } from "@/lib/research";
 import { storedMedia } from "@/lib/server/ad-media";
 import { isResponse, requireUser, type Session } from "@/lib/server/auth";
+import { refuseWhenFull } from "@/lib/server/storage";
 import { brandFor } from "@/lib/server/brand";
 import { readNewAds, research } from "@/lib/server/research";
 import { loadWorkspace } from "@/lib/server/workspaces";
+import { dbFailure } from "@/lib/server/errors";
 
 /** Deleting a workspace's stored media can take a minute. */
 export const maxDuration = 150;
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/research
   if (Number.isInteger(adsFrom) && adsFrom > 0) {
     const [workspace, slice, stored] = await Promise.all([loadWorkspace(productId), adsSlice(session, productId, adsFrom), storedMedia(session, productId)]);
     if (isResponse(workspace)) return workspace;
-    if (slice.error) return Response.json({ error: slice.error.message }, { status: 500 });
+    if (slice.error) return dbFailure("research ads slice", slice.error, "Couldn't load more ads. Try again.");
     return Response.json({ ads: slice.rows.map((ad) => lean(withStoredMedia(ad, stored))), adsNext: slice.next } satisfies Pick<ResearchData, "ads" | "adsNext">);
   }
 
@@ -111,7 +113,15 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/researc
     return Response.json(result.data, { status: result.ok ? 200 : result.status });
   }
   if (!["plan", "pull", "poll", "import", "media-status", "media-clear"].includes(action)) return Response.json({ error: "Unknown action." }, { status: 400 });
-  const payload = action === "pull" ? { productId, spend: input.spend === true }
+  // `watchIds`: collect (or plan) for these competitors only; every followed one without it.
+  const watchIds = Array.isArray(input.watchIds) ? input.watchIds.filter((id: unknown) => typeof id === "string").slice(0, 200) : undefined;
+  // Collecting saves ads and their media: refused while storage is full (nothing is paid for at Apify).
+  if (action === "pull") {
+    const full = await refuseWhenFull(session, "collect");
+    if (full) return full;
+  }
+  const payload = action === "pull" ? { productId, spend: input.spend === true, watchIds }
+    : action === "plan" ? { productId, watchIds }
     : action === "import" ? { productId, payload: input.payload, countries: input.countries, watchId: input.watchId }
     : action === "media-clear" ? { productId, pageId: typeof input.pageId === "string" ? input.pageId : undefined }
     : { productId };
@@ -136,9 +146,12 @@ const ADS_SLICE = 600;
 async function adsSlice(session: Session, productId: string, from: number): Promise<{ rows: PaidAdRow[]; next: number | null; error: { message: string } | null }> {
   // One extra row says whether another slice follows.
   // Hidden ads (the ad's DELETE) stay out of the list.
-  const { data, error } = await session.supabase.from("paid_ads").select(PAID_AD_COLUMNS).eq("product_id", productId).eq("hidden", false)
+  const query = (columns: string) => session.supabase.from("paid_ads").select(columns).eq("product_id", productId).eq("hidden", false)
     .order("started_at", { ascending: false, nullsFirst: false }).order("id", { ascending: false })
     .range(from, from + ADS_SLICE).returns<PaidAdRow[]>();
+  let { data, error } = await query(PAID_AD_COLUMNS);
+  // A database from before the reliability update has no decode_error yet: list the ads without it (the update banner asks for the update).
+  if (error && /decode_error/.test(error.message ?? "")) ({ data, error } = await query(PAID_AD_COLUMNS.replace(", decode_error", "")));
   if (error) return { rows: [], next: null, error };
   const rows = data ?? [];
   return rows.length > ADS_SLICE ? { rows: rows.slice(0, ADS_SLICE), next: from + ADS_SLICE, error: null } : { rows, next: null, error: null };

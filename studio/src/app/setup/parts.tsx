@@ -10,7 +10,11 @@ export const SUPABASE_LINKS = {
   signUp: "https://supabase.com/dashboard/sign-up",
   newProject: "https://supabase.com/dashboard/new",
   tokens: "https://supabase.com/dashboard/account/tokens",
+  dashboard: "https://supabase.com/dashboard/projects",
 };
+
+/** A project's page in the Supabase dashboard (where a paused project is restored). */
+export const projectDashboard = (ref: string | null) => (ref ? `https://supabase.com/dashboard/project/${ref}` : SUPABASE_LINKS.dashboard);
 
 /** A link that opens in a new tab, so the checklist stays where it is. */
 export function OutLink({ href, children }: { href: string; children: ReactNode }) {
@@ -33,14 +37,14 @@ export function StepCard({ number, title, why, state, summary, onOpen, children 
   number: number; title: string; why: ReactNode; state: CardState; summary?: ReactNode; onOpen?: () => void; children: ReactNode;
 }) {
   return (
-    <Card className={cx("p-5", state === "todo" && "opacity-60")} aria-current={state === "open" ? "step" : undefined}>
+    <Card className={cx("px-4 py-3", state === "open" && "pb-4", state === "todo" && "opacity-60")} aria-current={state === "open" ? "step" : undefined}>
       <div className="flex items-start gap-3">
-        <span className={cx("grid size-7 shrink-0 place-items-center rounded-full text-sm font-medium", state === "done" ? "bg-win-soft text-win" : "bg-control text-label")}>
-          {state === "done" ? <IconCheck className="size-4" /> : number}
+        <span className={cx("mt-px grid size-5 shrink-0 place-items-center rounded-full text-xs font-medium tabular-nums", state === "done" ? "bg-win-soft text-win" : "bg-control text-label")}>
+          {state === "done" ? <IconCheck className="size-3" /> : number}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-base font-medium">{title}</h2>
+          <div className="flex min-h-[22px] flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-medium">{title}</h2>
             {state === "done" && (
               <span className="flex items-center gap-2">
                 <Badge tone="win">Done</Badge>
@@ -48,10 +52,10 @@ export function StepCard({ number, title, why, state, summary, onOpen, children 
               </span>
             )}
           </div>
-          {state === "done" && summary && <p className="mt-0.5 text-sm text-muted">{summary}</p>}
+          {state === "done" && summary && <p className="mt-0.5 text-xs text-muted">{summary}</p>}
           {state === "open" && (
             <>
-              <p className="mt-1 text-sm text-muted">{why}</p>
+              <p className="mt-0.5 text-sm text-muted">{why}</p>
               <div className="mt-4 space-y-4">{children}</div>
             </>
           )}
@@ -61,8 +65,8 @@ export function StepCard({ number, title, why, state, summary, onOpen, children 
   );
 }
 
-/** What an access token is, said plainly, and how to make one. */
-export function TokenHelp({ appName }: { appName: string }) {
+/** What an access token is, said plainly, and how to make one. `action` is the button pressed after pasting it. */
+export function TokenHelp({ appName, action = "Check" }: { appName: string; action?: string }) {
   return (
     <>
       <p className="text-sm text-ink">
@@ -71,9 +75,12 @@ export function TokenHelp({ appName }: { appName: string }) {
       </p>
       <Steps>
         <li>Open <OutLink href={SUPABASE_LINKS.tokens}>Access Tokens in Supabase</OutLink>.</li>
-        <li>Press <b>Generate new token</b>. Give it any name, for example &quot;setup&quot;. If Supabase asks how long it should last, pick the shortest time.</li>
-        <li>Press <b>Copy</b>, then paste the token in the box below. It starts with <code>sbp_</code>.</li>
+        <li>Click <b>Generate new token</b> and name it &quot;setup&quot;.</li>
+        <li>Choose your project, and the <b>Full access</b> preset.</li>
+        <li>Pick the shortest expiry, create the token, and click <b>Copy</b>. It starts with <code>sbp_</code>.</li>
+        <li>Paste it in the box below and click <b>{action}</b>.</li>
       </Steps>
+      <p className="text-sm text-muted">If the page says the token isn&apos;t allowed, create it again with <b>Full access</b>: a Read-only token doesn&apos;t work.</p>
     </>
   );
 }
@@ -82,7 +89,7 @@ export function TokenHelp({ appName }: { appName: string }) {
 
 export interface StepProgress { status: StepStatus | "waiting"; message: string; detail?: string; progress?: { done: number; total: number } }
 export type ProgressMap = Partial<Record<StepId, StepProgress>>;
-export interface RunFailure { step?: StepId; message: string; detail?: string }
+export interface RunFailure { step?: StepId; message: string; detail?: string; code?: string }
 
 /**
  * Calls a setup route that streams one JSON object per line and feeds each progress event to the
@@ -96,8 +103,8 @@ export async function runStream(url: string, body: unknown, onEvent: (event: Pro
     return { message: "Couldn't reach the app. Check that it is still running, then press Retry." };
   }
   if (!response.ok || !response.body) {
-    const data = (await response.json().catch(() => null)) as { error?: string; detail?: string } | null;
-    return { message: data?.error ?? "Setup couldn't start. Press Retry.", detail: data?.detail };
+    const data = (await response.json().catch(() => null)) as { error?: string; detail?: string; code?: string } | null;
+    return { message: data?.error ?? "Setup couldn't start. Press Retry.", detail: data?.detail, code: data?.code ?? (response.status === 401 || response.status === 403 ? `http_${response.status}` : undefined) };
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -141,7 +148,7 @@ export function ProgressList({ ids, steps, running }: { ids: readonly StepId[]; 
   const details = ids.flatMap((id) => (steps[id]?.detail ? [`${id}: ${steps[id]?.detail}`] : []));
   return (
     <div>
-      <ul className="space-y-2.5" aria-live="polite">
+      <ul className="space-y-2" aria-live="polite">
         {ids.map((id) => {
           const step = steps[id];
           const status = step?.status ?? "waiting";
@@ -149,7 +156,7 @@ export function ProgressList({ ids, steps, running }: { ids: readonly StepId[]; 
             <li key={id} className="flex items-start gap-2.5 text-sm">
               <span className="mt-0.5 grid size-4 shrink-0 place-items-center">
                 {status === "running" && running ? <Spinner className="size-3.5 text-muted" />
-                  : status === "done" || status === "skipped" ? <IconCheck className="size-4 text-win" />
+                  : status === "done" || status === "skipped" ? <IconCheck className="size-3.5 text-win" />
                   : status === "failed" ? <span className="size-2 rounded-full bg-warn" />
                   : <span className="size-2 rounded-full bg-control" />}
               </span>
@@ -166,7 +173,7 @@ export function ProgressList({ ids, steps, running }: { ids: readonly StepId[]; 
       {details.length > 0 && (
         <details className="mt-3 text-xs text-muted">
           <summary className="cursor-pointer">Technical detail</summary>
-          <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-control p-3 font-mono text-[11px] whitespace-pre-wrap">{details.join("\n")}</pre>
+          <pre className="mt-2 max-h-48 overflow-auto rounded-small bg-control p-3 font-mono text-[11px] whitespace-pre-wrap">{details.join("\n")}</pre>
         </details>
       )}
     </div>
@@ -181,7 +188,7 @@ export function FailureNote({ failure, onRetry, busy }: { failure: RunFailure; o
       {failure.detail && (
         <details className="mt-2 text-xs text-muted">
           <summary className="cursor-pointer">Technical detail</summary>
-          <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-control p-3 font-mono text-[11px] whitespace-pre-wrap">{failure.detail}</pre>
+          <pre className="mt-2 max-h-48 overflow-auto rounded-small bg-control p-3 font-mono text-[11px] whitespace-pre-wrap">{failure.detail}</pre>
         </details>
       )}
       {onRetry && <Button type="button" variant="secondary" size="sm" className="mt-3" onClick={onRetry} disabled={busy}>Retry</Button>}
@@ -193,8 +200,8 @@ export function FailureNote({ failure, onRetry, busy }: { failure: RunFailure; o
 export async function postJson<T>(url: string, body: unknown): Promise<{ data: T | null; error: RunFailure | null }> {
   try {
     const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const data = (await response.json().catch(() => null)) as (T & { error?: string; detail?: string }) | null;
-    if (!response.ok) return { data: null, error: { message: data?.error ?? "That didn't work. Try again.", detail: data?.detail } };
+    const data = (await response.json().catch(() => null)) as (T & { error?: string; detail?: string; code?: string }) | null;
+    if (!response.ok) return { data: null, error: { message: data?.error ?? "That didn't work. Try again.", detail: data?.detail, code: data?.code } };
     return { data, error: null };
   } catch {
     return { data: null, error: { message: "Couldn't reach the app. Check that it is still running, then try again." } };

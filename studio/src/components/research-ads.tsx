@@ -32,11 +32,11 @@ import { ask, Facts, notice } from "./dialog";
 import { PlaybookTips } from "./playbook-tip";
 import { ResearchSkeleton } from "./page-skeletons";
 import { RecreateAd } from "./research/recreate-ad";
+import { MakeForApp } from "./research/make-for-app";
 import { AdChanges, shortDate } from "./research/ad-changes";
 import { FIT_SHORT, FitDot } from "./research/fit";
 import { LockedNote } from "./research/gates";
-import { useEscape } from "./research/escape";
-import { IconCarousel, IconCheck, IconChevronDown, IconCopy, IconExternal, IconFile, IconImage, IconLayers, IconPlay, IconVideo, IconX } from "./icons";
+import { IconCarousel, IconCheck, IconChevronDown, IconCopy, IconExternal, IconFile, IconImage, IconLayers, IconPlay, IconVideo, IconWand, IconX } from "./icons";
 import { ImportSafety, ScrapeSafetyCard } from "./research/scrape-safety";
 import { PageDropOverlay, pickScrapeFiles, ScrapeDropZone, usePageFileDrop, type DropMessage } from "./research/scrape-drop";
 import { copyImage, downloadFile, fileName, StaticActions, VideoBreakdown } from "./research/copy-ad";
@@ -50,7 +50,13 @@ import { PlacementSketch } from "./studio/placement-picker";
 import { Badge, Button, buttonClass, Card, cx, EmptyState, ErrorNote, Field, inputClass, Page, segmentClass, segmentTrackClass, SettingsGroup, SettingsRow, Spinner, Stat } from "./ui";
 import { ProductPageHeader } from "./workspace/product-header";
 import { MODAL, MODAL_OVERLAY, PanelPortal } from "./panel-portal";
-import { EXTENSION_ZIP } from "@/lib/extension-download";
+import { EXTENSION_GUIDE, EXTENSION_ZIP } from "@/lib/extension-download";
+import { COLLECTING_GUIDE, networksFound } from "@/lib/ad-sources";
+import { repoFileUrl } from "@/lib/brand-config";
+import { CollectAds, type CollectTarget } from "./research/collect-ads";
+import { ReadingCostLine } from "./research/reading-cost";
+import { changedIds, CompetitorIdFields, EMPTY_IDS, idsError, idsOf, type CompetitorIds } from "./research/competitor-ids";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 const DAY_OPTIONS = [0, 7, LONG_RUNNING_DAYS, 60, 90];
 /** Ad slices asked for at once after the first answer (each is ~600 ads, ~3 MB). */
@@ -59,17 +65,13 @@ const SLICE_CONCURRENCY = 4;
 const CREATIVE_TYPES: AdMediaType[] = ["video", "image", "carousel", "dco"];
 /** Meta's platforms the filter always offers, before any others the ads have. */
 const META_PLATFORMS = ["facebook", "instagram", "audience_network", "messenger", "threads"];
-const chipClass = (on: boolean) => cx(
-  "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium whitespace-nowrap transition",
-  on ? "border-primary bg-primary text-on-ink" : "border-line bg-raised text-label hover:border-ink/20 hover:text-ink",
-);
-/** The filter bar's selects: one height and corner with the rest of the app's fields. */
-const selectClass = "h-9 w-full min-w-0 rounded-control border border-line bg-raised px-2.5 text-sm text-ink outline-none transition focus:border-ink/25 focus:ring-4 focus:ring-ink/5 @2xl:w-auto @2xl:max-w-48";
-const checkClass = "flex h-9 items-center gap-2 text-sm text-label";
-/** The Ad Library extension's download (public/downloads). */
-
+/** A filter chip: the app's tab pill (chosen = filled with a hairline, the rest plain muted text). */
+const chipClass = (on: boolean) => segmentClass(on);
+/** The filter bar's selects: one height and corner with the rest of the app's fields (30 px). */
+const selectClass = "h-[30px] w-full min-w-0 rounded-control border border-hairline bg-raised px-2.5 text-sm text-ink outline-none transition-colors focus:border-focus/70 focus:ring-2 focus:ring-focus/20 @2xl:w-auto @2xl:max-w-48";
+const checkClass = "flex h-7 items-center gap-2 text-sm text-label";
 const codeClass = "rounded-xs bg-control px-1 py-px font-mono text-xs text-ink";
-const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+const plural = (n: number, word: string) => `${n.toLocaleString(UI_LOCALE)} ${word}${n === 1 ? "" : "s"}`;
 /** A name for a button or a short title: a very long one is cut, so the button stays inside its dialog. */
 const shortName = (name: string, max = 28) => (name.length > max ? `${name.slice(0, max - 1).trimEnd()}…` : name);
 /** The fit filter's options: the AI scan's levels, then ads it hasn't checked. */
@@ -135,7 +137,11 @@ export function ResearchAds({ productId }: { productId: string }) {
     window.history.replaceState(window.history.state, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
   }, [filters]);
   const [open, setOpen] = useState<RankedAdRow | null>(null);
+  // A card's "Make for <app>": the drawer opens with the Make sheet over it.
+  const [makeOnOpen, setMakeOnOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  // Collect ads: the dialog for one competitor or all (components/research/collect-ads.tsx).
+  const [collect, setCollect] = useState<CollectTarget | null>(null);
   // What needs a key says so instead of starting and failing. While the install loads nothing is locked
   // (and nothing that needs a key starts on its own).
   const { install, loading: installLoading } = useInstall();
@@ -337,35 +343,11 @@ export function ResearchAds({ productId }: { productId: string }) {
   for (const w of data.watchlist) if (w.page_id) advertisers[w.page_id] = w.name;
   const options = (values: string[]) => [...new Set(values)].sort();
 
-  async function pull() {
-    setBusy("pull");
-    const plan = await post<{ free: number; paid: number; paidAds: number; usd: number; notes: string[] }>(url, { action: "plan" });
-    setBusy(null);
-    if (plan.error) return notice(plan.error);
-    if (!plan.free && !plan.paid) return notice(plan.notes[0] ?? "Add a competitor to the list first.", "Nothing to pull");
-    let spend = false;
-    if (plan.paid) {
-      spend = await ask({
-        title: "Pull competitors' ads",
-        confirm: `Pull, up to $${plan.usd.toFixed(2)}`,
-        cancel: plan.free ? "Free sources only" : "Cancel",
-        body: <Facts rows={[
-          ["Free (Meta API, EU/UK)", `${plan.free} competitor${plan.free === 1 ? "" : "s"}`],
-          ["Automatic collection (Apify)", `${plan.paid} search${plan.paid === 1 ? "" : "es"}`],
-          ["At most", `${plan.paidAds.toLocaleString()} ads · $${plan.usd.toFixed(2)}`],
-        ]} note={<>It reads the public Ad Library, so it sees US and other non-EU ads with their media. Apify bills per ad; most pulls stop well below the limit.{plan.notes.length > 0 && <> {plan.notes.join(" ")}</>}</>} />,
-      });
-      if (!spend && !plan.free) return;
-    }
-    setBusy("pull");
-    const result = await post<{ results?: { source: string; error?: string }[] }>(url, { action: "pull", spend });
-    setBusy(null);
-    if (result.error) return notice(result.error);
-    const failed = (result.results ?? []).filter((r) => r.error);
-    if (failed.length) notice(failed.map((r) => `${SOURCE_LABEL[r.source as keyof typeof SOURCE_LABEL] ?? r.source}: ${r.error}`).join(" · "), "Some sources failed");
-    await load();
-    void readNew();
-  }
+  /** Collect ads for every followed competitor: the dialog shows the sources and the cost first. */
+  const pull = () => setCollect({ ids: null, name: null });
+  // Which networks each competitor's ads came from, for its row on the board.
+  const foundBy = new Map<string, { source: string }[]>();
+  for (const ad of ranked) if (ad.watch_id) foundBy.set(ad.watch_id, [...(foundBy.get(ad.watch_id) ?? []), ad]);
 
   /**
    * Every way ads files come in (the picker, the drop zone, a drop anywhere on the page): one .json
@@ -441,20 +423,20 @@ export function ResearchAds({ productId }: { productId: string }) {
       confirm: "Import the checked files",
       body: (
         <div className="grid gap-3 text-sm">
-          <ul className="grid max-h-[46vh] divide-y divide-line overflow-y-auto overscroll-contain rounded-inner border border-line">
+          <ul className="grid max-h-[46vh] divide-y divide-line overflow-y-auto overscroll-contain rounded-small border border-line">
             {entries.map((e) => {
               const count = Math.min(e.s.ads, LOCAL_MAX_ADS);
               const kinds = ([["video", "video"], ["image", "image"], ["carousel", "carousel"], ["dco", "dynamic"]] as const)
-                .filter(([k]) => e.s.types[k]).map(([k, label]) => `${e.s.types[k].toLocaleString()} ${label}`).join(" · ");
+                .filter(([k]) => e.s.types[k]).map(([k, label]) => `${e.s.types[k].toLocaleString(UI_LOCALE)} ${label}`).join(" · ");
               return (
                 <li key={e.file.name} className="flex items-start gap-3 bg-card px-3 py-2.5">
                   <input type="checkbox" defaultChecked aria-label={`Import ${e.s.pageName}`} onChange={(ev) => { e.take = ev.target.checked; }} className="mt-1 size-4 shrink-0 accent-win" />
                   <span className="grid min-w-0 flex-1 gap-0.5">
                     <span className="truncate font-medium text-ink">{e.s.pageName}</span>
-                    <span className="text-xs text-muted tabular-nums">{plural(count, "ad")} · {e.s.active.toLocaleString()} live{kinds ? ` · ${kinds}` : ""}</span>
+                    <span className="text-xs text-muted tabular-nums">{plural(count, "ad")} · {e.s.active.toLocaleString(UI_LOCALE)} live{kinds ? ` · ${kinds}` : ""}</span>
                     <span className="text-xs text-muted">{e.match ? <>Goes with {e.match.name} on your list</> : "Joins your competitor list"}{!e.s.complete && <span className="text-caution-ink"> · collection stopped early</span>}</span>
                   </span>
-                  <select defaultValue={e.own ? "ours" : "theirs"} onChange={(ev) => { e.own = ev.target.value === "ours"; }} className="h-8 shrink-0 rounded-control border border-line bg-raised px-2 text-xs" aria-label={`Whose ads: ${e.s.pageName}`}>
+                  <select defaultValue={e.own ? "ours" : "theirs"} onChange={(ev) => { e.own = ev.target.value === "ours"; }} className="h-7 shrink-0 rounded-control border border-hairline bg-raised px-2 text-xs" aria-label={`Whose ads: ${e.s.pageName}`}>
                     <option value="theirs">Competitor</option><option value="ours">Ours</option>
                   </select>
                 </li>
@@ -465,6 +447,7 @@ export function ResearchAds({ productId }: { productId: string }) {
             About {plural(totalAds, "ad")} in all, imported one file after another: keep this tab open until it finishes. Their images and videos are saved to storage in the background.
             {" "}Ads of a Page that were live here but aren&apos;t in its file are marked as stopped (unless its collection stopped early).
           </p>
+          <ReadingCostLine ads={totalAds} install={install} upTo />
           {skipped.length > 0 && <p className="text-xs text-caution-ink">Left out: {skipped.join(" · ")}</p>}
           <StorageCheck preview={check.preview} error={check.error} />
         </div>
@@ -495,7 +478,7 @@ export function ResearchAds({ productId }: { productId: string }) {
       if (outcome.watchId && !watchId) created.set(key, outcome.watchId);
       const t = outcome.totals;
       results.push(outcome.ok
-        ? { name: e.s.pageName, ok: true, text: `${plural(t.ads, "ad")} (${t.created.toLocaleString()} new, ${t.updated.toLocaleString()} updated${t.retired ? `, ${t.retired.toLocaleString()} stopped` : ""})` }
+        ? { name: e.s.pageName, ok: true, text: `${plural(t.ads, "ad")} (${t.created.toLocaleString(UI_LOCALE)} new, ${t.updated.toLocaleString(UI_LOCALE)} updated${t.retired ? `, ${t.retired.toLocaleString(UI_LOCALE)} stopped` : ""})` }
         : { name: e.s.pageName, ok: false, text: outcome.error });
     }
     setBusy(null);
@@ -526,7 +509,7 @@ export function ResearchAds({ productId }: { productId: string }) {
       confirm: `Delete ${shortName(w.name)}`,
       danger: true,
       body: <Facts rows={[
-        ["Ads", `${theirs.length.toLocaleString()} (${theirs.filter((ad) => ad.active).length.toLocaleString()} live)`],
+        ["Ads", `${theirs.length.toLocaleString(UI_LOCALE)} (${theirs.filter((ad) => ad.active).length.toLocaleString(UI_LOCALE)} live)`],
         ["Also deleted", "their stored images and videos, scans, edit history and import history"],
       ]} note={<>It comes off the list{w.is_own ? "" : ", and creative checks stop looking for this name"}. This can&apos;t be undone: to follow it again, add it and collect its ads again. To keep its data and only stop updating it, use Pause.</>} />,
     });
@@ -550,7 +533,7 @@ export function ResearchAds({ productId }: { productId: string }) {
       return notice("That file isn't JSON. Pick a .json file the Ad Library extension saved.", "Can't read the file");
     }
     if (parsed?.schema !== LOCAL_SCHEMA || !Array.isArray(parsed.ads)) {
-      return notice("That isn't a file from the Ad Library extension. Collect the ads again and pick the file it saves.", "Not an ads file");
+      return notice(<>That isn&apos;t a file from the Ad Library extension. Drop the .json file it saved in Downloads/Ad Library, unchanged. <Link href={EXTENSION_GUIDE} className="text-accent hover:underline">How the extension works</Link></>, "Not an ads file");
     }
     if (!parsed.ads.length) return notice("The file has no ads. Check the Ad Library page and collect again.", "Nothing to import");
     const s = summarizeScrape(parsed);
@@ -570,11 +553,11 @@ export function ResearchAds({ productId }: { productId: string }) {
         <Facts
           rows={[
             ["Advertiser", <>{s.pageName}{s.pageId && <span className="block text-xs font-normal text-muted">Page {s.pageId}</span>}</>],
-            ["Ads", cut ? `${s.ads.toLocaleString()} (the first ${LOCAL_MAX_ADS.toLocaleString()} are imported)` : s.ads.toLocaleString()],
-            ["Live", s.active.toLocaleString()],
-            ["Media to store", check.preview ? `${plural(check.preview.new.files, "new file")} (${formatBytes(check.preview.new.bytes)})${check.preview.stored ? ` · ${check.preview.stored.toLocaleString()} already stored` : ""}` : mediaFiles ? `About ${plural(mediaFiles, "image and video file")}` : "–"],
+            ["Ads", cut ? `${s.ads.toLocaleString(UI_LOCALE)} (the first ${LOCAL_MAX_ADS.toLocaleString(UI_LOCALE)} are imported)` : s.ads.toLocaleString(UI_LOCALE)],
+            ["Live", s.active.toLocaleString(UI_LOCALE)],
+            ["Media to store", check.preview ? `${plural(check.preview.new.files, "new file")} (${formatBytes(check.preview.new.bytes)})${check.preview.stored ? ` · ${check.preview.stored.toLocaleString(UI_LOCALE)} already stored` : ""}` : mediaFiles ? `About ${plural(mediaFiles, "image and video file")}` : "–"],
             ["Creative types", types || "–"],
-            ["Collected", s.scrapedAt ? new Date(s.scrapedAt).toLocaleString() : "–"],
+            ["Collected", s.scrapedAt ? new Date(s.scrapedAt).toLocaleString(UI_LOCALE) : "–"],
             ["Collection", s.complete ? "Complete" : <span className="text-caution-ink">Stopped early{s.stoppedReason ? `: ${s.stoppedReason}` : ""}</span>],
           ]}
           note={<>
@@ -589,10 +572,11 @@ export function ResearchAds({ productId }: { productId: string }) {
             {skipped && <span className="mt-2 block text-caution-ink">{skipped}</span>}
             <span className="mt-2 block">{!s.complete
               ? "The collection stopped early, so no ads are marked as stopped."
-              : cut ? `Only the first ${LOCAL_MAX_ADS.toLocaleString()} ads are imported, so no ads are marked as stopped.`
+              : cut ? `Only the first ${LOCAL_MAX_ADS.toLocaleString(UI_LOCALE)} ads are imported, so no ads are marked as stopped.`
               : "Ads of this Page that were live here but aren't in the file are marked as stopped."}</span>
             {mediaFiles > 0 && <span className="mt-2 block">Their images and videos are saved to storage in the background so they don&apos;t expire.</span>}
-            {count > IMPORT_BATCH_ADS && <span className="mt-2 block">The ads go up in parts of up to {IMPORT_BATCH_ADS.toLocaleString()}: keep this tab open until the import finishes.</span>}
+            <ReadingCostLine ads={count} install={install} upTo inline className="mt-2 block" />
+            {count > IMPORT_BATCH_ADS && <span className="mt-2 block">The ads go up in parts of up to {IMPORT_BATCH_ADS.toLocaleString(UI_LOCALE)}: keep this tab open until the import finishes.</span>}
           </>}
         />
         <StorageCheck preview={check.preview} error={check.error} />
@@ -622,10 +606,10 @@ export function ResearchAds({ productId }: { productId: string }) {
     if (!outcome.ok) return notice(outcome.error, "The import stopped");
     notice(
       <>
-        Saved {plural(t.ads, "ad")} from {s.pageName} to {options.own ? "Our ads" : "Competitors' ads"}: {t.created.toLocaleString()} new, {t.updated.toLocaleString()} updated.
+        Saved {plural(t.ads, "ad")} from {s.pageName} to {options.own ? "Our ads" : "Competitors' ads"}: {t.created.toLocaleString(UI_LOCALE)} new, {t.updated.toLocaleString(UI_LOCALE)} updated.
         {t.retired ? <> {plural(t.retired, "ad")} no longer in the Ad Library marked as stopped.</> : null}
         {t.watchCreated ? <> {s.pageName} is on your competitor list now.</> : null}
-        {t.mediaQueued ? <> Saving {plural(t.mediaQueued, "image and video file")} to storage in the background{t.mediaStored ? ` (${t.mediaStored.toLocaleString()} already saved)` : ""}.</> : null}
+        {t.mediaQueued ? <> Saving {plural(t.mediaQueued, "image and video file")} to storage in the background{t.mediaStored ? ` (${t.mediaStored.toLocaleString(UI_LOCALE)} already saved)` : ""}.</> : null}
         {t.mediaError ? <> Their images and videos couldn&apos;t be queued for storage: {t.mediaError}</> : null}
         {t.edited ? <> {plural(t.edited, "ad")} {t.edited === 1 ? "was" : "were"} edited since the last import (see Changes on each).</> : null}
       </>,
@@ -668,7 +652,7 @@ export function ResearchAds({ productId }: { productId: string }) {
   }
 
   const importText = !importing ? "Importing…"
-    : `${importing.files && importing.files > 1 ? `${importing.file} of ${importing.files} · ${importing.name}: ` : "Importing "}${importing.total > IMPORT_BATCH_ADS ? `${importing.sent.toLocaleString()} of ${importing.total.toLocaleString()}…` : "…"}`;
+    : `${importing.files && importing.files > 1 ? `${importing.file} of ${importing.files} · ${importing.name}: ` : "Importing "}${importing.total > IMPORT_BATCH_ADS ? `${importing.sent.toLocaleString(UI_LOCALE)} of ${importing.total.toLocaleString(UI_LOCALE)}…` : "…"}`;
   const health = data.health;
   // Which collectors are on: from the install's keys, or from the backend when the install can't be read.
   const collectOn = install ? !collectLocked : Boolean(health?.apify);
@@ -680,7 +664,7 @@ export function ResearchAds({ productId }: { productId: string }) {
   const openWord = metaWatch.length && metaWatch.every((w) => !w.page_id) ? "Search" : metaWatch.some((w) => !w.page_id) ? "Open or Search" : "Open";
   return (
     <Page>
-      <ProductPageHeader productId={productId} page="Research" name={data.workspace.name} title={ours ? "Our ads" : "Competitors\u2019 ads"}
+      <ProductPageHeader productId={productId} page="Research" name={data.workspace.name}
         subtitle={ours
           ? "Your own live ads from the Ad Library, read the same way: how long each has run, how many copies are live, its format and hook, side by side with your competitors'."
           : <>Paid ads your competitors are running now. The longer an ad runs and the more copies of it are live, the more likely it&apos;s working. Each new ad is read for its format, hook and structure on its own.</>}
@@ -691,18 +675,16 @@ export function ResearchAds({ productId }: { productId: string }) {
             e.target.value = "";
             takeFiles(files, "picker");
           }} />
-          {collectOn && (
-            <Button variant="secondary" onClick={pull} disabled={busy === "pull" || running} title="Collects every followed competitor at once. Billed per ad (about $0.75 per 1,000); you confirm the cost first">
-              {busy === "pull" || running ? <><Spinner /> {running ? "Pulling…" : "Checking…"}</> : "Collect automatically"}
-            </Button>
-          )}
+          <Button variant="secondary" onClick={pull} disabled={running} title="Collects every followed competitor with the sources that are on. You see which sources and the most it can cost first">
+            {running ? <><Spinner /> Collecting…</> : "Collect ads"}
+          </Button>
         </>} />
       <div className={cx(segmentTrackClass, "mb-4")} role="tablist" aria-label="Whose ads">
         <button type="button" role="tab" aria-selected={!ours} onClick={() => setFilters({ ...DEFAULT_VIEW, side: "competitors" })} className={segmentClass(!ours)}>Competitors&apos; ads <span className="ml-1 text-xs text-muted tabular-nums">{theirCount}</span></button>
         <button type="button" role="tab" aria-selected={ours} onClick={() => setFilters({ ...DEFAULT_VIEW, side: "ours" })} className={segmentClass(ours)}>Our ads <span className="ml-1 text-xs text-muted tabular-nums">{ownCount}</span></button>
       </div>
 
-      <div ref={dropZone} className="scroll-mt-4">
+      <div ref={dropZone} className="scroll-mt-14">
         <CompetitorBoard productId={productId} watchlist={sideWatch.filter((w) => !deleting.has(w.id))} ads={ranked} lastImports={data.lastImports ?? {}} ours={ours}
           onManage={() => setShowWatch(true)}
           onAdd={async (name, pageId) => {
@@ -715,6 +697,8 @@ export function ResearchAds({ productId }: { productId: string }) {
             if (result.error) return notice(result.error, `Couldn't follow ${shortName(w.name, 40)}`);
             await load();
           }}
+          sourcesOf={(w) => networksFound(foundBy.get(w.id) ?? [])}
+          onCollect={(w) => setCollect({ ids: [w.id], name: w.name })}
           onShowAds={(competitor) => {
             setFilters({ ...filters, competitor });
             requestAnimationFrame(() => adList.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -732,20 +716,20 @@ export function ResearchAds({ productId }: { productId: string }) {
             <SettingsRow label={<span className="flex flex-wrap items-center gap-2">The Ad Library extension <Badge tone="win">Free, no key</Badge></span>}
               description={ours ? "A Chrome extension that saves a Page's ads, with their media and Meta's impressions order, as a file you drop on this page." : "A Chrome extension that saves each competitor's ads, with their media and Meta's impressions order, as a file you drop on this page."}
               below={(
+                // The Ad Library extension: the short path here, every step with pictures in Settings (EXTENSION_GUIDE).
                 <ol className="mt-2.5 ml-4 list-decimal space-y-1 text-sm text-muted">
-                  <li>Download <a href={EXTENSION_ZIP} download className="font-medium text-accent hover:underline">ad-library-extension.zip</a> and unzip it (double-click on a Mac). Keep the unzipped folder somewhere it can stay, such as Documents: Chrome runs it from there.</li>
-                  <li>In Chrome, open <code className={codeClass}>chrome://extensions</code> and turn on <span className="font-medium text-label">Developer mode</span> (the switch at the top right). Leave it on: Chrome disables the extension whenever it&apos;s off.</li>
-                  <li>Click <span className="font-medium text-label">Load unpacked</span> and select the unzipped folder itself (the one with manifest.json inside, not the zip).</li>
-                  <li>Pin the Ad Library extension from the puzzle-piece icon next to the address bar.</li>
+                  <li>Install it once: <Link href={EXTENSION_GUIDE} className="font-medium text-accent hover:underline">the step-by-step guide</Link> shows each click, from unzipping to pinning it in Chrome.</li>
                   <li>{metaWatch.length
                     ? <>Click <span className="font-medium text-label">{openWord}</span> on {ours ? "one of your Pages" : "a competitor"} above (it opens the Ad Library in a new tab)</>
-                    : <>Add {ours ? "your Facebook Page" : "a competitor"} above, then click <span className="font-medium text-label">Open</span> on it (it opens the Ad Library in a new tab)</>}, click <span className="font-medium text-label">Collect ads</span> in the extension, then drop the saved file here.</li>
+                    : <>Add {ours ? "your Facebook Page" : "a competitor"} above, then click <span className="font-medium text-label">Open</span> on it (it opens the Ad Library in a new tab)</>}, then click the extension&apos;s orange icon and <span className="font-medium text-label">Collect ads</span>.</li>
+                  <li>Drop the file it saves in <code className={codeClass}>Downloads/Ad Library</code> anywhere on this page.</li>
                 </ol>
               )}>
-              <a href={EXTENSION_ZIP} download className={buttonClass("secondary", "sm")}>Download</a>
+              <Link href={EXTENSION_GUIDE} className={buttonClass("secondary", "sm")}>Get the free extension</Link>
+              <a href={EXTENSION_ZIP} download className={buttonClass("ghost", "sm")}>Download</a>
             </SettingsRow>
             <SettingsRow label="Automatic collection"
-              description={collectOn ? "Collects every followed competitor at once, with media. It is billed per ad by the collector; you see the cost and confirm before each pull." : "Collects every followed competitor at once, with no files to drop."}>
+              description={<>Meta and Google ads in any country, and TikTok ads shown in Europe, with your own keys. Billed per ad by Apify; you see the sources and the most it can cost before each collection. Choose the sources in <Link href="/app/settings/research" className="font-medium text-accent hover:underline">Settings &gt; Research sources</Link>.</>}>
               {collectLocked ? <LockedNote state={collectLocked}>Needs {collectLocked.missingKeys.join(" and ")}</LockedNote> : collectOn ? <Badge tone="win">On</Badge> : <Badge>Off</Badge>}
             </SettingsRow>
             <SettingsRow label="Meta's Ad Library API" description="Free. Covers ads shown in the EU and the UK only, so it adds to the two ways above.">
@@ -756,16 +740,18 @@ export function ResearchAds({ productId }: { productId: string }) {
           <div className="grid gap-2 text-xs text-muted">
             {data.pulls.length > 0 && (
               <p>
-                Last import or pull {new Date(data.pulls[0].started_at).toLocaleString()} · {SOURCE_LABEL[data.pulls[0].source]} · {data.pulls[0].status === "running" ? "running" : data.pulls[0].status === "error" ? <span className="text-warn">{data.pulls[0].error}</span> : `${data.pulls[0].ads} ads`}
+                Last import or pull {new Date(data.pulls[0].started_at).toLocaleString(UI_LOCALE)} · {SOURCE_LABEL[data.pulls[0].source]} · {data.pulls[0].status === "running" ? "running" : data.pulls[0].status === "error" ? <span className="text-warn">{data.pulls[0].error}</span> : `${data.pulls[0].ads} ads`}
               </p>
             )}
             <p>{SCRAPE_RULE}</p>
+            <p><a href={repoFileUrl(COLLECTING_GUIDE)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">Guide: the three ways to get competitors&apos; ads<IconExternal className="size-3" /></a></p>
           </div>
           <StoredMediaCard productId={productId} status={data.mediaStatus} advertisers={advertisers} onChanged={load} />
           <PlaybookTips ids={["proven-market", "copy-why-not-assets"]} />
         </div>
       </details>
 
+      {collect && <CollectAds productId={productId} target={collect} install={install} pulls={data.pulls} onClose={() => setCollect(null)} onPulled={() => { void load().then(() => readNew()); }} />}
       {showWatch && <Watchlist productId={productId} watchlist={sideWatch} deleting={deleting} suggestions={ours ? [] : data.suggestions} own={ours} tiktok={tiktokOn} metaApi={metaApiOn} collect={collectOn} onChange={load} onRemove={removeCompetitor} onClose={closeWatch} />}
 
       {reading && unread > 0 && (
@@ -792,9 +778,9 @@ export function ResearchAds({ productId }: { productId: string }) {
         if (competitor) requestAnimationFrame(() => adList.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
       }} />
 
-      <Card ref={adList} className="mb-4 grid scroll-mt-4 grid-cols-2 gap-px overflow-hidden bg-line @3xl:grid-cols-4">
+      <Card ref={adList} className="mb-4 grid scroll-mt-14 grid-cols-2 gap-px overflow-hidden bg-line @3xl:grid-cols-4">
         <Stat label="Live ads" value={active.length} hint={`${ranked.length} tracked`} />
-        <Stat label={`Running ${LONG_RUNNING_DAYS}+ days`} value={active.filter((ad) => (ad.days ?? 0) >= LONG_RUNNING_DAYS).length} hint="likely profitable" tone="highlight" />
+        <Stat label={`Running ${LONG_RUNNING_DAYS}+ days`} value={active.filter((ad) => (ad.days ?? 0) >= LONG_RUNNING_DAYS).length} hint="likely profitable" />
         <Stat label="Scaled creatives" value={new Set(active.filter((ad) => ad.groupSize >= 3).map((ad) => ad.creative_key)).size} hint="3+ live copies" />
         <Stat label={ours ? "Pages" : "Advertising"} value={new Set(active.map((ad) => ad.competitor ?? ad.page_name)).size} hint={ours ? "of ours" : "competitors"} />
       </Card>
@@ -823,7 +809,7 @@ export function ResearchAds({ productId }: { productId: string }) {
           onMedia={(media) => setFilters({ ...filters, media, sort: media && filters.sort === "score" ? "impressions" : filters.sort })} />
       )}
       {ranked.length > 0 && (
-        <Card className="mb-5 grid gap-4 p-4">
+        <Card className="mb-4 grid gap-3 p-3">
           <div className="grid grid-cols-2 gap-3 @2xl:flex @2xl:flex-wrap @2xl:items-end">
             <Select label="Network" value={filters.network} onChange={(v) => setFilters({ ...filters, network: v })} values={options(ranked.map((ad) => ad.network))} name={(v) => NETWORK_LABEL[v as "meta"] ?? v} />
             <Select label="Platform" value={filters.placement} onChange={(v) => setFilters({ ...filters, placement: v })} values={[...META_PLATFORMS, ...options(ranked.flatMap((ad) => ad.placements)).filter((v) => !META_PLATFORMS.includes(v))]} name={(v) => PLACEMENT_LABEL[v] ?? v} />
@@ -839,7 +825,7 @@ export function ResearchAds({ productId }: { productId: string }) {
                 setFilters({ ...filters, launched, minDays: launched ? 0 : filters.minDays, sort: launched && filters.sort === "score" ? "newest" : filters.sort });
               }} className={selectClass}>
                 <option value="">Any day</option>
-                {LAUNCH_WINDOWS.map((w) => <option key={w.id} value={w.id}>{w.label} ({(launchCounts.get(w.id) ?? 0).toLocaleString()})</option>)}
+                {LAUNCH_WINDOWS.map((w) => <option key={w.id} value={w.id}>{w.label} ({(launchCounts.get(w.id) ?? 0).toLocaleString(UI_LOCALE)})</option>)}
               </select>
             </label>
             <label className="flex min-w-0 flex-col gap-1.5 text-xs text-muted" title="Whether the AI scan found the ad fits what you sell: advice only">Fit
@@ -860,7 +846,7 @@ export function ResearchAds({ productId }: { productId: string }) {
               <label className={checkClass}><input type="checkbox" checked={filters.grouped} onChange={(e) => setFilters({ ...filters, grouped: e.target.checked })} className="size-4 accent-win" />One per creative</label>
             </div>
           </div>
-          <div className="grid gap-2.5 border-t border-line pt-4">
+          <div className="grid gap-2 border-t border-line pt-3">
             <div className="flex flex-wrap gap-1.5" role="group" aria-label="Quick filters">
               {QUICK_FILTERS.map((quick) => {
                 // Our own ads' Top is judged against age (nothing is ever paused there, so old ads lead Meta's order).
@@ -872,12 +858,12 @@ export function ResearchAds({ productId }: { productId: string }) {
                   <button key={q.id} type="button" title={q.title} aria-pressed={on} className={chipClass(on)}
                     // A stopped-ads filter can't match with "Active only" on: turning one on turns that off.
                     onClick={() => setFilters({ ...filters, quick: on ? filters.quick.filter((x) => x !== q.id) : [...filters.quick, q.id], activeOnly: !on && STOPPED_FILTERS.includes(q.id) ? false : filters.activeOnly })}>
-                    {q.label}<span className={cx("font-normal tabular-nums", on ? "opacity-70" : "text-faint")}>{count.toLocaleString()}</span>
+                    {q.label}<span className={cx("font-normal tabular-nums", on ? "opacity-70" : "text-faint")}>{count.toLocaleString(UI_LOCALE)}</span>
                   </button>
                 );
               })}
               <button type="button" aria-pressed={filters.activeOnly} className={chipClass(filters.activeOnly)} onClick={() => setFilters({ ...filters, activeOnly: !filters.activeOnly })}>
-                Active only<span className={cx("font-normal tabular-nums", filters.activeOnly ? "opacity-70" : "text-faint")}>{base.filter((ad) => ad.active).length.toLocaleString()}</span>
+                Active only<span className={cx("font-normal tabular-nums", filters.activeOnly ? "opacity-70" : "text-faint")}>{base.filter((ad) => ad.active).length.toLocaleString(UI_LOCALE)}</span>
               </button>
             </div>
             <p className="text-xs text-faint">{SIGNALS_NOTE}</p>
@@ -893,24 +879,24 @@ export function ResearchAds({ productId }: { productId: string }) {
           if (!ads.length) return null;
           const closed = collapsed.has(group.id);
           return (
-            <section key={group.id} className="mb-6">
-              <button type="button" aria-expanded={!closed} className="-ml-1 mb-3 flex items-center gap-2 rounded-control py-1 pr-2 pl-1 text-left transition hover:bg-hover"
+            <section key={group.id} className="mb-5">
+              <button type="button" aria-expanded={!closed} className="-ml-1 mb-2 flex h-7 items-center gap-2 rounded-control pr-2 pl-1 text-left transition-colors hover:bg-hover"
                 onClick={() => setCollapsed((c) => { const next = new Set(c); if (closed) next.delete(group.id); else next.add(group.id); return next; })}>
-                <IconChevronDown className={cx("size-4 text-muted transition", closed && "-rotate-90")} />
-                <span className="text-title font-medium">{group.label}</span>
-                <Badge>{ads.length.toLocaleString()}</Badge>
+                <IconChevronDown className={cx("size-3.5 text-muted transition", closed && "-rotate-90")} />
+                <span className="text-sm font-medium">{group.label}</span>
+                <Badge>{ads.length.toLocaleString(UI_LOCALE)}</Badge>
               </button>
               {!closed && (
-                <div className="grid gap-4 @md:grid-cols-2 @3xl:grid-cols-3 @6xl:grid-cols-4">
-                  {ads.slice(0, limit).map((ad) => <AdCard key={ad.id} ad={ad} curve={fitFor(fits, ad)} busy={busy} onOpen={() => setOpen(ad)} onSend={() => send(ad)} />)}
+                <div className="grid gap-3 @sm:grid-cols-2 @2xl:grid-cols-3 @4xl:grid-cols-4 @7xl:grid-cols-5">
+                  {ads.slice(0, limit).map((ad) => <AdCard key={ad.id} ad={ad} curve={fitFor(fits, ad)} busy={busy} onOpen={() => { setMakeOnOpen(false); setOpen(ad); }} onSend={() => send(ad)} onMake={() => { setMakeOnOpen(true); setOpen(ad); }} appName={data.brand?.appName} />)}
                 </div>
               )}
             </section>
           );
         })
         : (
-          <div className="grid gap-4 @md:grid-cols-2 @3xl:grid-cols-3 @6xl:grid-cols-4">
-            {shown.slice(0, limit).map((ad) => <AdCard key={ad.id} ad={ad} curve={fitFor(fits, ad)} busy={busy} onOpen={() => setOpen(ad)} onSend={() => send(ad)} />)}
+          <div className="grid gap-3 @sm:grid-cols-2 @2xl:grid-cols-3 @4xl:grid-cols-4 @7xl:grid-cols-5">
+            {shown.slice(0, limit).map((ad) => <AdCard key={ad.id} ad={ad} curve={fitFor(fits, ad)} busy={busy} onOpen={() => { setMakeOnOpen(false); setOpen(ad); }} onSend={() => send(ad)} onMake={() => { setMakeOnOpen(true); setOpen(ad); }} appName={data.brand?.appName} />)}
           </div>
         )}
       {shown.length > limit && <MoreCards key={limit} onMore={() => setLimit((n) => n + CARDS_PAGE)} />}
@@ -920,7 +906,7 @@ export function ResearchAds({ productId }: { productId: string }) {
         : <EmptyState title="No ads yet" body={sideWatch.length ? `Click ${openWord} on a competitor above, collect its ads with the Ad Library extension and drop the file here. The steps are under “How to get ads in”.` : "Add the competitors whose ads you want to follow, then collect their ads with the Ad Library extension."}
             action={sideWatch.length ? undefined : <Button variant="secondary" onClick={() => setShowWatch(true)}>Add competitors</Button>} />)}
       {ranked.length > 0 && shown.length === 0 && <EmptyState title="No ads match these filters" action={<Button variant="secondary" onClick={() => setFilters({ ...DEFAULT_VIEW, side: filters.side })}>Clear the filters</Button>} />}
-      {open && <AdDrawer key={open.id} productId={productId} ad={open} brand={data.brand} avatars={data.avatars ?? []} assets={data.assets ?? []} onAssetAdded={assetAdded} busy={busy} onScanned={(scan, scannedAt) => scanned(open.id, scan, scannedAt)} onClose={() => setOpen(null)} onReadAgain={() => readAgain(open)} onSend={() => send(open)} aiLocked={aiLocked} />}
+      {open && <AdDrawer key={open.id} startMaking={makeOnOpen} productId={productId} ad={open} brand={data.brand} avatars={data.avatars ?? []} assets={data.assets ?? []} onAssetAdded={assetAdded} busy={busy} onScanned={(scan, scannedAt) => scanned(open.id, scan, scannedAt)} onClose={() => setOpen(null)} onReadAgain={() => readAgain(open)} onSend={() => send(open)} aiLocked={aiLocked} />}
     </Page>
   );
 }
@@ -948,30 +934,30 @@ function AdvertiserSwitcher({ ads, activeOnly, value, media, sort, ours, onPick,
     { id: "video", label: "Videos", count: mine.filter((ad) => ad.media_type === "video" || Boolean(ad.is_video)).length },
   ];
   return (
-    <Card className="mb-3 grid gap-3 p-4">
+    <Card className="mb-3 grid gap-2.5 p-3">
       <div className="grid gap-2">
         <p className="eyebrow">{ours ? "Page" : "Competitor"}{names.length > 1 ? ` · ${names.length}` : ""}</p>
         <div className="flex flex-wrap gap-1.5" role="group" aria-label={ours ? "Page" : "Competitor"}>
           {names.length > 1 && (
             <button type="button" aria-pressed={!value} className={chipClass(!value)} onClick={() => onPick("")}>
-              {ours ? "All Pages" : "All competitors"}<span className={cx("font-normal tabular-nums", !value ? "opacity-70" : "text-faint")}>{counted.length.toLocaleString()}</span>
+              {ours ? "All Pages" : "All competitors"}<span className={cx("font-normal tabular-nums", !value ? "opacity-70" : "text-faint")}>{counted.length.toLocaleString(UI_LOCALE)}</span>
             </button>
           )}
           {names.map(([name, count]) => {
             const on = value === name || names.length === 1;
             return (
               <button key={name} type="button" aria-pressed={on} className={chipClass(on)} onClick={() => onPick(value === name ? "" : name)}>
-                <PageLogo pageId={pageOf.get(name)} name={name} size="xs" className="-ml-2" />{name}<span className={cx("font-normal tabular-nums", on ? "opacity-70" : "text-faint")}>{count.toLocaleString()}</span>
+                <PageLogo pageId={pageOf.get(name)} name={name} size="xs" className="-ml-2" />{name}<span className={cx("font-normal tabular-nums", on ? "opacity-70" : "text-faint")}>{count.toLocaleString(UI_LOCALE)}</span>
               </button>
             );
           })}
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-2.5">
         <div className={segmentTrackClass} role="tablist" aria-label="Creative type">
           {kinds.map((k) => (
             <button key={k.id} type="button" role="tab" aria-selected={media === k.id} onClick={() => onMedia(k.id)} className={segmentClass(media === k.id)}>
-              {k.label} <span className="ml-1 text-xs text-muted tabular-nums">{k.count.toLocaleString()}</span>
+              {k.label} <span className="ml-1 text-xs text-muted tabular-nums">{k.count.toLocaleString(UI_LOCALE)}</span>
             </button>
           ))}
         </div>
@@ -1021,7 +1007,7 @@ function MoreLikeWinners({ productId, ads, fits, appName }: { productId: string;
     router.push(`/app/w/${productId}/studio?from=winners`);
   };
   return (
-    <Card className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 p-4">
+    <Card className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 p-3">
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">More like our winners</p>
         <p className="text-xs text-muted">Opens the Studio with a brief from what your top long-runners of a kind share (format, hook, proof, offer, CTA, layout), their images as style references and their offer wording. Every new ad still gets a new hook.</p>
@@ -1041,12 +1027,12 @@ function MoreLikeWinners({ productId, ads, fits, appName }: { productId: string;
 /** The line above the list: what's in this view. */
 function ViewSummary({ ads, noun }: { ads: RankedAdRow[]; noun: string }) {
   const s = summarizeAds(ads);
-  const types = TYPE_GROUPS.filter((g) => s.byType[g.id]).map((g) => `${g.label} ${s.byType[g.id].toLocaleString()}`).join(" · ");
+  const types = TYPE_GROUPS.filter((g) => s.byType[g.id]).map((g) => `${g.label} ${s.byType[g.id].toLocaleString(UI_LOCALE)}`).join(" · ");
   const num = "font-medium text-label tabular-nums";
   return (
     <p className="mb-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
-      <span><span className={num}>{s.total.toLocaleString()}</span> {noun}{s.total === 1 ? "" : "s"}</span>
-      <span><span className={num}>{s.active.toLocaleString()}</span> active</span>
+      <span><span className={num}>{s.total.toLocaleString(UI_LOCALE)}</span> {noun}{s.total === 1 ? "" : "s"}</span>
+      <span><span className={num}>{s.active.toLocaleString(UI_LOCALE)}</span> active</span>
       {types && <span className="text-faint">{types}</span>}
       {s.medianDays != null && <span>median <span className={num}>{s.medianDays}</span> days running</span>}
       <span><span className={num}>{Math.round(s.longShare * 100)}%</span> long runners ({LONG_RUNNER_DAYS}+ days)</span>
@@ -1140,7 +1126,7 @@ function CardMediaLoaded({ ad, src, expired, onFail }: { ad: RankedAdRow; src: C
   const Icon = MEDIA_ICON[ad.media_type] ?? IconImage;
   return (
     <span className="flex size-full flex-col items-center justify-center gap-2 px-6 pb-10 text-center text-faint">
-      <Icon className="size-7" strokeWidth={1.4} />
+      <Icon className="size-6" strokeWidth={1.4} />
       <span className="text-xs">{expired ? expiredText(ad) : "No preview"}</span>
     </span>
   );
@@ -1159,7 +1145,7 @@ function RunSignal({ ad }: { ad: RankedAdRow }) {
   );
 }
 
-const cardActionClass = "inline-flex h-8 min-w-0 items-center gap-1.5 rounded-control px-2 text-xs font-medium whitespace-nowrap text-label transition hover:bg-hover hover:text-ink disabled:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0";
+const cardActionClass = "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-control px-2 text-xs font-medium whitespace-nowrap text-label transition hover:bg-hover hover:text-ink disabled:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0";
 
 /** "Outperforms its age by N": Meta's impressions rank against the rank an ad of its age usually has on this account. */
 function AgeBadge({ ad, fit }: { ad: RankedAdRow; fit: RankFit }) {
@@ -1174,7 +1160,7 @@ function AgeBadge({ ad, fit }: { ad: RankedAdRow; fit: RankFit }) {
   );
 }
 
-function AdCard({ ad, curve, busy, onOpen, onSend }: { ad: RankedAdRow; curve: RankFit; busy: string | null; onOpen: () => void; onSend: () => void }) {
+function AdCard({ ad, curve, busy, onOpen, onSend, onMake, appName }: { ad: RankedAdRow; curve: RankFit; busy: string | null; onOpen: () => void; onSend: () => void; onMake?: () => void; appName?: string }) {
   const copy = ad.body || ad.headline || ad.description;
   const name = ad.competitor ?? ad.page_name;
   const where = ad.placements.map((p) => PLACEMENT_LABEL[p] ?? p).join(", ") || NETWORK_LABEL[ad.network];
@@ -1188,12 +1174,12 @@ function AdCard({ ad, curve, busy, onOpen, onSend }: { ad: RankedAdRow; curve: R
   const fit = ad.scan?.fit;
   const sendLabel = sent ? "In the format library" : "Send to the format library";
   return (
-    <Card className="flex h-full min-w-0 flex-col overflow-hidden">
+    <Card className="flex h-full min-w-0 flex-col overflow-hidden rounded-small">
       <div className="relative aspect-[4/5] overflow-hidden border-b border-line bg-canvas">
         <button type="button" onClick={onOpen} className="group absolute inset-0 block size-full text-left" aria-label={`Open ad from ${name}`}>
           <CardMedia ad={ad} src={src} expired={sources.length > 0} onFail={(url) => setFailed((f) => [...f, url])} />
           {src && ad.media_type === "video" && (
-            <span className="absolute right-2.5 bottom-2.5 grid size-7 place-items-center rounded-full bg-scrim/40 text-white backdrop-blur-sm" aria-hidden><IconPlay className="ml-px size-3" /></span>
+            <span className="absolute right-2 bottom-2 grid size-6 place-items-center rounded-full bg-scrim/40 text-white backdrop-blur-sm" aria-hidden><IconPlay className="ml-px size-2.5" /></span>
           )}
         </button>
         {!src && ad.snapshot_url && (
@@ -1204,7 +1190,7 @@ function AdCard({ ad, curve, busy, onOpen, onSend }: { ad: RankedAdRow; curve: R
       </div>
       {/* Fixed lines, so every card in a row lines up: name and rank · type and placements · days and copies · two lines of copy · tags. */}
       {/* The text opens the ad too (the picture is the button; this is the same click for a pointer). */}
-      <div className="flex flex-1 cursor-pointer flex-col px-3 pt-2.5 pb-2.5" onClick={onOpen}>
+      <div className="flex flex-1 cursor-pointer flex-col px-3 pt-2 pb-2" onClick={onOpen}>
         <div className="flex min-w-0 items-baseline gap-2">
           <p className="min-w-0 flex-1 truncate text-sm font-medium" title={name}>{name}</p>
           {ad.impressions_rank != null && (
@@ -1237,9 +1223,10 @@ function AdCard({ ad, curve, busy, onOpen, onSend }: { ad: RankedAdRow; curve: R
           {ad.cta && <Badge>{ad.cta}</Badge>}
         </TagRow>
       </div>
-      <div className="@container mt-auto flex items-center gap-1 border-t border-line p-1.5">
+      <div className="@container mt-auto flex items-center gap-1 border-t border-line p-1">
         {src?.kind === "image" && ad.media_type === "image" && !ad.is_video && <CopyImageAction ad={ad} url={src.url} />}
         {(ad.media_type === "video" || ad.is_video) && <button type="button" onClick={onOpen} className={cardActionClass} title="Its script, shots and hook"><IconVideo />Breakdown</button>}
+        {onMake && !ad.is_own && <button type="button" onClick={onMake} className={cardActionClass} title={`The same kind of ad for ${appName || "your app"}: a ready-made prompt, one image here, or a batch in Studio`}><IconWand /><span className="@max-[16rem]:hidden">Make for {appName || "your app"}</span><span className="hidden @max-[16rem]:inline">Make</span></button>}
         <button type="button" onClick={onSend} disabled={sent || sending} className={cx(cardActionClass, "ml-auto", sent && "text-muted")} title={sendLabel} aria-label={sendLabel}>
           {sending ? <Spinner /> : sent ? <IconCheck className="text-win" /> : <IconLayers />}
           {sent ? "In library" : <><span className="@min-[14rem]:hidden">Library</span><span className="hidden @min-[14rem]:inline">Send to library</span></>}
@@ -1451,7 +1438,9 @@ function AdRead({ ad, busy, onReadAgain, aiLocked }: { ad: RankedAdRow; busy: bo
         {readable && again}
       </div>
       {!ad.decoded ? (
-        <p className="mt-1 text-sm text-muted">{!readable ? "No copy to read yet. Collect its ads again to get its text." : aiLocked ? "Not read yet." : "Not read yet: new ads are read in the background, a few at a time."}</p>
+        ad.decode_error && readable
+          ? <p className="mt-1 text-sm text-warn" role="status">Couldn&apos;t read this ad: {ad.decode_error}</p>
+          : <p className="mt-1 text-sm text-muted">{!readable ? "No copy to read yet. Collect its ads again to get its text." : aiLocked ? "Not read yet." : "Not read yet: new ads are read in the background, a few at a time."}</p>
       ) : (
         <>
           <EditedCallout ad={ad} busy={busy} onReadAgain={onReadAgain} className="mt-2" />
@@ -1473,15 +1462,16 @@ function AdRead({ ad, busy, onReadAgain, aiLocked }: { ad: RankedAdRow; busy: bo
   );
 }
 
-function AdDrawer({ productId, ad, brand, avatars, assets, onAssetAdded, busy, onClose, onReadAgain, onSend, onScanned, aiLocked }: {
+function AdDrawer({ productId, ad, brand, avatars, assets, onAssetAdded, busy, onClose, onReadAgain, onSend, onScanned, aiLocked, startMaking = false }: {
   productId: string; ad: RankedAdRow; brand?: ResearchBrand; avatars: ResearchAvatar[]; assets: ProductAsset[]; onAssetAdded: (asset: ProductAsset) => void;
+  /** Opened from a card's "Make for <app>": the sheet opens straight away. */
+  startMaking?: boolean;
   busy: string | null; onClose: () => void; onReadAgain: () => void; onSend: () => void;
   onScanned: (scan: AdScan, scannedAt: string) => void;
   aiLocked: FeatureState | null;
 }) {
   const [recreating, setRecreating] = useState(false);
-  // The Recreate sheet handles Escape while it's open.
-  useEscape(onClose, !recreating);
+  const [making, setMaking] = useState(startMaking);
   const media = mediaOf(ad);
   const [measured, setMeasured] = useState<Record<number, Measure>>({});
   const [failed, setFailed] = useState<Record<number, boolean>>({});
@@ -1497,29 +1487,29 @@ function AdDrawer({ productId, ad, brand, avatars, assets, onAssetAdded, busy, o
   const cards = ad.creative?.card_count ?? media.length;
 
   return (
-    <PanelPortal>
+    <PanelPortal onClose={onClose}>
     <div className={`${MODAL_OVERLAY} z-40`} onClick={onClose}>
       <aside className={`${MODAL} max-w-xl`} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Ad details">
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-line bg-card px-5 py-3">
+        <div className="sticky top-0 z-10 flex min-h-11 items-center justify-between gap-2 border-b border-line bg-card px-4 py-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2"><span className="truncate text-sm font-medium">{ad.competitor ?? ad.page_name}</span><DaysBadge ad={ad} /></div>
-          <button type="button" onClick={onClose} className="grid size-7 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink" aria-label="Close"><IconX className="size-4" /></button>
+          <button type="button" onClick={onClose} className="grid size-7 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink" aria-label="Close"><IconX className="size-3.5" /></button>
         </div>
-        <div className="grid gap-5 p-4">
+        <div className="grid gap-4 p-4">
           {media[0]
             ? <MediaView media={media[0]} big failed={Boolean(failed[0])} onMeasure={measure(0)} onFail={fail(0)} expired={expired} />
             : ad.thumb ? <MediaView media={{ type: "image", url: ad.thumb }} big failed={Boolean(failed[0])} onMeasure={measure(0)} onFail={fail(0)} expired={expired} /> : null}
 
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-inner border border-line bg-line text-center @md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-small border border-line bg-line @md:grid-cols-4">
             {([
               ["Days running", ad.days ?? "–"],
               ["Variants", ad.variants > 1 ? ad.variants : ad.groupSize],
               ["Impressions rank", ad.impressions_rank != null ? `#${ad.impressions_rank}` : "–"],
               ["Since", ad.started_at?.slice(0, 10) ?? "–"],
             ] as const).map(([label, value]) => (
-              <div key={label} className="bg-card px-2 py-2.5"><p className="text-title font-medium tabular-nums">{value}</p><p className="text-xs text-muted">{label}</p></div>
+              <div key={label} className="bg-card px-3 py-2"><p className="text-xs text-muted">{label}</p><p className="text-sm font-medium tabular-nums">{value}</p></div>
             ))}
           </div>
-          {ad.impressions_rank != null && <p className="-mt-4 text-xs text-muted">Its place under Meta&apos;s &ldquo;total impressions&rdquo; sort when {ad.page_name}&apos;s ads were collected (#1 had the most).</p>}
+          {ad.impressions_rank != null && <p className="-mt-3 text-xs text-muted">Its place under Meta&apos;s &ldquo;total impressions&rdquo; sort when {ad.page_name}&apos;s ads were collected (#1 had the most).</p>}
 
           <div className="flex flex-wrap gap-1.5">
             <Badge tone="accent">{MEDIA_LABEL[ad.media_type]}{multi && cards > 1 ? ` · ${plural(cards, "card")}` : ""}</Badge>
@@ -1536,7 +1526,7 @@ function AdDrawer({ productId, ad, brand, avatars, assets, onAssetAdded, busy, o
             <p className="eyebrow">Creative size</p>
             {placement && (
               <div className="flex items-center gap-3">
-                <span className="grid w-[80px] shrink-0 place-items-center rounded-md bg-canvas py-2"><PlacementSketch placement={placement} carousel={ad.media_type === "carousel" && placement.chrome !== "fullscreen"} /></span>
+                <span className="grid w-[72px] shrink-0 place-items-center rounded-small bg-canvas py-2"><PlacementSketch placement={placement} carousel={ad.media_type === "carousel" && placement.chrome !== "fullscreen"} /></span>
                 <div className="grid gap-0.5 text-sm">
                   <span className="font-medium">{placementLabel(placement)}</span>
                   <span className="text-xs text-muted">Nearest Meta placement · {placement.where.slice(0, 2).join(", ")}</span>
@@ -1581,17 +1571,21 @@ function AdDrawer({ productId, ad, brand, avatars, assets, onAssetAdded, busy, o
           {ad.media_type === "video" || ad.is_video
             ? <VideoBreakdown ad={ad} preview={media[0] && !failed[0] ? media[0] : null} onScanned={onScanned} />
             : <StaticActions ad={ad} images={media.filter((m, i) => m.type === "image" && !failed[i])} />}
-          <p className="text-xs text-muted">Recreate copies this ad&apos;s style, structure and pattern for {brand?.appName ?? "your app"}: you check everything brand-specific in it, then the Studio opens with {placement ? placementLabel(placement) : "a placement"} and a brief.</p>
+          <p className="text-xs text-muted">Make this for {brand?.appName || "your app"} gives you a ready-made prompt for this kind of ad with your brand in it, a one-click image here, or a full batch in Studio ({placement ? placementLabel(placement) : "a placement"}). Their name, logo, people and words are never copied.</p>
           <AdRead ad={ad} busy={busy === `decode:${ad.id}`} onReadAgain={onReadAgain} aiLocked={aiLocked} />
         </div>
         {/* Always in reach, however far the ad's details scroll. */}
-        <div className="sticky bottom-0 z-10 mt-auto flex flex-wrap gap-2 border-t border-line bg-card px-5 py-3">
-          <Button size="sm" onClick={() => setRecreating(true)}>Recreate this ad</Button>
+        <div className="sticky bottom-0 z-10 mt-auto flex flex-wrap gap-2 border-t border-line bg-card px-4 py-2.5">
+          <Button size="sm" onClick={() => setMaking(true)}>Make this for {brand?.appName || "your app"}</Button>
           <Button size="sm" variant="secondary" onClick={onSend} disabled={Boolean(ad.sent_to_library_at) || busy === `send:${ad.id}`}>{ad.sent_to_library_at ? "In format library" : "Send to format library"}</Button>
         </div>
       </aside>
+      {making && (
+        <MakeForApp productId={productId} ad={ad} brand={brand} assets={assets} measured={first ?? {}}
+          media={media.filter((_, i) => !failed[i])} onClose={() => setMaking(false)} onOpenRecreate={() => { setMaking(false); setRecreating(true); }} />
+      )}
       {recreating && (
-        <RecreateAd
+        <RecreateAd onMake={() => { setRecreating(false); setMaking(true); }}
           productId={productId} ad={ad} brand={brand} avatars={avatars} placement={placement} measured={first ?? {}}
           preview={media[0] && !failed[0] ? media[0] : null} onClose={() => setRecreating(false)} onScanned={onScanned}
           references={media.filter((m, i) => m.type === "image" && !failed[i]).map((m) => m.url)}
@@ -1617,8 +1611,11 @@ function Watchlist({ productId, watchlist, deleting, suggestions, own = false, t
   onChange: () => void; onRemove: (w: WatchRow) => void; onClose: () => void;
 }) {
   const base = `/api/research/${productId}/watch`;
-  const empty = { name: "", network: "meta", page: "", searchTerms: "", tiktokAdvertiserId: "", countries: "US", candidateId: "" };
+  const empty = { name: "", network: "meta", page: "", searchTerms: "", tiktokAdvertiserId: "", countries: "US", candidateId: "", google: "", tiktok: "" };
   const [form, setForm] = useState(empty);
+  // Each source's identifier (Page, website or Google advertiser, TikTok business) as pasted, and what the edited entry had.
+  const ids: CompetitorIds = { page: form.page, google: form.google, tiktok: form.tiktok };
+  const [idsBefore, setIdsBefore] = useState<CompetitorIds>(EMPTY_IDS);
   const [saving, setSaving] = useState(false);
   // The entry whose Page link, search terms and countries are being changed (the form above holds them).
   const [editing, setEditing] = useState<WatchRow | null>(null);
@@ -1626,15 +1623,17 @@ function Watchlist({ productId, watchlist, deleting, suggestions, own = false, t
   const formTop = useRef<HTMLFormElement>(null);
   const watched = new Set(watchlist.map((w) => w.name.toLowerCase()));
   const open = suggestions.filter((s) => !watched.has(s.name.toLowerCase()));
-  useEscape(onClose);
 
   async function add(event: React.FormEvent) {
     event.preventDefault();
     if (saving) return;
+    const wrong = idsError(ids);
+    if (wrong) return notice(wrong, "Check the competitor's details");
     setSaving(true);
+    const changed = changedIds(ids, idsBefore);
     const result = editing
-      ? await post(`${base}?id=${editing.id}`, { page: form.page, searchTerms: form.searchTerms, countries: form.countries }, "PATCH").catch(() => ({ error: "Couldn't reach the server. Try again." }))
-      : await post(base, { ...form, own }).catch(() => ({ error: "Couldn't reach the server. Try again." }));
+      ? await post(`${base}?id=${editing.id}`, { page: form.page, searchTerms: form.searchTerms, countries: form.countries, google: changed.google, tiktok: changed.tiktok }, "PATCH").catch(() => ({ error: "Couldn't reach the server. Try again." }))
+      : await post(base, { ...form, google: changed.google, tiktok: changed.tiktok, own }).catch(() => ({ error: "Couldn't reach the server. Try again." }));
     setSaving(false);
     if (result.error) return notice(result.error, editing ? "Couldn't save the changes" : own ? "Couldn't add the Page" : "Couldn't add the competitor");
     setForm(empty);
@@ -1652,30 +1651,32 @@ function Watchlist({ productId, watchlist, deleting, suggestions, own = false, t
   /** Puts an entry's details in the form, to change its Page link, search terms or countries. */
   function edit(w: WatchRow) {
     setEditing(w);
-    setForm({ ...empty, name: w.name, network: w.network, page: w.page_id ?? w.page_url ?? "", searchTerms: w.search_terms ?? "", tiktokAdvertiserId: w.tiktok_advertiser_id ?? "", countries: w.countries.join(", ") });
+    const before = idsOf(w);
+    setIdsBefore(before);
+    setForm({ ...empty, name: w.name, network: w.network, page: before.page, google: before.google, tiktok: before.tiktok, searchTerms: w.search_terms ?? "", tiktokAdvertiserId: w.tiktok_advertiser_id ?? "", countries: w.countries.join(", ") });
     formTop.current?.scrollIntoView({ block: "nearest" });
   }
-  const stopEditing = () => { setEditing(null); setForm(empty); };
+  const stopEditing = () => { setEditing(null); setForm(empty); setIdsBefore(EMPTY_IDS); };
 
 
   return (
-    <PanelPortal>
+    <PanelPortal onClose={onClose}>
     <div className={`${MODAL_OVERLAY} z-40`} onClick={onClose}>
       <aside className={`${MODAL} max-w-2xl overflow-x-hidden`} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={own ? "Our Pages" : "Competitors"}>
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-line bg-card px-5 py-3">
+        <div className="sticky top-0 z-10 flex min-h-11 items-center justify-between gap-2 border-b border-line bg-card px-4 py-2">
           <span className="text-sm font-medium">{own ? "Our Pages" : "Competitors"} <span className="font-normal text-muted tabular-nums">· {watchlist.length}</span></span>
-          <button type="button" onClick={onClose} className="grid size-7 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink" aria-label="Close"><IconX className="size-4" /></button>
+          <button type="button" onClick={onClose} className="grid size-7 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink" aria-label="Close"><IconX className="size-3.5" /></button>
         </div>
         {/* One column that can shrink: a long name is cut short in its row instead of widening the panel past its edge. */}
-        <div className="grid grid-cols-1 gap-5 p-5">
+        <div className="grid grid-cols-1 gap-4 p-4">
           <p className="text-xs text-muted">{own ? "Your own Facebook Page(s): their ads are saved as Our ads." : collect ? "One competitor list for the whole app: creative checks keep these names out of your ads, and followed ones are included when you collect automatically." : "One competitor list for the whole app: creative checks keep these names out of your ads, and each one's imported ads are filed under it."}</p>
 
           <form ref={formTop} onSubmit={add} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {editing && <p className="text-sm font-medium sm:col-span-2 [overflow-wrap:anywhere]">Editing {editing.name}</p>}
             <Field label={own ? "Page name" : "Name"} hint={editing ? "The name stays as it is: its ads are filed under it." : undefined}><input className={inputClass} value={form.name} maxLength={120} disabled={Boolean(editing)} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={own ? "Acme" : "A competitor's Page name"} required /></Field>
             {form.network === "meta"
-              ? <Field label="Facebook Page" hint="Optional: a Page id or an Ad Library link. With one, Open goes straight to its ads; without, the name is searched."><input className={inputClass} value={form.page} onChange={(e) => setForm({ ...form, page: e.target.value })} placeholder="facebook.com/ads/library/?view_all_page_id=…" /></Field>
-              : <Field label="TikTok advertiser id" hint="From library.tiktok.com (EU/UK ads)"><input className={inputClass} value={form.tiktokAdvertiserId} onChange={(e) => setForm({ ...form, tiktokAdvertiserId: e.target.value })} /></Field>}
+              ? <CompetitorIdFields className="sm:col-span-2" ids={ids} metaOnly={own} onChange={(next) => setForm({ ...form, ...next })} />
+              : <Field label="TikTok advertiser id" hint="From library.tiktok.com (ads shown in Europe)"><input className={inputClass} value={form.tiktokAdvertiserId} onChange={(e) => setForm({ ...form, tiktokAdvertiserId: e.target.value })} /></Field>}
             <details className="group sm:col-span-2" open={editing ? true : undefined}>
               <summary className="w-fit cursor-pointer list-none rounded-xs text-xs text-muted hover:text-ink">More options <span aria-hidden className="inline-block transition-transform group-open:rotate-90">›</span></summary>
               <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -1698,27 +1699,27 @@ function Watchlist({ productId, watchlist, deleting, suggestions, own = false, t
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="eyebrow mr-1">Suggested</span>
               {open.slice(0, 12).map((s) => (
-                <button key={s.id} type="button" title={s.from === "analysis" ? "Picked in a competitor analysis" : "Named by the AI profile"} onClick={() => setForm({ ...empty, name: s.name, searchTerms: s.name, candidateId: s.from === "analysis" ? s.id : "" })} className="rounded-full border border-hairline bg-raised px-2.5 py-0.5 text-xs text-label transition hover:bg-hover hover:text-ink">+ {s.name}</button>
+                <button key={s.id} type="button" title={s.from === "analysis" ? "Picked in a competitor analysis" : "Named by the AI profile"} onClick={() => setForm({ ...empty, name: s.name, searchTerms: s.name, candidateId: s.from === "analysis" ? s.id : "" })} className="inline-flex h-6 items-center rounded-full border border-hairline bg-raised px-2.5 text-xs font-medium text-label transition-colors hover:bg-hover hover:text-ink">+ {s.name}</button>
               ))}
             </div>
           )}
 
           {watchlist.length > 0
             ? (
-              <ul className="divide-y divide-line border-y border-line">
+              <ul className="-mx-2 grid">
                 {watchlist.map((w) => (
-                  <li key={w.id} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-2.5">
+                  <li key={w.id} className="flex min-h-11 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-control px-2 py-1.5 transition-colors hover:bg-hover">
                     <PageLogo pageId={w.page_id} name={w.name} size="sm" className={cx(!w.enabled && "opacity-60")} />
                     <div className="min-w-0 flex-1 basis-44">
                       <p className={cx("truncate text-sm font-medium", !w.enabled && "text-muted")} title={w.name}>{w.name} <span className="text-xs font-normal text-muted">· {w.enabled ? NETWORK_LABEL[w.network] : !own && w.source && w.source !== "research" ? "not followed" : "paused"}{!own && w.source && w.source !== "research" ? ` · ${COMPETITOR_SOURCE_LABEL[w.source]}` : ""}</span></p>
-                      <p className="truncate text-xs text-muted">{[w.page_id && `Page ${w.page_id}`, w.page_url, w.search_terms && `“${w.search_terms}”`, w.tiktok_advertiser_id && `advertiser ${w.tiktok_advertiser_id}`].filter(Boolean).join(" · ")} · {w.countries.join(", ")}</p>
+                      <p className="truncate text-xs text-muted">{[w.page_id && `Page ${w.page_id}`, w.page_url, w.website, w.google_advertiser_id && `Google ${w.google_advertiser_id}`, w.search_terms && `“${w.search_terms}”`, w.tiktok_advertiser_id && `TikTok ${w.tiktok_advertiser_id}`, w.tiktok_business_name && `TikTok “${w.tiktok_business_name}”`].filter(Boolean).join(" · ")} · {w.countries.join(", ")}</p>
                     </div>
                     <div className="ml-auto flex flex-wrap justify-end gap-1">
                       {w.network === "meta" && (
                         <a href={adLibraryLink(w).url} target="_blank" rel="noopener noreferrer" title="Open in the Meta Ad Library"
                           className={buttonClass("ghost", "sm")}>Ad Library<IconExternal /></a>
                       )}
-                      <Button size="sm" variant="ghost" onClick={() => edit(w)} aria-pressed={editing?.id === w.id} title="Change its Page link, search terms or countries">Edit</Button>
+                      <Button size="sm" variant="ghost" onClick={() => edit(w)} aria-pressed={editing?.id === w.id} title="Change its Page, website, TikTok business, search terms or countries">Edit</Button>
                       <Button size="sm" variant="ghost" onClick={() => toggle(w)} disabled={toggling !== null} title={w.enabled ? "Keep its ads, stop tracking when they were last collected" : "Track when its ads were last collected"}>{toggling === w.id ? <Spinner /> : w.enabled ? "Pause" : "Follow"}</Button>
                       <Button size="sm" variant="ghost" onClick={() => onRemove(w)} disabled={deleting.has(w.id)}>{deleting.has(w.id) ? <><Spinner /> Deleting…</> : "Remove"}</Button>
                     </div>
@@ -1753,10 +1754,10 @@ function StorageCheck({ preview: p, error }: { preview: MediaPreview | null; err
         <span className="tabular-nums">{formatBytes(s.usedBytes)} of {formatBytes(s.quotaBytes)} used ({pct}%) · {formatBytes(s.roomBytes)} free</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-line" aria-hidden="true">
-        <div className="h-full bg-ink" style={{ width: `${pct}%` }} />
+        <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
       </div>
       <p>
-        This import stores {plural(p.fit.files, "file")} ({formatBytes(p.fit.bytes)}){p.stored ? `; ${p.stored.toLocaleString()} are already stored and are skipped` : ""}.
+        This import stores {plural(p.fit.files, "file")} ({formatBytes(p.fit.bytes)}){p.stored ? `; ${p.stored.toLocaleString(UI_LOCALE)} are already stored and are skipped` : ""}.
         {" "}After it, about {formatBytes(after)} of {formatBytes(s.quotaBytes)} is used.
         {p.new.unknown > 0 && <> {plural(p.new.unknown, "file")} didn&apos;t report a size, so they&apos;re estimated.</>}
       </p>

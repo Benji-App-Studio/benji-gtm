@@ -16,8 +16,9 @@ This repository is a copy of https://github.com/Benji-App-Studio/benji-gtm (a fo
 ## Rules that matter most
 
 - **Never ask the person to paste a Supabase access token, an API key or a password into the chat.**
-  Not even "just to check it". Those go only into the app's own pages:
-  - the Supabase access token into the setup page (`/setup`), or Settings > Updates > Open setup;
+  Not even "just to check it". Those go only into the app's own pages, or a hidden Terminal prompt:
+  - the Supabase access token into the setup page (`/setup`), Settings > Updates > Open setup, or the
+    "Forgot your password?" page;
   - API keys (OpenAI, Apify, Higgsfield, Meta, …) into **Settings > API keys** in the app.
   The app checks each key and stores it encrypted in the person's own Supabase project. If the
   person pastes a secret into the chat anyway, tell them to delete that token or key at the provider
@@ -47,6 +48,33 @@ setup must happen on the computer that runs the app. Press Control-C in its Term
 
 For work on the app's code there is a development server with live reload (see "For developers" at the end).
 
+## Signing in
+
+On the person's own Mac the app has **no login page**: it signs the owner in by itself with the email
+and password chosen in setup, which it keeps in `~/.gtm-install/config.json` (owner-only, outside the
+repository). Never read that file out, print it or copy it anywhere. A copy put online (Vercel)
+shows a login page, with the same email and password.
+
+If the person forgot their password or the app shows a login page on their Mac, don't look for a
+reset email (there is none) and never ask for the password or token in chat. In order:
+
+1. The app opens: **Settings > Account > Change password** (the old one isn't needed).
+2. It shows a login page: press **Forgot your password?** there, and follow the page (a new Supabase
+   access token, then a new password). If the page says the account is gone, it offers to create it
+   again; the data stays. If it says the project can't be reached, the project is probably paused:
+   press **Resume project** in the Supabase dashboard, then **Try again**.
+3. A new Mac (the app shows `/setup`): go through setup with the same project; step 4,
+   "Connect this computer", sets a new password.
+4. If the pages don't help, have the person run this in the app's folder, and type the token and the
+   password **into the Terminal prompts** (hidden), never into the chat or the command line:
+
+   ```bash
+   npm run provision -- --reset-password --project <ref>
+   ```
+
+   `<ref>` is the 20 letters in their project's Supabase address. It sets the password, saves it for
+   automatic sign-in, and (if the account was deleted) offers to create it again.
+
 ## Folder map
 
 | Path | What it is |
@@ -56,6 +84,7 @@ For work on the app's code there is a development server with live reload (see "
 | `studio/src/app/setup/` | The setup page (`/setup`) and the Updates card. |
 | `studio/src/lib/brand-config.ts` | The product's name. |
 | `studio/public/downloads/ad-library-extension.zip` | The Chrome extension, built. |
+| `studio/public/guides/extension/` | The extension guide's pictures (Settings → Ad Library extension and `docs/CHROME-EXTENSION.md`). |
 | `supabase/migrations/` | Database changes, applied in order by setup. Add new ones; never edit old ones. |
 | `supabase/functions/` | The backend (Supabase edge functions, Deno). Setup deploys them. |
 | `scripts/provision.mjs` | The setup steps from Terminal, for when the setup page can't finish. |
@@ -72,6 +101,7 @@ For work on the app's code there is a development server with live reload (see "
 | `npm install` | Once, at the top of the repository: installs what the two terminal tools below need. |
 | `npm run provision -- --dry-run` | Shows what setup would do. Calls nothing and needs no token. |
 | `npm run provision -- --help` | All of setup's terminal options. A real run asks for the access token itself; never pass it through the chat. |
+| `npm run provision -- --reset-password --project <ref>` | A new password for the owner, no email. The person types the token and password into the hidden Terminal prompts. See "Signing in". |
 | `npm run creative-runner -- --dry-run --offline /tmp/creative-dry-run --once` | Tries the desktop runner without spending anything. See docs/DESKTOP-RUNNER.md. |
 | `npm run update` | Updates this copy from the original (below). |
 

@@ -1,5 +1,6 @@
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { listWorkspaces } from "@/lib/workspace";
+import { caughtFailure } from "@/lib/server/errors";
 
 /** The signed-in user's workspaces (one per product), for the switcher. */
 export async function GET() {
@@ -8,6 +9,6 @@ export async function GET() {
   try {
     return Response.json(await listWorkspaces(session.supabase));
   } catch (error) {
-    return Response.json({ error: (error as Error).message }, { status: 500 });
+    return caughtFailure("workspaces list", error, "Couldn't load your workspaces. Try again.");
   }
 }

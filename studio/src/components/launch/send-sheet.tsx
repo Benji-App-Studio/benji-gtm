@@ -20,7 +20,7 @@ import type { LaunchDraft, LaunchOverview } from "@/lib/launch/types";
 import { IconRocket, IconX } from "../icons";
 import { MODAL, MODAL_OVERLAY, PanelPortal } from "../panel-portal";
 import { useFeatures } from "../studio/features";
-import { Button, ConnectState, cx, IconButton, Spinner } from "../ui";
+import { Button, ConnectState, cx, IconButton, segmentClass, segmentTrackClass, Spinner } from "../ui";
 import { type AdDraft, AdStep, toAdSpec } from "./send-ad";
 import { AdSetStep } from "./send-adset";
 import { CampaignStep } from "./send-campaign";
@@ -36,16 +36,9 @@ export function SendToMeta({ productId, open, onClose, initialIds = [] }: { prod
   const [overview] = useCached<LaunchOverview & { error?: string }>(`/api/launch/${productId}`);
   // Opened from Studio too: without the Meta keys and this app's ad account and Page, it says what to connect.
   const lock = useFeatures(productId).locked("launch");
-  useEffect(() => {
-    if (!open) return;
-    // A confirm dialog or the edit sheet above this one handles its own Escape.
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector("[role=alertdialog]") && document.querySelectorAll("[role=dialog]").length < 2) onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
   if (!open) return null;
   return (
-    <PanelPortal>
+    <PanelPortal onClose={onClose}>
       <div className={`${MODAL_OVERLAY} z-[45]`} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
         <div role="dialog" aria-modal="true" aria-labelledby="send-to-meta-title" className={`${MODAL} @container max-w-4xl`}>
           {lock && !overview?.status?.mock
@@ -57,9 +50,9 @@ export function SendToMeta({ productId, open, onClose, initialIds = [] }: { prod
               </div>
             )
             : !overview
-            ? <div className="grid place-items-center p-16"><Spinner /></div>
+            ? <div className="grid place-items-center p-12"><Spinner /></div>
             : overview.error
-              ? <div className="p-6"><Problems title="Couldn't open Launch" list={[overview.error]} /><Button className="mt-4" variant="secondary" onClick={onClose}>Close</Button></div>
+              ? <div className="p-4"><Problems title="Couldn't open Launch" list={[overview.error]} /><Button className="mt-4" variant="secondary" onClick={onClose}>Close</Button></div>
               : <SendSheet productId={productId} overview={overview} initialIds={initialIds} onClose={onClose} />}
         </div>
       </div>
@@ -279,18 +272,18 @@ function SendSheet({ productId, overview, initialIds, onClose }: { productId: st
   return (
     <div className="flex flex-col">
       <div className="sticky top-0 z-10 border-b border-line bg-card">
-      <header className="flex items-start justify-between gap-4 px-5 py-3">
+      <header className="flex items-start justify-between gap-4 px-4 pt-3 pb-2">
         <div className="min-w-0">
-          <h2 id="send-to-meta-title" className="text-title font-medium">Send to Meta</h2>
+          <h2 id="send-to-meta-title" className="text-sm font-medium">Send to Meta</h2>
           <p className="text-xs text-muted">{overview.status.account ? `${overview.status.account.name} · ${currency}` : settings.meta.adAccountId ? `Ad account ${settings.meta.adAccountId}` : "No ad account yet"} · everything is created paused</p>
         </div>
         <IconButton label="Close" onClick={onClose}><IconX /></IconButton>
       </header>
       {!result && (
-        <nav aria-label="Steps" className="no-scrollbar flex gap-1 overflow-x-auto px-5 pb-2 text-xs">
+        <nav aria-label="Steps" className={cx("no-scrollbar overflow-x-auto px-4 pb-2.5", segmentTrackClass)}>
           {steps.map((s, i) => (
             <button key={s} type="button" disabled={i > index} onClick={() => { setProblems([]); setStep(s); }}
-              className={cx("h-6 shrink-0 rounded-full px-2.5 transition-colors", s === step ? "bg-primary font-medium text-on-ink" : i < index ? "text-ink hover:bg-hover" : "text-faint")}>
+              className={cx(segmentClass(s === step), s !== step && i < index && "text-ink", i > index && "text-faint hover:bg-transparent hover:text-faint")}>
               {i + 1}. {STEP_LABEL[s]}
             </button>
           ))}
@@ -298,7 +291,7 @@ function SendSheet({ productId, overview, initialIds, onClose }: { productId: st
       )}
       </div>
 
-      <div className="px-5 py-4">
+      <div className="px-4 py-4">
         <div className="grid gap-4">
           {!overview.status.connected && <Problems title="Meta isn't connected" list={["Add the Meta system user token and app secret in Settings > API keys, then this app's ad account and Page in its connections."]} />}
           {connectionsError && <Problems title="Couldn't read the ad account" list={[connectionsError]} />}
@@ -321,7 +314,7 @@ function SendSheet({ productId, overview, initialIds, onClose }: { productId: st
         </div>
       </div>
 
-      <footer className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-line bg-card px-5 py-3">
+      <footer className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-line bg-card px-4 py-2.5">
         {result ? (
           <>
             <span className="text-xs text-muted">{result.note}</span>

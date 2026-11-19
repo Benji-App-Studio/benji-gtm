@@ -24,6 +24,8 @@ import { reviewHref } from "@/lib/studio-sources";
 import { showOriginal, thumbUrl } from "@/lib/thumb";
 import { VARIANT_LABEL, videoModelLabel } from "./playground-form";
 import { uploadPlaygroundImage, videoFrame } from "./upload";
+import { UI_LOCALE } from "@/lib/ui-locale";
+import { confirmRetry } from "../studio/retry-confirm";
 
 export type ResultCard =
   | { type: "output"; key: string; item: PlaygroundItem; output: PlaygroundOutput; job: PlaygroundJob | null }
@@ -56,7 +58,7 @@ const imageBlockMessage = (provider: ImageProvider) => `${PROVIDER_NAME[provider
 
 /** A Library template as the lightbox names it: a starter's name, or "Your template" for one made from an upload. */
 const templateLabel = (styleId: string) => (styleId.startsWith("custom:") ? "Your template" : adStyleById(styleId)?.name ?? styleId);
-const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const when = (iso: string) => new Date(iso).toLocaleString(UI_LOCALE, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const isVideoItem = (item: PlaygroundItem) => item.request.mode === "video";
 const modelLabel = (item: PlaygroundItem) => (isVideoItem(item) ? videoModelLabel(item.request.video ?? DEFAULT_PLAYGROUND_VIDEO) : `${gptImageLabel(item.request.options.provider)} · ${VARIANT_LABEL[item.request.options.variant]}`);
 /** The model line with the image options (a video's line already has its own). */
@@ -148,7 +150,9 @@ export function PlaygroundResults({ productId, items, features, onUseAsReference
     }
   }
 
-  async function jobAction(job: PlaygroundJob, action: "cancel" | "retry") {
+  async function jobAction(job: PlaygroundJob, action: "cancel" | "retry", what = "Playground image") {
+    // A retry spends again: its price first.
+    if (action === "retry" && !(await confirmRetry({ provider: job.provider, credits: job.costEstimate, usd: job.estUsd ?? 0, what: `${what}${job.variant > 1 ? ` · v${job.variant}` : ""}`, free: job.backend === "template" }))) return;
     setActing(job.id);
     const response = await fetch(`/api/studio/jobs/${job.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
     setActing(null);
@@ -158,15 +162,15 @@ export function PlaygroundResults({ productId, items, features, onUseAsReference
 
   return (
     <section aria-label="Results" className="min-w-0">
-      <div className="mb-3 flex min-h-8 flex-wrap items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-title font-medium">Results <span className="text-xs font-normal text-muted tabular-nums">{outputs.length}</span></h2>
+      <div className="mb-2 flex min-h-7 flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-sm font-medium">Results <span className="text-xs font-normal text-muted tabular-nums">{outputs.length}</span></h2>
         {working > 0 && <Badge tone="accent"><Gear className="size-3" />{working} in progress</Badge>}
       </div>
       {cards.length ? (
-        <ul className="grid grid-cols-2 gap-3 @3xl:grid-cols-[repeat(auto-fill,minmax(210px,1fr))]">
+        <ul className="grid grid-cols-2 gap-2 @3xl:grid-cols-[repeat(auto-fill,minmax(180px,1fr))]">
           {cards.map((card) => (
             <li key={card.key} className="min-w-0">
-              <Card className="flex h-full flex-col overflow-hidden">
+              <Card className="flex h-full flex-col overflow-hidden rounded-small">
                 {card.type === "output" ? (
                   <button type="button" onClick={() => setOpenId(card.output.id)} className="group/out relative block aspect-[4/5] w-full overflow-hidden bg-canvas" aria-label={card.output.kind === "video" ? "Play" : "Open large"}>
                     {card.output.kind === "video" ? (
@@ -186,9 +190,9 @@ export function PlaygroundResults({ productId, items, features, onUseAsReference
                   </button>
                 ) : (
                   <JobFrame job={card.job} stuck={stuckOn(card.job, features)} video={isVideoItem(card.item)} blocked={blockedJob(card.item, card.job)} acting={acting === card.job.id || acting === card.key} canDismiss={!card.item.outputs.length && !card.item.jobs.some((j) => isActiveJob(j.status))}
-                    onCancel={() => jobAction(card.job, "cancel")} onRetry={() => jobAction(card.job, "retry")} onDismiss={() => remove(card)} aspect={card.item.request.aspect} />
+                    onCancel={() => jobAction(card.job, "cancel")} onRetry={() => jobAction(card.job, "retry", isVideoItem(card.item) ? "Playground video" : "Playground image")} onDismiss={() => remove(card)} aspect={card.item.request.aspect} />
                 )}
-                <div className="flex flex-1 flex-col gap-2 p-2.5">
+                <div className="flex flex-1 flex-col gap-1.5 p-2">
                   <p className="line-clamp-2 min-h-8 text-xs leading-4 text-ink" title={card.item.request.prompt}>{card.item.request.prompt}</p>
                   {card.type === "job" && blockedJob(card.item, card.job) && (
                     <div className="grid gap-1.5 rounded-md bg-caution-soft px-2.5 py-2 text-xs leading-relaxed text-caution-ink">
@@ -222,11 +226,11 @@ export function PlaygroundResults({ productId, items, features, onUseAsReference
           ))}
         </ul>
       ) : (
-        <Card className="grid place-items-center px-6 py-16 text-center">
-          <span className="grid size-9 place-items-center rounded-full bg-control text-muted"><IconImage className="size-4" /></span>
+        <div className="grid place-items-center px-6 py-12 text-center">
+          <span className="text-faint"><IconImage className="size-6" /></span>
           <p className="mt-3 text-sm font-medium">No results yet</p>
           <p className="mt-1 max-w-xs text-xs text-muted">Bring a reference, say what to change and generate, or describe a shot in Video mode. Every image and video is saved here, newest first.</p>
-        </Card>
+        </div>
       )}
       {openIndex >= 0 && (
         <Lightbox
@@ -348,22 +352,22 @@ function Lightbox({ card, index, total, acting, onMove, onClose, onUseAsReferenc
           </div>
           <aside className="flex max-h-[45dvh] w-full shrink-0 flex-col gap-4 overflow-y-auto p-4 md:max-h-none md:w-[320px]">
             <div className="flex items-start justify-between gap-2">
-              <h2 className="pt-0.5 text-title font-medium">Result</h2>
-              <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="grid size-7 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink"><IconX className="size-4" /></button>
+              <h2 className="pt-1 text-sm font-medium">Result</h2>
+              <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="grid size-7 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink"><IconX className="size-3.5" /></button>
             </div>
             <div className="grid gap-1.5">
-              <span className="text-xs font-medium text-label">Prompt</span>
+              <span className="text-xs font-medium text-muted">Prompt</span>
               <p className="text-xs leading-relaxed whitespace-pre-wrap text-ink">{item.request.prompt}</p>
             </div>
             <div className="grid gap-1.5">
-              <span className="text-xs font-medium text-label">{isVideo ? "Reference images" : "Reference and your images"}</span>
+              <span className="text-xs font-medium text-muted">{isVideo ? "Reference images" : "Reference and your images"}</span>
               <Inputs item={item} size="md" />
             </div>
             <dl className="grid gap-1 text-xs">
               {facts.map(([k, v]) => <div key={k} className="flex justify-between gap-3"><dt className="text-muted">{k}</dt><dd className="text-right text-ink">{v}</dd></div>)}
             </dl>
             <div className="grid gap-1.5">
-              <span className="text-xs font-medium text-label">Review</span>
+              <span className="text-xs font-medium text-muted">Review</span>
               <OutputBadges output={output} />
               <p className="text-xs text-muted">{output.approval === "approved" ? "Approved: Launch can use it." : output.approval === "rejected" ? "Rejected in the Studio." : "Approve it in the Studio (after QA) and Launch can use it."}</p>
             </div>

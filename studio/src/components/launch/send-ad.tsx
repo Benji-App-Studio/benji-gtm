@@ -86,7 +86,7 @@ export function AdStep({ value: ad, onChange, objective, approved, picked, onPic
   const instagram = connections?.instagram ?? (ad.instagramId ? [{ id: ad.instagramId, username: ad.instagramId, source: "account" as const }] : []);
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4">
       <Group title="Creatives" hint={`${picked.length} picked · only approved creatives with a passing QA can be sent`}>
         {approved.length === 0 ? <p className="text-sm text-muted">No approved creatives yet. Approve some in the Studio first.</p> : (
           <ul className="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto pr-1 @md:grid-cols-5 @2xl:grid-cols-6">
@@ -128,9 +128,9 @@ export function AdStep({ value: ad, onChange, objective, approved, picked, onPic
             {chosen.map((c, i) => (
               <li key={c.id} className="grid gap-2 rounded-inner border border-line p-2.5 @lg:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto]">
                 <span className="text-xs font-medium text-muted">Card {i + 1}</span>
-                <input className={inputClass} placeholder={`Headline (${ad.headline || "shared"})`} value={ad.cards[c.id]?.headline ?? ""} maxLength={255}
+                <input className={inputClass} aria-label={`Card ${i + 1} headline`} placeholder={`Headline (${ad.headline || "shared"})`} value={ad.cards[c.id]?.headline ?? ""} maxLength={255}
                   onChange={(e) => set({ cards: { ...ad.cards, [c.id]: { ...ad.cards[c.id], headline: e.target.value || undefined } } })} />
-                <input className={inputClass} placeholder="Link (shared if empty)" value={ad.cards[c.id]?.link ?? ""}
+                <input className={inputClass} aria-label={`Card ${i + 1} link`} placeholder="Link (shared if empty)" value={ad.cards[c.id]?.link ?? ""}
                   onChange={(e) => set({ cards: { ...ad.cards, [c.id]: { ...ad.cards[c.id], link: e.target.value || undefined } } })} />
                 <span className="flex gap-1">
                   <button type="button" className="rounded px-1.5 text-muted hover:bg-hover" aria-label="Move up" onClick={() => move(c.id, -1)}>↑</button>

@@ -1,11 +1,12 @@
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { productInput, saveCompetitorField } from "@/lib/server/products";
+import { dbFailure } from "@/lib/server/errors";
 
 export async function GET() {
   const session = await requireUser();
   if (isResponse(session)) return session;
   const { data, error } = await session.supabase.from("products").select("*").order("is_primary", { ascending: false }).order("created_at");
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return dbFailure("products list", error, "Couldn't load your products. Try again.");
   return Response.json(data);
 }
 
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
   const { supabase, user } = session;
   const { count } = await supabase.from("products").select("id", { count: "exact", head: true });
   const { data: inserted, error } = await supabase.from("products").insert({ ...input, is_primary: !count }).select().single();
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return dbFailure("product create", error, "Couldn't save the product. Try again.");
   // The typed competitors start the product's one list (the row's column already holds them).
   let data = inserted;
   if (input.known_competitors?.length) {

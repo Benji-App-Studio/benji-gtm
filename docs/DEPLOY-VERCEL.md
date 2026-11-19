@@ -34,9 +34,10 @@
    | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | The publishable key (starts with `sb_publishable_`) |
 
 2. Where to find them in Supabase: open https://supabase.com/dashboard and click your project.
-   - Click **Connect** at the top of the page. It shows the project URL and the publishable key.
-   - Or: **Project Settings > Data API** shows the project URL, and **Project Settings > API Keys**
-     shows the publishable key (in the "Publishable key" section, with a copy button).
+   - **Project URL:** under **Integrations > Data API**. The **Connect** button at the top of the
+     page also shows it.
+   - **Publishable key:** under **Project Settings > API Keys**. It starts with `sb_publishable_`.
+   - More detail: [keys/supabase.md](keys/supabase.md).
 3. Click **Deploy**.
 
 ✅ **Checkpoint:** Vercel shows "Congratulations" and gives you an address like `https://your-app.vercel.app`.
@@ -53,7 +54,9 @@ API keys stay in your Supabase project and are never put on Vercel or in GitHub.
    your Mac keeps working.
 4. Click **Save**.
 
-✅ **Checkpoint:** open your Vercel address, sign in with your owner email and password, and see your dashboard.
+✅ **Checkpoint:** open your Vercel address. It shows a login page, because anyone with the address
+could reach it. Sign in with the email and password from setup (the ones in the box "Your sign-in
+details"; if you changed the password since, use the new one) and see your dashboard.
 
 ## Good to know
 
@@ -62,7 +65,15 @@ API keys stay in your Supabase project and are never put on Vercel or in GitHub.
   Sync fork (or `git push` after `npm run update`) is what puts the new version online, about two
   minutes later. The update of your Supabase project (Settings > Updates > Open setup) still happens
   on your Mac.
-- Nobody else can sign up. Add people yourself in **Settings > Members**.
+- The online copy always shows a login page; the copy on your Mac never does. Your email and password
+  are the same on both. You can see your email and change the password in **Settings > Account**.
+- **Forgot your password?** Open the app on your Mac (it signs you in by itself), go to
+  **Settings > Account** and change it there. If that Mac isn't available, start the app from your
+  copy of the code on any Mac and follow its setup page: it connects your project again and lets you
+  choose a new password with a Supabase access token. No email is needed. The login page of the
+  online copy says the same under **Forgot your password?**.
+- Nobody else can sign up. Add people yourself in **Settings > Members**. They sign in on the online
+  copy (the copy on your Mac opens only on your Mac).
 
 ## Troubleshooting
 

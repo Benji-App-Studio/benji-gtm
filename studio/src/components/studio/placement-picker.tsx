@@ -83,7 +83,7 @@ export function PlacementPicker({ value, onChange, format, videoToo }: {
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="text-sm font-medium">Placements</span>
+        <span className="text-xs font-medium text-muted">Placements</span>
         <span className="text-xs text-faint">Meta&apos;s specs, checked {SPECS_CHECKED} · hatched = covered by Meta&apos;s interface</span>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -92,13 +92,13 @@ export function PlacementPicker({ value, onChange, format, videoToo }: {
           const off = carousel && !CAROUSEL_PLACEMENTS.includes(p.id);
           return (
             <button key={p.id} type="button" aria-pressed={on} onClick={() => toggle(p.id)} title={[p.summary, p.where.join(" · "), ...p.notes].join("\n")}
-              className={cx("flex items-center gap-2.5 rounded-inner border py-1.5 pr-3 pl-1.5 text-left transition", on ? "border-accent bg-accent-soft" : "border-hairline bg-card hover:bg-hover", off && "opacity-55")}>
+              className={cx("flex items-center gap-2 rounded-small border py-1 pr-3 pl-1 text-left transition", on ? "border-ink/25 bg-control" : "border-hairline bg-card hover:bg-hover", off && "opacity-55")}>
               {/* The drawings at 60%: zoom (unlike a transform) shrinks the space they take too. */}
-              <span className="grid w-[84px] shrink-0 place-items-center rounded-card bg-canvas py-2" style={{ zoom: 0.6 }}>
+              <span className="grid w-[84px] shrink-0 place-items-center rounded-small bg-canvas py-2" style={{ zoom: 0.5 }}>
                 <PlacementSketch placement={p} carousel={carousel && !off} />
               </span>
               <span className="grid gap-0.5">
-                <span className="text-sm font-medium">{p.label}</span>
+                <span className="text-xs font-medium">{p.label}</span>
                 <span className="text-xs tabular-nums text-muted">{p.aspect} · {sizeLabel(p)}</span>
               </span>
             </button>
@@ -131,14 +131,14 @@ export function AdFormatPicker({ format, onFormat, cards, onCards }: {
   const elsewhere = AD_FORMATS.filter((f) => !f.makesHere);
   return (
     <div className="grid gap-2">
-      <span className="text-sm font-medium">Ad format</span>
+      <span className="text-xs font-medium text-muted">Ad format</span>
       <div className="flex flex-wrap items-center gap-2">
         {madeHere.map((f) => {
           const on = f.id === format;
           return (
             <button key={f.id} type="button" aria-pressed={on} onClick={() => onFormat(f.id as AdFormatId)}
-              className={cx("grid max-w-[300px] gap-0.5 rounded-control border px-3 py-2 text-left transition", on ? "border-accent bg-accent-soft" : "border-hairline bg-card hover:bg-hover")}>
-              <span className="text-sm font-medium">{f.label}</span>
+              className={cx("grid max-w-[300px] gap-0.5 rounded-small border px-3 py-1.5 text-left transition", on ? "border-ink/25 bg-control" : "border-hairline bg-card hover:bg-hover")}>
+              <span className="text-xs font-medium">{f.label}</span>
               <span className="text-xs text-muted">{f.summary}</span>
             </button>
           );
@@ -146,7 +146,7 @@ export function AdFormatPicker({ format, onFormat, cards, onCards }: {
         {carousel && (
           <label className="flex items-center gap-2 text-sm">
             Cards
-            <select className="h-9 rounded-control border border-line bg-raised px-2.5 text-sm text-ink" value={cards} onChange={(e) => onCards(Number(e.target.value))}>
+            <select className="h-[30px] rounded-control border border-hairline bg-raised px-2.5 text-sm text-ink" value={cards} onChange={(e) => onCards(Number(e.target.value))}>
               {Array.from({ length: CAROUSEL.maxCards - CAROUSEL.minCards + 1 }, (_, i) => i + CAROUSEL.minCards).map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </label>

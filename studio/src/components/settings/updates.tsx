@@ -22,11 +22,11 @@ export function UpdatesSettings() {
 
       <SettingsGroup title="How to update">
         {STEPS.map((step, i) => (
-          <div key={step.title} className="flex gap-3 px-4 py-3">
+          <div key={step.title} className="flex gap-3 px-4 py-3.5">
             <span aria-hidden className="mt-px grid size-5 shrink-0 place-items-center rounded-full bg-control text-xs font-medium text-label tabular-nums">{i + 1}</span>
             <div className="min-w-0">
               <p className="text-sm font-medium text-ink">{step.title}</p>
-              <p className="mt-0.5 text-sm text-muted">{step.body}</p>
+              <p className="mt-0.5 text-caption text-muted">{step.body}</p>
             </div>
           </div>
         ))}

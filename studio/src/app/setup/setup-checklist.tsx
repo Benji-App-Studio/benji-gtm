@@ -2,9 +2,11 @@
 // The first-run checklist: six steps, one open at a time. The access token lives in this component's
 // memory only: it is sent with each setup call and is gone when the page is closed or reloaded.
 import { useState } from "react";
+import { PasswordInput, SignInDetails } from "@/components/account-pieces";
 import { Button, ButtonLink, Callout, Field, inputClass, Spinner } from "@/components/ui";
 import { PREPARE_STEPS } from "@/lib/server/provision/types";
 import { KeysStep } from "./keys-step";
+import { NewTokenNote, tokenRejected } from "./token-retry";
 import { FailureNote, OutLink, postJson, ProgressList, runStream, StepCard, Steps, SUPABASE_LINKS, TokenHelp, useProgress, type CardState, type RunFailure } from "./parts";
 
 type StepKey = "project" | "token" | "prepare" | "account" | "keys" | "finish";
@@ -23,9 +25,13 @@ export function SetupChecklist({ appName, start }: { appName: string; start: "pr
   const [inspection, setInspection] = useState<Inspection | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<RunFailure | null>(null);
+  /** Set when the account step found the project already has its owner (another tab finished setup). */
+  const [ownerFound, setOwnerFound] = useState(false);
   const [prepared, setPrepared] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  /** The sign-in just made, shown once before moving on. */
+  const [details, setDetails] = useState<{ email: string; password: string; signedIn: boolean } | null>(null);
   const progress = useProgress();
 
   const stateOf = (key: StepKey): CardState => (key === open ? "open" : ORDER.indexOf(key) < ORDER.indexOf(open) ? "done" : "todo");
@@ -51,9 +57,9 @@ export function SetupChecklist({ appName, start }: { appName: string; start: "pr
     setInspection(data);
   }
 
-  async function prepare() {
+  async function prepare(useToken = token) {
     setBusy(true); setFailure(null); progress.reset();
-    const failed = await runStream("/api/setup/prepare", { token, ref: picked }, progress.record);
+    const failed = await runStream("/api/setup/prepare", { token: useToken, ref: picked }, progress.record);
     setBusy(false);
     if (failed) return setFailure(failed);
     setPrepared(true);
@@ -61,18 +67,41 @@ export function SetupChecklist({ appName, start }: { appName: string; start: "pr
 
   async function createAccount(event: React.FormEvent) {
     event.preventDefault();
+    await submitAccount();
+  }
+
+  async function submitAccount(useToken = token) {
+    if (password.length < 8) return setFailure({ message: "Use a password with at least 8 characters." });
     setBusy(true); setFailure(null);
     const connectOnly = Boolean(inspection?.owned);
-    const { data, error } = await postJson<{ ok: boolean; signedIn: boolean }>("/api/setup/owner", connectOnly ? { token, ref: picked, connectOnly: true } : { token, ref: picked, email, password });
-    if (error || !data) { setBusy(false); return setFailure(error); }
-    // A full reload: the app now knows its project, and the token and password leave the page's memory.
-    window.location.assign(data.signedIn ? "/setup?step=keys" : `/login?next=${encodeURIComponent("/setup?step=keys")}`);
+    const { data, error } = await postJson<{ ok: boolean; signedIn: boolean; email: string }>("/api/setup/owner", connectOnly ? { token: useToken, ref: picked, connectOnly: true, password } : { token: useToken, ref: picked, email, password });
+    if (error?.code === "owner_exists" && !connectOnly) {
+      // The project got its owner meanwhile (setup finished in another tab or window): check it again, and the
+      // form becomes "Connect this computer", signing in as that owner.
+      const again = await postJson<Inspection>("/api/setup/inspect", { token: useToken, ref: picked });
+      setBusy(false);
+      if (again.data?.owned) {
+        setInspection(again.data);
+        return setOwnerFound(true);
+      }
+      return setFailure(error);
+    }
+    setBusy(false);
+    if (error || !data) return setFailure(error);
+    // The token isn't needed again: it leaves the page's memory now.
+    setToken("");
+    setDetails({ email: data.email, password, signedIn: data.signedIn });
+  }
+
+  /** A full reload: the app now knows its project, and the password leaves the page's memory. */
+  function continueAfterAccount() {
+    window.location.assign(details?.signedIn ? "/setup?step=keys" : "/app");
   }
 
   const projectName = inspection?.project.name ?? projects?.find((project) => project.ref === picked)?.name;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <StepCard number={1} title="Create your Supabase project" state={stateOf("project")} onOpen={reopen("project")} summary="You have a new, empty project."
         why={`Supabase is the service that stores your data. You get your own project, in your own account, so your data stays yours. ${appName} sets it up for you in the next steps.`}>
         <Steps>
@@ -80,7 +109,8 @@ export function SetupChecklist({ appName, start }: { appName: string; start: "pr
           <li>Open <OutLink href={SUPABASE_LINKS.newProject}>New project</OutLink>. Type any name. Choose a database password and keep it somewhere safe; you won&apos;t need to type it here. Pick the region closest to you. Press <b>Create new project</b>.</li>
           <li>Wait until Supabase has finished setting the project up. This takes about two minutes.</li>
         </Steps>
-        <Callout tone="raised">Use a new project made only for {appName}. Setup refuses a project that already holds other data. The free plan is enough to start; Supabase pauses a free project after a week without use, and you can restore it from your dashboard.</Callout>
+        <Callout tone="raised">Use a new project made only for {appName}. Setup refuses a project that already holds other data. The free plan is enough to start.</Callout>
+        <FreePlanLimits appName={appName} />
         <Button type="button" onClick={() => go("token")}>My project is ready</Button>
       </StepCard>
 
@@ -103,7 +133,7 @@ export function SetupChecklist({ appName, start }: { appName: string; start: "pr
           <fieldset className="space-y-2">
             <legend className="mb-1 text-sm font-medium text-ink">The token works. Pick your project:</legend>
             {projects.map((project) => (
-              <label key={project.ref} className="flex items-start gap-2.5 rounded-inner border border-line p-3 text-sm">
+              <label key={project.ref} className="flex items-start gap-2.5 rounded-inner border border-line px-3 py-2.5 text-sm">
                 <input type="radio" name="project" className="mt-1" value={project.ref} checked={picked === project.ref} disabled={!project.ready || busy}
                   onChange={() => { setPicked(project.ref); setInspection(null); setFailure(null); }} />
                 <span className="min-w-0">
@@ -131,8 +161,10 @@ export function SetupChecklist({ appName, start }: { appName: string; start: "pr
       <StepCard number={3} title="Prepare the project" state={stateOf("prepare")} onOpen={reopen("prepare")} summary="Tables, backend and starter images are in place."
         why="This creates the database tables, installs the backend and copies the starter images into your project. It takes about two minutes. Keep this page open.">
         {(busy || prepared || Object.keys(progress.steps).length > 0) && <ProgressList ids={PREPARE_STEPS} steps={progress.steps} running={busy} />}
-        {failure && open === "prepare" && <FailureNote failure={failure} onRetry={prepare} busy={busy} />}
-        {!prepared && !failure && <Button type="button" onClick={prepare} disabled={busy}>{busy ? <><Spinner className="size-3.5" />Preparing</> : "Prepare the project"}</Button>}
+        {failure && open === "prepare" && (tokenRejected(failure)
+          ? <NewTokenNote failure={failure} oldToken={token} busy={busy} onRetry={(fresh) => { setToken(fresh); void prepare(fresh); }} />
+          : <FailureNote failure={failure} onRetry={() => { void prepare(); }} busy={busy} />)}
+        {!prepared && !failure && <Button type="button" onClick={() => { void prepare(); }} disabled={busy}>{busy ? <><Spinner className="size-3.5" />Preparing</> : "Prepare the project"}</Button>}
         {prepared && (
           <>
             <p className="text-sm text-win">Your project is ready.</p>
@@ -143,24 +175,35 @@ export function SetupChecklist({ appName, start }: { appName: string; start: "pr
 
       <StepCard number={4} title={inspection?.owned ? "Connect this computer" : "Create your account"} state={stateOf("account")} summary="Your account is the owner of this copy."
         why={inspection?.owned
-          ? "This project already has an owner account. Connect this computer to the project, then sign in with that account."
-          : `This becomes the owner account of your copy of ${appName}. Your email and password are sent only to your own Supabase project. Nobody else can sign up afterwards; you can invite people later in Settings.`}>
-        <form onSubmit={createAccount} className="space-y-4">
-          {!inspection?.owned && (
+          ? "This project already has an owner account. Choose a password for it, and this computer connects to the project and signs you in with it. You can type your current password again."
+          : `This becomes the owner account of your copy of ${appName}. Nobody else can sign up afterwards; you can invite people later in Settings.`}>
+        {details ? (
+          <>
+            <SignInDetails email={details.email} password={details.password} />
+            <Button type="button" onClick={continueAfterAccount}>Continue</Button>
+          </>
+        ) : (
+          <form onSubmit={createAccount} className="space-y-4" noValidate>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Your email">
-                <input className={inputClass} type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
-              </Field>
+              {!inspection?.owned && (
+                <Field label="Your email">
+                  <input className={inputClass} type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
+                </Field>
+              )}
               <Field label="Choose a password" hint="At least 8 characters.">
-                <input className={inputClass} type="password" autoComplete="new-password" required minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} />
+                <PasswordInput autoComplete="new-password" required minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} />
               </Field>
             </div>
-          )}
-          <Button type="submit" disabled={busy}>
-            {busy ? <><Spinner className="size-3.5" />Working</> : inspection?.owned ? "Connect this computer" : "Create my account"}
-          </Button>
-        </form>
-        {failure && open === "account" && <FailureNote failure={failure} />}
+            <p className="text-sm text-muted">This is your own account in your own Supabase project. On this computer the app signs you in automatically, so you won&apos;t type this again; you need the password only if you put the app online later.</p>
+            <Button type="submit" disabled={busy}>
+              {busy ? <><Spinner className="size-3.5" />Working</> : inspection?.owned ? "Connect this computer" : "Create my account"}
+            </Button>
+          </form>
+        )}
+        {ownerFound && !details && <p className="text-sm text-muted" role="status">This project got its owner in another tab or window. Type that account&apos;s password to connect this computer.</p>}
+        {failure && open === "account" && (tokenRejected(failure)
+          ? <NewTokenNote failure={failure} oldToken={token} busy={busy} onRetry={(fresh) => { setToken(fresh); void submitAccount(fresh); }} />
+          : <FailureNote failure={failure} />)}
       </StepCard>
 
       <StepCard number={5} title="Add your keys" state={stateOf("keys")} summary="Your OpenAI key is saved."
@@ -175,6 +218,32 @@ export function SetupChecklist({ appName, start }: { appName: string; start: "pr
         </p>
         <ButtonLink href="/onboarding">Create your first app</ButtonLink>
       </StepCard>
+    </div>
+  );
+}
+
+// What Supabase's free plan limits, and what the app does about each (numbers: release/docs/keys/supabase.md
+// and supabase/functions/_shared/limits.ts DEFAULT_LIMITS).
+const FREE_LIMITS: [limit: string, handling: string][] = [
+  ["Each backend step runs for up to 150 seconds.", "Long jobs, like collecting and reading ads, run in short steps that pick up where the last one stopped."],
+  ["Each file can be up to 50 MB.", "A competitor's video over 50 MB isn't saved; the ad and its still image are."],
+  ["1 GB of file storage in all.", "Imports check the space left first, and the Research page's Stored media line can delete saved files."],
+  ["A project pauses after a week without use.", "Your data stays. Open your Supabase dashboard and press Resume project, then reload this app."],
+];
+
+function FreePlanLimits({ appName }: { appName: string }) {
+  return (
+    <div>
+      <p className="text-sm font-medium text-ink">What the free plan limits</p>
+      <ul className="mt-1.5 grid gap-1.5 text-sm">
+        {FREE_LIMITS.map(([limit, handling]) => (
+          <li key={limit} className="grid gap-0.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] sm:gap-4">
+            <span className="text-ink">{limit}</span>
+            <span className="text-muted">{handling}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-xs text-muted">{appName} works within these. Supabase&apos;s Pro plan ($25 a month) raises them and never pauses.</p>
     </div>
   );
 }

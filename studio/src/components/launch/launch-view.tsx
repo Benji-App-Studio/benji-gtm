@@ -57,16 +57,14 @@ export function LaunchView({ productId }: { productId: string }) {
   return (
     <Page>
       <LaunchHeader productId={productId} name={data.workspace.name}
-        actions={
-          <div className="flex flex-wrap items-center gap-3">
-            <Connection overview={data} />
-            <Button size="sm" onClick={() => setSend([])} aria-haspopup="dialog">Send to Meta</Button>
-            <Button variant="secondary" size="sm" onClick={drawer.show} aria-haspopup="dialog">
-              <IconSettings className="size-4" />Settings
-              {data.settings?.automation_enabled && <Badge tone="win">daily uploads on</Badge>}
-            </Button>
-          </div>
-        } />
+        actions={<>
+          <Button size="sm" onClick={() => setSend([])} aria-haspopup="dialog">Send to Meta</Button>
+          <Button variant="secondary" size="sm" onClick={drawer.show} aria-haspopup="dialog">
+            <IconSettings />Settings
+            {data.settings?.automation_enabled && <Badge tone="win" className="max-sm:hidden">daily uploads on</Badge>}
+          </Button>
+        </>} />
+      <Connection overview={data} />
 
       {(status.missing?.length || status.issues?.length || status.error) ? (
         <ErrorNote title="Before launching" className="mb-6">
@@ -77,7 +75,7 @@ export function LaunchView({ productId }: { productId: string }) {
         </ErrorNote>
       ) : null}
 
-      <div className="grid gap-8">
+      <div className="grid gap-10">
         <div className="grid gap-3">
           <Queue productId={productId} creatives={data.creatives} launched={launched} settings={settings} status={status} onQueued={refresh} onSendToMeta={setSend} />
           <PlaybookTips ids={["five-per-adset", "not-every-ad-spends"]} />
@@ -137,12 +135,12 @@ function Connection({ overview }: { overview: LaunchOverview }) {
   const s = overview.status;
   const ok = s.connected && s.account && !s.error;
   return (
-    <div className="flex min-w-0 flex-col items-start gap-1 @md:items-end">
-      <span className="flex items-center gap-2 text-sm">
+    <div className="mb-6 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+      <span className="flex min-w-0 items-center gap-2">
         <span className={cx("size-2 shrink-0 rounded-full", ok ? "bg-win" : "bg-warn")} />
         {ok ? <a href={s.account!.url} target="_blank" rel="noreferrer" className="truncate font-medium hover:underline">{s.account!.name || "Ad account"} · {s.account!.currency}</a> : <span className="font-medium">{s.connected ? "Meta connected" : "Meta not connected"}</span>}
       </span>
-      <span className="font-mono text-xs text-muted">Marketing API {s.version ?? "v26.0"}{s.account && !s.account.hasPaymentMethod ? " · no payment method" : ""}</span>
+      <span className="text-xs text-muted">Marketing API {s.version ?? "v26.0"}{s.account && !s.account.hasPaymentMethod ? " · no payment method" : ""}</span>
     </div>
   );
 }

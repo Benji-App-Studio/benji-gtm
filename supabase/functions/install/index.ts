@@ -18,6 +18,9 @@
 //   POST members/add         { email, redirectTo? }   add someone; { member, inviteLink? } (the link is for the owner to pass on)
 //   POST members/remove      { userId }       { ok: true } (never the owner)
 //   POST runner-secret/rotate                 a new secret for the desktop runner: { secret, key }
+//   GET  storage                              any member: what is stored, by bucket and app ({ rows, apps, quotaBytes, uploadLimitBytes })
+//   POST storage/cleanup     { action, appId?, days?, run?, deleting? }   any member: preview (run false) or run a cleanup
+//                                             ({ action, files, bytes, items, done }; storage.ts)
 import { createClient } from "@supabase/supabase-js";
 import { createAuth } from "../_shared/auth.ts";
 import { createKeys } from "../_shared/keys.ts";
@@ -38,4 +41,4 @@ function serviceKey(): string {
 
 const db = createClient(SUPABASE_URL, serviceKey(), { auth: { persistSession: false, autoRefreshToken: false } });
 
-Deno.serve(createInstall({ db, secrets: createKeys(db), auth: createAuth(db), fetch }));
+Deno.serve(createInstall({ db, secrets: createKeys(db), auth: createAuth(db), fetch, env: (name) => Deno.env.get(name) }));

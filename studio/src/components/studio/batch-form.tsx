@@ -43,9 +43,10 @@ import { FormatStart, type FormatPick } from "./format-start";
 import { PlacementPicker } from "./placement-picker";
 import { TemplateStart } from "./template-start";
 import { readStored } from "@/lib/storage-keys";
+import { StorageNotice, useStorageGuard } from "../storage-notice";
 
-const chip = (on: boolean) => cx("inline-flex h-7 items-center gap-1.5 rounded-control border px-2.5 text-sm transition-colors disabled:pointer-events-none disabled:opacity-55 [&_svg]:size-3.5",
-  on ? "border-accent bg-accent-soft font-medium text-ink" : "border-hairline bg-raised text-ink hover:bg-hover");
+const chip = (on: boolean) => cx("inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:pointer-events-none disabled:opacity-55 [&_svg]:size-3.5",
+  on ? "border-ink/25 bg-control text-ink" : "border-hairline bg-raised text-muted hover:bg-hover hover:text-ink");
 
 /**
  * Why a kind can't be made in this install yet (shown in place of making it), or null. UGC videos are
@@ -91,6 +92,8 @@ function fromFormat({ card, recipe }: FormatPick, variants: number): BatchReques
 }
 
 export function BatchForm({ productId, overview, features, onStarted }: { productId: string; overview: StudioOverview; features: Features; onStarted: () => void }) {
+  // Generating saves the new creatives: a warning at 95% of storage, refused when it's full.
+  const storageGuard = useStorageGuard("generate");
   const params = useSearchParams();
   // Read once: later changes to the URL don't overwrite what the user typed.
   const [prefill] = useState(() => fromQuery(params));
@@ -208,9 +211,9 @@ export function BatchForm({ productId, overview, features, onStarted }: { produc
     if (has("image") && req.image.model === "gpt_image_2_5") rows.push(["Image model", `GPT Image 2.5 · via ${viaOpenAi ? "OpenAI" : "Higgsfield"}`]);
     // Posts alone are drawn from templates: nothing is generated, so there is no service to price.
     const free = !aiKinds && !plan.credits && !plan.usd;
-    if (free) rows.push(["Cost", <span key="f" className="text-base text-ink">Free</span>]);
-    else if (plan.credits || !viaOpenAi) rows.push(["Estimated Higgsfield cost", <span key="c" className="text-base text-ink">{fmtCredits(plan.credits)} credits</span>]);
-    if (viaOpenAi) rows.push(["Estimated OpenAI cost", <span key="u" className="text-base text-ink">≈ {fmtUsd(plan.usd!)}</span>]);
+    if (free) rows.push(["Cost", <span key="f" className="font-medium text-ink">Free</span>]);
+    else if (plan.credits || !viaOpenAi) rows.push(["Estimated Higgsfield cost", <span key="c" className="font-medium text-ink">{fmtCredits(plan.credits)} credits</span>]);
+    if (viaOpenAi) rows.push(["Estimated OpenAI cost", <span key="u" className="font-medium text-ink">≈ {fmtUsd(plan.usd!)}</span>]);
     const checked = aiLock ? "They can't be checked or approved until the AI is connected (Settings > API keys)." : "Every creative is checked before you can approve it.";
     const ok = await ask({
       title: `Make ${plan.jobs.length} creative${plan.jobs.length === 1 ? "" : "s"}?`,
@@ -242,10 +245,10 @@ export function BatchForm({ productId, overview, features, onStarted }: { produc
 
   return (
     <Card className="overflow-hidden">
-      <div className={cx("grid gap-5 p-5", start !== "template" && "@4xl:grid-cols-[minmax(0,1fr)_280px]")}>
-        <div className="grid min-w-0 content-start gap-5">
-          <section className="grid gap-3">
-            <span className="text-sm font-medium">Start from</span>
+      <div className={cx("grid gap-4 p-4", start !== "template" && "@4xl:grid-cols-[minmax(0,1fr)_260px]")}>
+        <div className="grid min-w-0 content-start gap-4">
+          <section className="grid gap-2">
+            <span className="text-xs font-medium text-muted">Start from</span>
             <Segmented label="Start from" options={starts} value={start} onChange={changeStart} className="w-fit" />
             {start === "research" && recreate && <RecreateSummary recreate={recreate} appName={workspace.appName} />}
             {start === "research" && winners && <WinnersSummary winners={winners} />}
@@ -263,8 +266,8 @@ export function BatchForm({ productId, overview, features, onStarted }: { produc
           {start !== "template" && <>
             <section className="grid gap-4">
               <div className="grid gap-2">
-                <span className="text-sm font-medium">Make</span>
-                <div className="flex flex-wrap gap-2">
+                <span className="text-xs font-medium text-muted">Make</span>
+                <div className="flex flex-wrap gap-1.5">
                   {KINDS.map((k) => <button key={k} type="button" className={chip(has(k))} aria-pressed={has(k)} disabled={Boolean(locks[k])} onClick={() => setKinds(toggle(req.kinds, k))}>{locks[k] ? <IconLock /> : null}{KIND_LABEL[k]}</button>)}
                 </div>
                 {lockedKinds.length > 0 && <div className="flex flex-wrap gap-1.5">{lockedKinds.map((k) => <span key={k} className="contents">{locks[k]}</span>)}</div>}
@@ -318,14 +321,14 @@ export function BatchForm({ productId, overview, features, onStarted }: { produc
         </div>
 
         {start !== "template" && (
-          <aside className="@4xl:border-l @4xl:border-line @4xl:pl-5">
-            <p className="text-xs font-medium text-faint">Estimate</p>
+          <aside className="border-t border-line pt-4 @4xl:border-t-0 @4xl:border-l @4xl:pt-0 @4xl:pl-4">
+            <p className="text-xs font-medium text-muted">Estimate</p>
             {plan.usd && !plan.credits
-              ? <p className="mt-1.5 text-figure font-medium tabular-nums">≈{fmtUsd(plan.usd)}<span className="ml-1 text-sm font-normal tracking-normal text-muted">at OpenAI</span></p>
-              : <p className="mt-1.5 text-figure font-medium tabular-nums">{fmtCredits(plan.credits)}<span className="ml-1 text-sm font-normal tracking-normal text-muted">credits</span></p>}
+              ? <p className="mt-1 text-figure font-medium tabular-nums">≈{fmtUsd(plan.usd)}<span className="ml-1 text-sm font-normal tracking-normal text-muted">at OpenAI</span></p>
+              : <p className="mt-1 text-figure font-medium tabular-nums">{fmtCredits(plan.credits)}<span className="ml-1 text-sm font-normal tracking-normal text-muted">credits</span></p>}
             {plan.usd && plan.credits ? <p className="mt-1 text-sm tabular-nums">+ ≈{fmtUsd(plan.usd)} <span className="text-muted">at OpenAI</span></p> : null}
             <p className="mt-1 text-xs text-muted">{plan.jobs.length} creative{plan.jobs.length === 1 ? "" : "s"}{aiKinds ? ` · prices checked ${plan.usd ? OPENAI_IMAGE_PRICING.checked : PRICES_CHECKED}` : plan.jobs.length ? " · posts are free" : ""}</p>
-            <ul className="mt-4 grid gap-1.5 text-sm">
+            <ul className="mt-3 grid gap-1 text-xs">
               {KINDS.filter((k) => plan.byKind[k]).map((k) => (
                 <li key={k} className="flex justify-between gap-2"><span>{KIND_LABEL[k]} × {plan.byKind[k]!.jobs}</span><span className="tabular-nums text-muted">{plan.byKind[k]!.usd && !plan.byKind[k]!.credits ? `≈${fmtUsd(plan.byKind[k]!.usd!)}` : fmtCredits(plan.byKind[k]!.credits)}</span></li>
               ))}
@@ -341,7 +344,8 @@ export function BatchForm({ productId, overview, features, onStarted }: { produc
               <ImageProviderPicker value={req.image.provider ?? "higgsfield"} onChange={(provider) => set({ image: { ...req.image, provider } })} productId={productId}
                 openaiReady={overview.backend ? overview.backend.openaiImages ?? null : null} plan={overview.backend?.openaiImagePlan} quality={req.image.quality} resolution={req.image.resolution} compact className="mt-4" />
             )}
-            <Button className="mt-4 w-full" disabled={busy || plan.errors.length > 0} onClick={create}>{busy ? <><Spinner className="size-3" /> Starting…</> : plan.jobs.length ? `Create ${plan.jobs.length} creative${plan.jobs.length === 1 ? "" : "s"}` : "Create"}</Button>
+            <StorageNotice action="generate" className="mt-4" />
+            <Button className="mt-4 w-full" disabled={busy || plan.errors.length > 0 || storageGuard.block} onClick={create}>{busy ? <><Spinner className="size-3" /> Starting…</> : plan.jobs.length ? `Create ${plan.jobs.length} creative${plan.jobs.length === 1 ? "" : "s"}` : "Create"}</Button>
             {aiLock && req.kinds.length > 0 && <FeatureLock state={aiLock} className="mt-3">Creatives can&apos;t be checked or approved until the AI is connected</FeatureLock>}
             {/* An install whose keys can't be read: the backend's own health check says what will wait. */}
             {!features.install && overview.backend && !overview.backend.runner && has("ugc_video") && <p className="mt-3 text-xs text-muted">UGC videos wait in the queue until the desktop runner is set up and running.</p>}

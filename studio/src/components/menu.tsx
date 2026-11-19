@@ -51,7 +51,7 @@ function moveFocus(event: ReactKeyboardEvent<HTMLElement>): boolean {
   return true;
 }
 
-const panelClass = "page-in min-w-[180px] rounded-lg border border-hairline bg-raised p-1 text-ink shadow-pop outline-none";
+const panelClass = "page-in min-w-[180px] rounded-card border border-hairline bg-raised p-1 text-ink shadow-pop outline-none";
 
 export function Menu({ trigger, children, label, align = "start", side = "bottom", width = 236, className }: {
   /** The button that opens the menu: spread the props you are given onto it. */
@@ -142,7 +142,7 @@ export function Menu({ trigger, children, label, align = "start", side = "bottom
 }
 
 const rowClass = (danger?: boolean, disabled?: boolean) => join(
-  "flex min-h-8 w-full cursor-default items-center gap-2 rounded-md px-2 py-1 text-left text-sm outline-none select-none focus:bg-active",
+  "flex min-h-8 w-full cursor-default items-center gap-2 rounded-control px-2 py-1 text-left text-sm outline-none select-none focus:bg-active",
   danger ? "text-warn" : "text-ink",
   disabled && "pointer-events-none opacity-45",
 );
@@ -150,7 +150,7 @@ const rowClass = (danger?: boolean, disabled?: boolean) => join(
 function RowBody({ icon, children, kbd, checked, chevron }: { icon?: ReactNode; children: ReactNode; kbd?: ReactNode; checked?: boolean; chevron?: boolean }) {
   return (
     <>
-      {icon && <span className="grid size-4 shrink-0 place-items-center text-muted [&>svg]:size-4">{icon}</span>}
+      {icon && <span className="grid size-4 shrink-0 place-items-center text-muted [&>svg]:size-3.5">{icon}</span>}
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {kbd && <span className="flex shrink-0 items-center gap-1 text-xs text-faint">{kbd}</span>}
       {checked && <svg viewBox="0 0 24 24" aria-hidden="true" className="size-4 shrink-0 text-ink" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>}

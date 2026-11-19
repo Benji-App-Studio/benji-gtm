@@ -3,6 +3,7 @@ import { RUN_SUMMARY_COLUMNS, toProject, type ProjectRow, type RunSummary } from
 import { estimate } from "@/lib/server/analysis";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { PLATFORMS, type Candidate, type Platform } from "@/lib/types";
+import { dbFailure } from "@/lib/server/errors";
 
 /** A project and its run history (newest first). Live changes arrive over Realtime. */
 export async function GET(_request: NextRequest, ctx: RouteContext<"/api/projects/[id]">) {
@@ -66,7 +67,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/projec
   if (typeof body.brandInstagram === "string") settings.brandInstagram = body.brandInstagram.trim().replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//, "").split(/[/?]/)[0].slice(0, 60) || undefined;
   if (Array.isArray(body.keywords)) settings.keywords = body.keywords.map((k: unknown) => String(k).trim()).filter(Boolean).slice(0, 8);
   const { data: saved, error } = await session.supabase.from("projects").update({ candidates, settings }).eq("id", id).select().single<ProjectRow>();
-  if (error || !saved) return Response.json({ error: error?.message ?? "Couldn't save." }, { status: 500 });
+  if (error || !saved) return dbFailure("project save", error, "Couldn't save. Try again.");
   return Response.json({ project: toProject(saved), estimate: estimate(saved) });
 }
 

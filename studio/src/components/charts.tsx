@@ -42,7 +42,7 @@ export function BarChart({ data, target, targetLabel, format = plain, height = 1
             const last = solidLast && i === data.length - 1;
             return (
               <div key={d.label + i} className="relative flex h-full min-w-0 flex-1 items-end" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
-                <div className={cx("grow-y w-full rounded-t-sm rounded-b-xs", last ? "bg-accent shadow-glow" : "hatch fade-down text-accent-muted", hover === i && !last && "text-accent")}
+                <div className={cx("grow-y w-full rounded-t-sm rounded-b-xs", last ? "bg-accent" : "hatch fade-down text-accent-muted", hover === i && !last && "text-accent")}
                   style={{ height: `${y(d.value)}%`, ...stagger(i) }} />
                 {(last || hover === i) && <span className="absolute left-1/2 -translate-x-1/2 text-xs font-medium whitespace-nowrap tabular-nums" style={{ bottom: `calc(${y(d.value)}% + 6px)` }}>{format(d.value)}</span>}
               </div>
@@ -85,7 +85,7 @@ export function Waterfall({ start, steps, end, domain, ticks, format = plain, cl
           );
         })}
         <Row label={end.label} note={format(end.value)} connector={pct(end.value)}>
-          <div className="grow-x absolute inset-y-0 left-0 w-[34px] rounded-sm bg-accent shadow-glow" style={{ left: `calc(${pct(end.value)}% - 34px)`, ...stagger(rows.length + 1) }} />
+          <div className="grow-x absolute inset-y-0 left-0 w-[34px] rounded-sm bg-accent" style={{ left: `calc(${pct(end.value)}% - 34px)`, ...stagger(rows.length + 1) }} />
         </Row>
       </div>
       {ticks && (
@@ -151,12 +151,12 @@ export function BridgeChart({ steps, format = plain, height = 320, className }: 
             return (
               <div key={s.label} className="relative flex h-full flex-1 flex-col items-center justify-end px-[9%]">
                 <div className="absolute inset-x-0 text-center" style={{ top: `calc(${top(s.value + (s.loss ?? 0))}% - ${s.loss ? 58 : 40}px)` }}>
-                  <p className="text-[clamp(1.25rem,2.6cqi,1.9rem)] leading-tight font-normal tracking-[-0.02em] tabular-nums">{format(s.value)}</p>
+                  <p className="text-figure font-medium tabular-nums">{format(s.value)}</p>
                   {s.loss ? <p className="text-xs font-medium text-warn">−{format(s.loss)}{s.lossLabel ? ` ${s.lossLabel}` : ""}</p> : null}
                 </div>
                 <div className="grow-y flex w-full flex-col" style={{ height: `${((s.value + (s.loss ?? 0)) / max) * 100}%`, ...stagger(i) }}>
                   {s.loss ? <div className="hatch w-full shrink-0 rounded-t-xs text-warn" style={{ height: `${(s.loss / (s.value + s.loss)) * 100}%` }} /> : null}
-                  <div className={cx("w-full flex-1", s.loss ? "" : "rounded-t-xs", last ? "rounded-t-sm bg-gradient-to-b from-accent to-accent/85 shadow-glow" : "hatch fade-down text-accent")} />
+                  <div className={cx("w-full flex-1", s.loss ? "" : "rounded-t-xs", last ? "rounded-t-sm bg-accent" : "hatch fade-down text-accent")} />
                 </div>
               </div>
             );
@@ -286,13 +286,13 @@ export function HeatGrid({ columns, rows, format = plain, steps, className }: {
 /** Steps along a line ("What happened"): a coloured dot, date, title and detail for each. */
 export function Timeline({ steps, className }: { steps: { date: string; title: string; body?: string; tone?: "accent" | "warn" | "win" }[]; className?: string }) {
   return (
-    <ol className={cx("relative grid gap-6 @xl:gap-3", className)} style={{ gridTemplateColumns: `repeat(auto-fit, minmax(130px, 1fr))` }}>
+    <ol className={cx("relative grid gap-4 @xl:gap-3", className)} style={{ gridTemplateColumns: `repeat(auto-fit, minmax(130px, 1fr))` }}>
       <span aria-hidden className="absolute top-[6px] right-4 left-1 hidden h-px bg-line @xl:block" />
       {steps.map((s, i) => (
         <li key={i} className="rise relative" style={stagger(i)}>
           <span className={cx("relative block size-3 rounded-full ring-4 ring-card", s.tone === "warn" ? "bg-warn" : s.tone === "win" ? "bg-win" : "bg-accent")} />
           <p className="mt-3 text-caption text-muted">{s.date}</p>
-          <p className="mt-1.5 text-sm font-medium">{s.title}</p>
+          <p className="mt-1 text-sm font-medium">{s.title}</p>
           {s.body && <p className="mt-1 text-caption text-label">{s.body}</p>}
         </li>
       ))}

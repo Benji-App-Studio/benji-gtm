@@ -4,6 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { type Auth, HttpError, type Member } from "../_shared/auth.ts";
 import { modelOverrides } from "../_shared/ai/models.ts";
 import { keyLabel, type Keys } from "../_shared/keys.ts";
+import { resolveLimits } from "../_shared/limits.ts";
+import { createStorage } from "./storage.ts";
 import { APPSTACK_PER_APP, checkKey, type CheckResult, type Fetch, isKeyName, KEY_NAMES } from "./checks.ts";
 import {
   installState, type InstallMember, isEmail, isUuid, type KeyMeta, keyState, type KeyState, mergeSettings, newRunnerSecret, settingsPatch,
@@ -33,10 +35,17 @@ async function body(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
-export interface InstallDeps { db: SupabaseClient; secrets: Keys; auth: Auth; fetch: Fetch }
+export interface InstallDeps {
+  db: SupabaseClient; secrets: Keys; auth: Auth; fetch: Fetch;
+  /** Reads a plain environment variable (the research switches); none when left out. */
+  env?: (name: string) => string | undefined;
+}
 
 /** The function's request handler. */
-export function createInstall({ db, secrets, auth, fetch }: InstallDeps): (req: Request) => Promise<Response> {
+export function createInstall({ db, secrets, auth, fetch, env = () => undefined }: InstallDeps): (req: Request) => Promise<Response> {
+  // Settings > Storage (storage.ts): what is stored against the plan's quota, and the cleanups.
+  const storage = createStorage({ db, limits: async () => resolveLimits(await auth.install(), env) });
+
   async function handle(req: Request): Promise<Response> {
     if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
     const parts = new URL(req.url).pathname.replace(/\/+$/, "").split("/");
@@ -53,6 +62,8 @@ export function createInstall({ db, secrets, auth, fetch }: InstallDeps): (req: 
         case "members/add": { await auth.owner(req); return json(await addMember(await body(req))); }
         case "members/remove": { await auth.owner(req); return json(await removeMember(await body(req))); }
         case "runner-secret/rotate": { await auth.owner(req); return json(await rotateRunnerSecret()); }
+        case "storage": { await auth.member(req); return json(await storage.usage()); }
+        case "storage/cleanup": { await auth.member(req); return json(await storage.cleanup(await body(req))); }
         default: return json({ error: "Not found" }, 404);
       }
     } catch (error) {
@@ -83,7 +94,23 @@ export function createInstall({ db, secrets, auth, fetch }: InstallDeps): (req: 
     const keys: Record<string, KeyState> = {};
     for (const name of names) keys[name] = await stateOf(name, meta);
     const row = await auth.install();
-    return installState({ role: caller.role, owned: Boolean(row?.ownerUserId), settings: row?.settings, keys, modelEnv: await modelOverrides(secrets) });
+    return {
+      ...installState({
+        role: caller.role, owned: Boolean(row?.ownerUserId), settings: row?.settings, keys, modelEnv: await modelOverrides(secrets),
+        researchEnv: { RESEARCH_TIKTOK: env("RESEARCH_TIKTOK"), RESEARCH_META_APIFY_ACTOR: env("RESEARCH_META_APIFY_ACTOR") },
+      }),
+      // The newest migration applied by setup (the ledger): the studio compares it with the newest one
+      // its own copy carries, to tell when "Apply the update" was skipped (GET /api/install updateNeeded).
+      schemaVersion: await schemaVersion(),
+    };
+  }
+
+  /** The newest version in public.install_migrations; null when it has none or can't be read. */
+  async function schemaVersion(): Promise<string | null> {
+    const { data, error } = await db.from("install_migrations").select("version").order("version", { ascending: false }).limit(1);
+    if (error) return null;
+    const version = (data as { version?: unknown }[] | null)?.[0]?.version;
+    return typeof version === "string" && /^\d{14}$/.test(version) ? version : null;
   }
 
   // MARK: Keys

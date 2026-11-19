@@ -2,8 +2,8 @@
 
 /* ─────────────────────────────────────────────────────────────────────────────────────────────
    Design tokens. Every visual decision lives here; components only use these names. See DESIGN.md.
-   The look: a pale grey app background, the page in a slightly lighter panel with a hairline border,
-   small type, small radii and almost no shadow.
+   The look (Linear's): a pale grey app background, the page in an inset panel with a hairline border,
+   12-13 px type, 28 px controls, quiet hairlines, a narrow content column and almost no shadow.
    Plain @theme (not inline) so utilities read the variables at runtime (bg-card is
    background-color: var(--color-card)), which lets the dark theme below swap them.
    ───────────────────────────────────────────────────────────────────────────────────────────── */
@@ -12,31 +12,35 @@
   --color-shell: #f4f4f5;        /* the app background, behind the page panel */
   --color-sidebar: #f4f4f5;      /* the sidebar (the same grey: no divider between it and the background) */
   --color-canvas: #fcfcfc;       /* the page panel, and pages outside the app */
-  --color-card: #ffffff;         /* cards: white on the panel, told apart by their hairline */
-  --color-raised: #ffffff;       /* fields, menus, the selected segment, a hovered table row */
-  --color-control: #efeff1;      /* grey pills, the segmented track, keyboard hints */
-  --color-hover: rgb(20 20 28 / 0.05);   /* a row or icon button under the pointer */
-  --color-active: rgb(20 20 28 / 0.08);  /* the current page in a sidebar, the highlighted menu row */
+  --color-card: #ffffff;         /* cards and settings groups: one step lighter than the panel, with a hairline */
+  --color-raised: #ffffff;       /* fields, menus, the selected tab, a hovered table row */
+  --color-control: #f0f0f2;      /* grey pills, the selected tab, keyboard hints */
+  --color-hover: rgb(20 20 28 / 0.045);  /* a row or icon button under the pointer */
+  --color-active: rgb(20 20 28 / 0.065); /* the current page in a sidebar, the highlighted menu row */
 
   /* Text. */
-  --color-ink: #1a1a1e;          /* titles, values, body */
-  --color-label: #3d3e45;        /* row labels, sidebar links */
-  --color-muted: #6a6b73;        /* descriptions, secondary text */
-  --color-faint: #8d8e96;        /* section labels, hints, axis ticks */
+  --color-ink: #1b1b1f;          /* titles, values, body */
+  --color-label: #3c3d43;        /* row labels */
+  --color-nav: #44454b;          /* sidebar rows until they are the current page */
+  --color-muted: #6b6c73;        /* descriptions, secondary text */
+  --color-faint: #8e8f96;        /* section labels, hints, axis ticks */
 
-  /* The dark fill: primary buttons, the current page in pagination. */
+  /* The dark fill: selected chips, step marks, the install's mark. */
   --color-primary: #222226;
   /* Text and marks on an ink or primary fill. */
   --color-on-ink: #ffffff;
 
-  --color-line: #e9e9ec;         /* dividers and card borders */
-  --color-hairline: #e2e2e6;     /* the page panel's edge, field borders */
-  --color-focus: #3358d4;        /* the keyboard focus ring */
+  --color-line: #ebebee;         /* dividers and card borders */
+  --color-hairline: #e3e3e7;     /* the page panel's edge, field and button borders */
+  --color-header-line: #ebebee;  /* under the page's header bar (none in dark) */
+  --color-focus: #5e6ad2;        /* the keyboard focus ring */
 
-  /* Data colours. */
-  --color-accent: #3358d4;       /* "actual", selection, toggles, links */
-  --color-accent-soft: #ebf0fd;  /* tinted icons, the forecast band */
-  --color-accent-muted: #8ba3ec; /* hatched "planned/estimate" bars */
+  /* The one accent (indigo): the primary button, links, toggles, progress, "actual" in charts. */
+  --color-accent: #5e6ad2;
+  --color-accent-fill: #5e6ad2;  /* the primary button's fill */
+  --color-on-accent: #ffffff;    /* text on the accent fill */
+  --color-accent-soft: #eef0fb;  /* tinted icons, the forecast band */
+  --color-accent-muted: #a5abe9; /* hatched "planned/estimate" bars */
   --color-win: #1b9a3e;          /* up and good */
   --color-win-soft: #e6f6ea;
   --color-warn: #d6364b;         /* down, lost, failed, destructive */
@@ -58,12 +62,12 @@
   --color-scrim: #000000;
 
   /* Elevation. Almost none: surfaces are separated by hairlines. Only things that float get a shadow. */
-  --shadow-card: 0 1px 1px rgb(0 0 0 / 0.02);
+  --shadow-card: 0 0 0 0 transparent;
   --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.06);
   --shadow-pill: 0 1px 2px rgb(0 0 0 / 0.1);
   --shadow-pop: 0 10px 32px -8px rgb(0 0 0 / 0.16), 0 2px 6px rgb(0 0 0 / 0.05), 0 0 0 1px rgb(0 0 0 / 0.04);
-  --shadow-frame: 0 0 0 0 transparent;
-  --shadow-glow: 0 2px 6px -1px rgb(51 88 212 / 0.35);
+  --shadow-frame: 0 0.5px 1px rgb(0 0 0 / 0.04);
+  --shadow-glow: 0 2px 6px -1px rgb(94 106 210 / 0.35);
 
   /* Corner radii. rounded-card / rounded-control / rounded-frame are the names to reach for. */
   --radius-xs: 3px;
@@ -74,11 +78,15 @@
   --radius-2xl: 12px;
   --radius-3xl: 14px;
   --radius-4xl: 16px;
-  --radius-card: 8px;      /* cards */
-  --radius-control: 6px;   /* buttons, fields, sidebar rows, segmented controls */
-  --radius-inner: 6px;     /* callouts and boxes inside a card */
+  --radius-card: 10px;     /* cards and settings groups */
+  --radius-small: 8px;     /* small cards, tiles, boxes inside a card */
+  --radius-control: 8px;   /* buttons, fields, sidebar rows, menus rows */
+  --radius-inner: 8px;     /* callouts and boxes inside a card */
   --radius-dialog: 12px;   /* dialogs, the command menu */
-  --radius-frame: 8px;     /* the page panel */
+  --radius-frame: 12px;    /* the page panel */
+
+  /* Weights: 450 for text, 500 for labels and titles, 600 only for a detail page's title and marks. */
+  --font-weight-book: 450;
 
   /* Type scale. text-sm is the 13 px UI text everything is set in; text-xs is the 12 px small text. */
   --text-xs: 0.75rem;
@@ -87,28 +95,31 @@
   --text-sm--line-height: 1.25rem;
   --text-base: 0.875rem;
   --text-base--line-height: 1.375rem;
-  --text-lg: 1rem;
-  --text-lg--line-height: 1.5rem;
-  --text-xl: 1.125rem;
-  --text-xl--line-height: 1.625rem;
-  --text-2xl: 1.25rem;
-  --text-2xl--line-height: 1.75rem;
+  --text-lg: 0.9375rem;
+  --text-lg--line-height: 1.4375rem;
+  --text-xl: 1rem;
+  --text-xl--line-height: 1.5rem;
+  --text-2xl: 1.125rem;
+  --text-2xl--line-height: 1.625rem;
   --text-3xl: 1.5rem;
   --text-3xl--line-height: 2rem;
   --text-caption: 0.75rem;           /* descriptions under a title: 12 px with a little more leading */
   --text-caption--line-height: 1.125rem;
-  --text-title: 0.9375rem;           /* card and section titles: 15 px */
-  --text-title--line-height: 1.375rem;
-  --text-title--letter-spacing: -0.005em;
-  --text-display: 1.5rem;            /* page titles on centred pages: 24 px */
-  --text-display--line-height: 1.25;
-  --text-display--letter-spacing: -0.015em;
-  --text-figure: 1.5rem;             /* KPI row figures */
-  --text-figure--line-height: 1.1;
-  --text-figure--letter-spacing: -0.02em;
-  --text-kpi: 2.25rem;               /* the one big number on a page */
-  --text-kpi--line-height: 1;
-  --text-kpi--letter-spacing: -0.03em;
+  --text-title: 0.8125rem;           /* card titles: 13 px (set font-medium) */
+  --text-title--line-height: 1.25rem;
+  --text-group: 0.9375rem;           /* settings group titles and section headings: 15 px */
+  --text-group--line-height: 1.4375rem;
+  --text-body: 0.9375rem;            /* body copy on detail pages: 15 px */
+  --text-body--line-height: 1.4375rem;
+  --text-display: 1.5rem;            /* page titles: 24 px */
+  --text-display--line-height: 2rem;
+  --text-display--letter-spacing: -0.00625rem;
+  --text-figure: 1.125rem;           /* KPI row figures: 18 px, no big numbers */
+  --text-figure--line-height: 1.2;
+  --text-figure--letter-spacing: -0.01em;
+  --text-kpi: 1.5rem;                /* the one larger number on a page: 24 px */
+  --text-kpi--line-height: 1.1;
+  --text-kpi--letter-spacing: -0.015em;
 }
 
 @theme inline {
@@ -123,26 +134,30 @@
 :root[data-theme="system"] { color-scheme: light dark; }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --color-shell: #0d0d0e;
-  --color-sidebar: #0d0d0e;
-  --color-canvas: #131315;
-  --color-card: #18181b;
-  --color-raised: #1f1f23;
-  --color-control: #232327;
-  --color-hover: rgb(255 255 255 / 0.055);
-  --color-active: rgb(255 255 255 / 0.09);
-  --color-ink: #ececef;
-  --color-label: #c3c3ca;
-  --color-muted: #96969f;
-  --color-faint: #6e6e78;
+  --color-shell: #08090a;
+  --color-sidebar: #08090a;
+  --color-canvas: #0f1011;
+  --color-card: #151618;
+  --color-raised: #1a1b1e;
+  --color-control: #1f2023;
+  --color-hover: rgb(255 255 255 / 0.04);
+  --color-active: rgb(255 255 255 / 0.075);
+  --color-ink: #f2f3f5;
+  --color-label: #c9ccd3;
+  --color-nav: #8a8f98;
+  --color-muted: #8f939b;
+  --color-faint: #63666e;
   --color-primary: #ececef;
   --color-on-ink: #131315;
-  --color-line: #242428;
-  --color-hairline: #2a2a2f;
-  --color-focus: #7c98f6;
-  --color-accent: #7c98f6;
-  --color-accent-soft: rgb(124 152 246 / 0.16);
-  --color-accent-muted: #5a71bd;
+  --color-line: #1f2023;
+  --color-hairline: #26272b;
+  --color-header-line: transparent;
+  --color-focus: #8b92f5;
+  --color-accent: #8b92f5;
+  --color-accent-fill: #5e6ad2;
+  --color-on-accent: #ffffff;
+  --color-accent-soft: rgb(139 146 245 / 0.15);
+  --color-accent-muted: #5a62b8;
   --color-win: #4cc76a;
   --color-win-soft: rgb(76 199 106 / 0.14);
   --color-warn: #f2647a;
@@ -161,31 +176,35 @@
   --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-pill: 0 1px 2px rgb(0 0 0 / 0.5);
   --shadow-pop: 0 14px 40px -8px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.07);
-  --shadow-frame: 0 0 0 0 transparent;
-  --shadow-glow: 0 2px 6px -1px rgb(124 152 246 / 0.45);
+  --shadow-frame: 0 0.5px 1px 1px rgb(0 0 0 / 0.3);
+  --shadow-glow: 0 2px 6px -1px rgb(139 146 245 / 0.45);
 }
 @media (prefers-color-scheme: dark) {
   :root[data-theme="system"] {
-    --color-shell: #0d0d0e;
-    --color-sidebar: #0d0d0e;
-    --color-canvas: #131315;
-    --color-card: #18181b;
-    --color-raised: #1f1f23;
-    --color-control: #232327;
-    --color-hover: rgb(255 255 255 / 0.055);
-    --color-active: rgb(255 255 255 / 0.09);
-    --color-ink: #ececef;
-    --color-label: #c3c3ca;
-    --color-muted: #96969f;
-    --color-faint: #6e6e78;
+    --color-shell: #08090a;
+    --color-sidebar: #08090a;
+    --color-canvas: #0f1011;
+    --color-card: #151618;
+    --color-raised: #1a1b1e;
+    --color-control: #1f2023;
+    --color-hover: rgb(255 255 255 / 0.04);
+    --color-active: rgb(255 255 255 / 0.075);
+    --color-ink: #f2f3f5;
+    --color-label: #c9ccd3;
+    --color-nav: #8a8f98;
+    --color-muted: #8f939b;
+    --color-faint: #63666e;
     --color-primary: #ececef;
     --color-on-ink: #131315;
-    --color-line: #242428;
-    --color-hairline: #2a2a2f;
-    --color-focus: #7c98f6;
-    --color-accent: #7c98f6;
-    --color-accent-soft: rgb(124 152 246 / 0.16);
-    --color-accent-muted: #5a71bd;
+    --color-line: #1f2023;
+    --color-hairline: #26272b;
+    --color-header-line: transparent;
+    --color-focus: #8b92f5;
+    --color-accent: #8b92f5;
+    --color-accent-fill: #5e6ad2;
+    --color-on-accent: #ffffff;
+    --color-accent-soft: rgb(139 146 245 / 0.15);
+    --color-accent-muted: #5a62b8;
     --color-win: #4cc76a;
     --color-win-soft: rgb(76 199 106 / 0.14);
     --color-warn: #f2647a;
@@ -204,8 +223,8 @@
     --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4);
     --shadow-pill: 0 1px 2px rgb(0 0 0 / 0.5);
     --shadow-pop: 0 14px 40px -8px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.07);
-    --shadow-frame: 0 0 0 0 transparent;
-    --shadow-glow: 0 2px 6px -1px rgb(124 152 246 / 0.45);
+    --shadow-frame: 0 0.5px 1px 1px rgb(0 0 0 / 0.3);
+    --shadow-glow: 0 2px 6px -1px rgb(139 146 245 / 0.45);
   }
 }
 
@@ -215,6 +234,7 @@ body {
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
+  font-weight: 450;
 }
 ::selection { background: color-mix(in srgb, var(--color-accent) 24%, transparent); }
 
@@ -232,7 +252,8 @@ body {
   font-size: 12px;
   line-height: 16px;
   letter-spacing: 0;
-  color: var(--color-faint);
+  font-weight: 450;
+  color: var(--color-muted);
 }
 
 /* Diagonal stripes in the current text colour: planned/estimate (accent-muted), lost (warn), targets (faint).
@@ -273,14 +294,12 @@ body {
   .page-in, .rise, .skeleton, .gear-spin, .grow-y, .grow-x { animation: none; }
 }
 
-/* The one emphasised card on a page (HeroCard): a flat dark panel with a faint tint of the accent in
-   one corner. Text on it is white. Same in both themes. */
+/* The one emphasised card on a page (HeroCard): kept as a name for older code; it is now a plain card
+   (no gradient, no dark panel), like every other surface. */
 .hero-gradient {
   position: relative;
-  isolation: isolate;
-  color: #fff;
-  border: 1px solid rgb(255 255 255 / 0.08);
-  background: radial-gradient(90% 120% at 100% 0%, rgb(124 152 246 / 0.22) 0%, rgb(124 152 246 / 0) 60%), #1c1c20;
+  border: 1px solid var(--color-line);
+  background: var(--color-card);
 }
 
 /* Scrollbars: thin and quiet instead of the browser's default bar. */
@@ -304,11 +323,11 @@ body {
 select:not([multiple]):not(.appearance-none) {
   appearance: none;
   -webkit-appearance: none;
-  padding-right: 34px;
+  padding-right: 28px;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238d8e96' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
   background-repeat: no-repeat;
-  background-position: right 12px center;
-  background-size: 16px 16px;
+  background-position: right 9px center;
+  background-size: 14px 14px;
   text-overflow: ellipsis;
 }
 

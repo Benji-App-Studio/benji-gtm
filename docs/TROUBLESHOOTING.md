@@ -67,14 +67,18 @@ Mac the app runs on. Open the address the Terminal window shows. It begins with 
 **The token is rejected.** Create a new token at https://supabase.com/dashboard/account/tokens and
 paste the whole thing. It starts with `sbp_` and Supabase shows it only once.
 
+**Check says the token isn't allowed.** Create it again with the **Full access** preset, for your
+project. A "Read-only" token fails with this message. See [keys/supabase.md](keys/supabase.md).
+
 **"The token works, but this account has no project yet."** Go back to step 1, create the project,
 then click **Check** again.
 
 **"This project already has data".** Setup only works on a new, empty Supabase project. Create a new
 project and pick that one.
 
-**"… is paused."** Free Supabase projects pause after about a week without use. Open the project in
-your Supabase dashboard, press **Restore**, wait about two minutes, then check again.
+**"… is paused."** Supabase can pause a free project. A paused free project can be resumed from the
+dashboard: open the project in your Supabase dashboard, press **Resume project**, wait until it is
+running again, then check again.
 
 **"This step didn't finish" in "Prepare the project".** Click **Retry**: finished parts are skipped.
 If the same part keeps failing, open **Technical detail** under the message, copy the text, and
@@ -87,28 +91,116 @@ again, or make a new one. Finished parts are skipped.
 
 **"Check failed" on a key.** The message under the box says why. The usual causes: a missing
 character when pasting, no payment method under Billing (OpenAI), or the key was deleted at the
-provider. Paste a new key and click **Check and save**.
+provider. A Restricted OpenAI key also fails: create one with **Permissions: All**. Paste a new key
+and click **Save and check**. Each key has a step-by-step guide:
+[OpenAI](keys/openai.md), [Apify](keys/apify.md), [Supabase](keys/supabase.md),
+[Typesafe](keys/typesafe.md), [Higgsfield](keys/higgsfield.md),
+[Meta Ad Library](keys/meta-ad-library.md), [Meta ads](keys/meta-ads.md),
+[RevenueCat](keys/revenuecat.md), [AppStack](keys/appstack.md),
+[Google Drive](keys/google-drive.md), [TikTok](keys/tiktok.md).
 
 **A page says "Connect … to use …" or shows "Add the key".** That feature needs a key you have not
 added yet. The button takes you to **Settings > API keys**.
 
 ## Signing in
 
-**I forgot my password.** The app has no reset link. In your Supabase dashboard open your project,
-then **Authentication > Users**, find your email, open the menu at the end of its row and choose
-**Send password recovery**.
+On your own Mac the app signs you in by itself: there is no login page. Your password is needed only
+on an online copy (Vercel).
+
+**I forgot my password.** You don't need email for this.
+- If the app opens on your Mac: go to **Settings > Account** and change the password there. You don't
+  need the old one. The box **Your sign-in details** shows the new one once: save it.
+- If it shows a page asking you to sign in: press **Forgot your password?**. Make a new Supabase
+  access token (the page shows how, like setup did), paste it, choose a new password and press
+  **Set my new password**. You are signed in, and the app keeps signing you in on this Mac.
+- On a new Mac (the app shows the setup page): follow it and pick the same project. In step 4,
+  "Connect this computer", choose a new password. All your data is kept.
+- From Terminal, if the pages don't help: in the app's folder run
+  `npm run provision -- --reset-password --project <ref>` (the 20 letters in your project's Supabase
+  address). It asks for the access token and the new password in Terminal, hidden. Type them there,
+  never into a chat.
+
+**The app shows a login page on my own Mac.** It couldn't sign you in by itself, and the page says why,
+with a button for the next step:
+- **"Sign in once on this computer"**: your copy was set up before the app could sign you in by
+  itself. Sign in once with your email and password; from then on it signs in by itself. Forgot the
+  password? Press **Forgot your password?**.
+- **"Sign in again"**: the password the app saved no longer works (it was changed somewhere else, or
+  your account was removed). Sign in with your current password, or press **Forgot your password?**.
+  If your account was removed, that page offers to create it again with your email; your workspace
+  and data stay.
+- **"Can't reach your Supabase project"**: Supabase paused the project, or this Mac is offline. Press
+  **Open your Supabase dashboard**, press **Resume project** if the project says it is paused, wait
+  until it is running again, then press **Try again**.
 
 **It asks me to set up again.** See "If the app asks you to set up again" in [UPDATING.md](UPDATING.md).
 
 ## Limits on the free Supabase plan
 
 - Videos larger than 50 MB are not stored when saving competitors' ads. The ad and its poster image still are.
-- Storage is limited to 1 GB. The **Research** page shows how much is used, under "How to get ads in, and stored media".
+- Storage is limited to 1 GB. **Settings > Storage** shows how much is used, by app and by kind (see "Running out of space" below).
 - Long background jobs are split into shorter runs, so large imports take longer.
 - A project pauses after about a week without use (see "… is paused." above).
 
 Upgrading the Supabase project lifts these limits. Afterwards follow steps 4 to 6 of
-[UPDATING.md](UPDATING.md) once, so the app picks up the new limits.
+[UPDATING.md](UPDATING.md) once. **Apply the update** looks at your plan again and, in the line
+"Copy the Style Library images", says "Limits now match your paid plan: 400 s per function run,
+300 MB per file, 100 GB of storage." From then on long jobs run in fewer, longer pieces and bigger
+videos are stored. It also raises the project's upload limit to 300 MB per file.
+
+The app changes the limits only while they are still the free plan's starting values. If they were
+changed by hand, they are kept, and the same line says "the ones in Settings > Limits were changed by
+hand, so they were kept." The same happens the other way round: after moving back to the free plan,
+the next update lowers the paid plan's starting values to the free plan's.
+
+## Running out of space
+
+Your Supabase plan includes a fixed amount of file storage (1 GB on the free plan). Benji GTM keeps an
+eye on it so nothing breaks halfway.
+
+**What fills it**
+
+| What | Where it comes from | Typical size |
+| --- | --- | --- |
+| Competitors' ad media | Saved copies of competitors' ad images and videos, made when you collect or import ads, so they don't expire | Images 0.1–0.5 MB, videos 5–50 MB each |
+| Generated creatives | Images and videos made in Studio, Playground and "Make this for your app" | Images 2–5 MB, videos 5–30 MB |
+| Uploads and brand files | Your product images, logo, screenshots, fonts and Playground uploads | Under 1 MB each |
+
+Videos are almost always what fills a free plan: 20 competitor videos can be a third of 1 GB.
+
+**What you'll see**
+
+- **At 80%:** a quiet card at the bottom of the sidebar, and a note on **Settings > Storage**. Nothing is blocked.
+- **At 95%:** a warning before anything that adds files (collecting ads, importing, generating, uploading),
+  with a **Free up space** link.
+- **At 100%:** those actions are refused with a plain message, and nothing half-saves. Ads you collect
+  while it's full are still saved as text; their images and videos are left out and can be saved later
+  by importing the same file again.
+- **A file bigger than your plan allows** (50 MB on the free plan) is refused before it uploads, with the limit stated.
+
+**How to free space** (open **Settings > Storage**; each one shows exactly what it deletes and how much it frees before anything goes):
+
+1. **Delete rejected creatives.** Creatives you marked rejected in Studio. Anything sent to Meta is kept.
+2. **Delete unused creatives** older than a number of days you pick (never approved, never sent to Meta).
+3. **Delete old saved media** older than a number of days you pick. The ads stay in Research with their
+   text and links; only the saved copies of their images and videos go, so old links may stop showing a picture.
+4. **Delete one app's competitor media** from its row under **By app**.
+5. **Delete an app you no longer need** (its settings, **Danger zone**). Its files go with it.
+6. **Files of a deleted app** show under **By app** when an app was deleted before this cleanup existed: **Remove** them.
+
+✅ **Checkpoint:** the bar on **Settings > Storage** drops by the amount the confirm said.
+
+**When to upgrade the Supabase plan.** Upgrade when you keep landing above 80% after cleaning up, or when
+you want to keep competitors' videos for months: Supabase's Pro plan includes 100 GB of storage and lets you
+raise the per-file limit (in the Supabase dashboard under Storage > Settings). After upgrading, follow
+steps 4 to 6 of [UPDATING.md](UPDATING.md) once, so Benji GTM picks up the new limits.
+
+**"Storage is full" on a generation that already started.** The job fails with that message and nothing
+is charged after it: free space, then press **Retry** (the price is shown first).
+
+**"The finished file is larger than your Supabase plan allows".** A video came back bigger than one file
+may be on your plan. It failed once (no retries spending again); the job keeps a link to download it from
+Higgsfield. Upgrade the plan to store such files here.
 
 ## Updating and git
 
@@ -128,4 +220,5 @@ your GitHub credentials in Git".
 
 💡 **Beginner tip:** when you ask someone for help, send them the exact message you see and the file
 `start-log.txt` from the app folder. Neither contains your keys. Never send an access token, an API
-key or a password, not even to your coding agent.
+key or a password, not even to your coding agent. When a step needs one, type it into the app's page
+or into the Terminal prompt that asks for it.

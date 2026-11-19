@@ -4,6 +4,7 @@ import { VERIFIERS, type VerifyResult } from "@/lib/server/connections";
 import { loadRow } from "@/lib/server/workspaces";
 import { toWorkspace, toWorkspaceView, WORKSPACE_COLUMNS, type WorkspaceRow } from "@/lib/workspace";
 import { CONNECTION_KEYS, connectionValues, type ConnectionCheck, type ConnectionKey } from "@/lib/workspace-schema";
+import { dbFailure, logCaught } from "@/lib/server/errors";
 
 /**
  * Checks one connection ({ connection: "meta" | "revenuecat" | "appstack" | "storage" }) and records
@@ -24,13 +25,13 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/workspa
   try {
     result = await VERIFIERS[key]({ workspace, supabase: session.supabase, userId: session.user.id });
   } catch (error) {
-    result = { ok: false, message: `The check failed: ${(error as Error).message}`.slice(0, 400) };
+    result = { ok: false, message: `The check failed: ${logCaught("workspace verify", error, "something went wrong. Try again.")}`.slice(0, 400) };
   }
   if (result.pending) return Response.json({ result, workspace: toWorkspaceView(row) });
 
   const check: ConnectionCheck = { ok: result.ok, message: result.message.slice(0, 400), checkedAt: new Date().toISOString(), values: connectionValues(workspace.connections, key) };
   const { data, error } = await session.supabase.from("products").update({ connection_checks: { ...row.connection_checks, [key]: check } })
     .eq("id", row.id).select(WORKSPACE_COLUMNS).single<WorkspaceRow>();
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return dbFailure("workspace verify save", error, "The check ran but its result couldn't be saved. Try again.");
   return Response.json({ result, workspace: toWorkspaceView(data) });
 }

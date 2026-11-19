@@ -20,6 +20,57 @@ export const limitsFor = (plan: Plan, uploadLimitMb?: number): InstallLimits =>
     ? { wallClockSec: 400, uploadLimitMb: uploadLimitMb ?? PAID_UPLOAD_MB, storageQuotaGb: 100 }
     : { wallClockSec: 150, uploadLimitMb: Math.min(uploadLimitMb ?? FREE_UPLOAD_MB, FREE_UPLOAD_MB), storageQuotaGb: 1 };
 
+const LIMIT_FIELDS = ["wallClockSec", "uploadLimitMb", "storageQuotaGb"] as const;
+const sameLimits = (a: InstallLimits, b: InstallLimits) => LIMIT_FIELDS.every((field) => a[field] === b[field]);
+
+/**
+ * What an update run writes to `install.settings.limits` after the plan was detected again, or null to
+ * leave them. They are rewritten only when they still hold the other plan's defaults (what setup wrote,
+ * so the plan changed since: an upgrade, or a downgrade); limits the owner changed by hand are never
+ * touched. Missing fields read as the free plan's, as the functions read them (_shared/limits.ts).
+ */
+export function limitsToWrite(stored: unknown, plan: Plan, uploadLimitMb?: number): InstallLimits | null {
+  const set = stored && typeof stored === "object" && !Array.isArray(stored) ? stored as Record<string, unknown> : {};
+  const current = { ...limitsFor("free") } as InstallLimits;
+  for (const field of LIMIT_FIELDS) {
+    const value = set[field];
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) current[field] = value;
+  }
+  const target = limitsFor(plan, uploadLimitMb);
+  const other = limitsFor(plan === "paid" ? "free" : "paid");
+  if (sameLimits(current, target)) return null;
+  return sameLimits(current, other) ? target : null;
+}
+
+/**
+ * During an update: the plan is detected again (it may have been upgraded since setup), and the stored
+ * limits follow it when they are still the other plan's defaults (limitsToWrite). The write only lands
+ * if nobody changed the limits meanwhile. Answers what was done.
+ */
+export async function refreshPlanLimits(api: ManagementApi, ref: string, plan: Plan, uploadLimitMb: number, emit: Emit): Promise<"updated" | "kept" | "unchanged" | "no_install"> {
+  const [row] = await api.query<{ limits: unknown }>(ref, "select settings->'limits' as limits from public.install where id");
+  if (!row) return "no_install";
+  const next = limitsToWrite(row.limits, plan, uploadLimitMb);
+  if (!next) {
+    const target = limitsFor(plan, uploadLimitMb);
+    const stored = row.limits && typeof row.limits === "object" ? row.limits as Record<string, unknown> : {};
+    const handMade = LIMIT_FIELDS.some((field) => typeof stored[field] === "number" && stored[field] !== target[field]);
+    if (handMade) {
+      emit({ step: "storage", status: "done", message: `Your ${plan} plan's limits weren't applied: the ones in Settings > Limits were changed by hand, so they were kept.`, detail: `stored ${JSON.stringify(stored)}; ${plan} plan ${JSON.stringify(target)}` });
+      return "kept";
+    }
+    return "unchanged";
+  }
+  await api.query(ref, "update public.install set settings = jsonb_set(settings, '{limits}', $1::jsonb, true) where id and (settings->'limits') is not distinct from $2::jsonb",
+    [JSON.stringify(next), row.limits === null || row.limits === undefined ? null : JSON.stringify(row.limits)]);
+  emit({
+    step: "storage", status: "done",
+    message: `Limits now match your ${plan} plan: ${next.wallClockSec} s per function run, ${next.uploadLimitMb} MB per file, ${next.storageQuotaGb} GB of storage.`,
+    detail: `was ${JSON.stringify(row.limits ?? null)}`,
+  });
+  return "updated";
+}
+
 // MARK: Projects, plan, keys
 
 export const toSummary = (project: ApiProject): ProjectSummary => ({
@@ -41,7 +92,7 @@ export function projectProblem(project: ProjectSummary): string | null {
     return `"${project.name}" is still starting. Wait about two minutes, then check again.`;
   }
   if (project.status === "INACTIVE" || project.status === "PAUSING" || project.status === "GOING_DOWN") {
-    return `"${project.name}" is paused. Open it in your Supabase dashboard, press Restore, then check again.`;
+    return `"${project.name}" is paused. Open it in your Supabase dashboard, press Resume project, then check again.`;
   }
   return `"${project.name}" isn't running normally (Supabase says ${project.status}). Open it in your Supabase dashboard to see why.`;
 }
@@ -101,6 +152,10 @@ export function localOrigins(origin: string): string[] {
 
 const maskEmail = (email: string): string => email.replace(/^(.).*(@.*)$/, "$1***$2");
 
+/** The project already has its owner: this caller signs in with that account (the setup page offers it). */
+const ownerExists = (email: string | null) =>
+  new ProvisionError("owner_exists", `This project already has its owner (${maskEmail(email ?? "another account")}). Sign in as the owner instead.`);
+
 export interface OwnerInput { email: string; password: string; appOrigin: string; limits: InstallLimits; workspaceName?: string }
 
 /**
@@ -115,9 +170,7 @@ export async function createOwner(api: ManagementApi, project: ProjectApi, ref: 
 
   const [install] = await api.query<{ owner_user_id: string | null; email: string | null }>(ref,
     "select i.owner_user_id, (select u.email from auth.users u where u.id = i.owner_user_id) as email from public.install i where i.id");
-  if (install?.owner_user_id && (install.email ?? "").toLowerCase() !== email) {
-    throw new ProvisionError("owner_exists", `This project already has an owner (${maskEmail(install.email ?? "another account")}). Sign in with that account instead.`);
-  }
+  if (install?.owner_user_id && (install.email ?? "").toLowerCase() !== email) throw ownerExists(install.email);
 
   const lookup = "select id from auth.users where lower(email) = lower($1) limit 1";
   let [user] = await api.query<{ id: string }>(ref, lookup, [email]);
@@ -130,13 +183,16 @@ export async function createOwner(api: ManagementApi, project: ProjectApi, ref: 
   if (!user || !UUID.test(user.id)) throw new ProvisionError("no_owner", "Couldn't create your account. Press Retry.", { detail: "auth.users has no row for that email after the create call" });
 
   const settings = JSON.stringify({ name: input.workspaceName?.trim() || "My workspace", aiProvider: "openai", limits: input.limits });
-  // Settings saved earlier win over these defaults, and an owner is never replaced.
-  await api.query(ref, [
-    `insert into public.install (id, owner_user_id, settings) values (true, ${sqlLiteral(user.id)}::uuid, ${sqlLiteral(settings)}::jsonb)`,
-    "on conflict (id) do update set owner_user_id = coalesce(public.install.owner_user_id, excluded.owner_user_id), settings = excluded.settings || public.install.settings;",
-    `insert into public.install_members (user_id, role) values (${sqlLiteral(user.id)}::uuid, 'owner')`,
-    "on conflict (user_id) do update set role = 'owner';",
-  ].join("\n"));
+  // One claim in the database that only one caller can win (migration 20261119180000): two setup tabs
+  // racing each other get one owner. Settings saved earlier win over these defaults, an owner is never
+  // replaced, and only the recorded owner gets the owner membership.
+  const [claim] = await api.query<{ owner: string | null }>(ref, "select public.install_claim_owner($1::uuid, $2::jsonb) as owner", [user.id, settings]);
+  if (claim?.owner !== user.id) {
+    // Another tab won. An account made just now for the losing email is removed again, so it can't linger.
+    if (created) await api.query(ref, "delete from auth.users where id = $1::uuid and not exists (select 1 from public.install where owner_user_id = $1::uuid)", [user.id]);
+    const [winner] = claim?.owner ? await api.query<{ email: string | null }>(ref, "select email::text as email from auth.users where id = $1::uuid", [claim.owner]) : [];
+    throw ownerExists(winner?.email ?? null);
+  }
 
   emit({ step: "owner", status: "running", message: "Closing sign-up so only you can get in." });
   const current = await api.getAuthConfig(ref);

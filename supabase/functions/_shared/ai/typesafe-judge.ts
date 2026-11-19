@@ -4,7 +4,7 @@
 // The only file that imports the SDK. The full npm specifier (the version the functions' lockfiles
 // pin) means a function needs no import map entry for it.
 import { TypeSafeClient } from "npm:@typesafe-ai/sdk@0.6.0";
-import type { Judge, JudgeRequest, JudgeResult, Questions } from "./judge.ts";
+import { accountError, type Judge, type JudgeRequest, type JudgeResult, type Questions } from "./judge.ts";
 
 /** The part of a TypeSafe client the judge uses (a `TypeSafeClient`, or a stand-in in tests). */
 export interface TypeSafeLike {
@@ -31,7 +31,8 @@ export function typesafeJudge(source: TypeSafeLike | TypeSafeJudgeOptions): Judg
     provider: "typesafe",
     systemOne<const Q extends Questions>(input: JudgeRequest<Q>): PromiseLike<JudgeResult<Q>> {
       client ??= new TypeSafeClient({ apiKey: options.apiKey, timeout: options.timeoutMs ?? TYPESAFE_TIMEOUT_MS, ...(options.fetch ? { fetch: options.fetch } : {}) });
-      return client.systemOne(input);
+      // A refused key comes back as an `account` JudgeError, as from OpenAI (judge.ts accountError).
+      return Promise.resolve(client.systemOne(input)).catch((error: unknown) => { throw accountError(error, "typesafe") ?? error; });
     },
   };
 }

@@ -7,8 +7,9 @@ import { runSafetySummary, scrapeWarnings, type LocalRunRow, type LocalScrape } 
 import { IconAlert, IconX } from "../icons";
 import { cx } from "../ui";
 import { readStored, storageKey } from "@/lib/storage-keys";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
-const time = (d: Date) => d.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+const time = (d: Date) => d.toLocaleString(UI_LOCALE, { weekday: "short", hour: "numeric", minute: "2-digit" });
 
 /** In the import dialog: an amber box with the run's warnings, and a red line when Meta blocked it. */
 export function ImportSafety({ file }: { file: Pick<LocalScrape, "run_safety" | "stopped_reason" | "scraped_at"> }) {
@@ -51,7 +52,7 @@ export function ScrapeSafetyCard({ productId, runs, className }: { productId: st
   };
   return (
     <aside className={cx("relative flex gap-2.5 rounded-inner bg-caution-soft py-2.5 pr-9 pl-3 text-xs text-caution-ink", className)} aria-label="Collecting safely">
-      <IconAlert className="mt-px size-4 shrink-0" />
+      <IconAlert className="mt-px size-3.5 shrink-0" />
       <div className="min-w-0">
         <p className="font-medium">Collecting safely</p>
         <ul className="mt-0.5 grid gap-1.5">

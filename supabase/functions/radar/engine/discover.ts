@@ -1,7 +1,7 @@
 // Competitor discovery: candidates from the founder's own list, OpenAI with web search and Apify's
 // Instagram and TikTok profile searches are merged across platforms (links in bios fill in other
 // channels), then the judge (_shared/ai) rates each against the founder's product. The founder then picks.
-import type { AiProvider, Judge } from "../../_shared/ai/judge.ts";
+import { accountError, type AiProvider, type Judge, type JudgeError } from "../../_shared/ai/judge.ts";
 import { choice, score } from "../../_shared/ai/questions.ts";
 import { thresholdsFor } from "../../_shared/ai/thresholds.ts";
 import type { Candidate, DiscoveryProject, Platform } from "./types.ts";
@@ -183,8 +183,9 @@ export async function judge(client: Judge, project: DiscoveryProject, candidates
   const queue = candidates.filter((c) => c.source !== "you");
   const total = queue.length;
   let tokens = 0, done = 0;
+  let refused: JudgeError | null = null;
   await Promise.all(Array.from({ length: 8 }, async () => {
-    for (let candidate = queue.shift(); candidate; candidate = queue.shift()) {
+    for (let candidate = queue.shift(); candidate && !refused; candidate = queue.shift()) {
       try {
         const { answers, usage } = await client.systemOne({
           state: { product, candidate: { name: candidate.name, handles: candidate.handles, bio: candidate.bio, followers: candidate.followers, website: candidate.website } },
@@ -203,12 +204,16 @@ export async function judge(client: Judge, project: DiscoveryProject, candidates
         candidate.kind = answers.kind.choice;
         candidate.kindConfidence = answers.kind.confidence;
         candidate.similarity = Math.round(answers.similarity.score * 10) / 10;
-      } catch {
-        // An unjudged candidate stays "unrelated" and unselected; the founder can still pick it.
+      } catch (error) {
+        // A refused key (revoked, out of credit) stops the search: every other candidate would fail the
+        // same way, and "no competitors found" would hide why. Any other failure leaves this one
+        // unjudged: "unrelated" and unselected, and the founder can still pick it.
+        refused ??= accountError(error, client.provider);
       }
       onJudged?.(++done, total);
     }
   }));
+  if (refused) throw refused;
   return tokens;
 }
 

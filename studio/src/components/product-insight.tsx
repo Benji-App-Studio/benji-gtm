@@ -14,6 +14,7 @@ import { Chips, FactGrid, profileFacts, priceLabel, SocialChips, socialEntries, 
 import { LockedNote, useLocked } from "./research/gates";
 import { Badge, Button, cx, Spinner, TintIcon } from "./ui";
 import { BrandSuggestions } from "./brand/brand-suggestions";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 const POLL_MS = 4_000;
 
@@ -26,7 +27,7 @@ async function call<T>(productId: string, action: string): Promise<T & { error?:
 const ago = (iso: string | null | undefined) => {
   if (!iso) return "";
   const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
-  return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86_400 ? `${Math.round(s / 3600)} h ago` : new Date(iso).toLocaleDateString();
+  return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86_400 ? `${Math.round(s / 3600)} h ago` : new Date(iso).toLocaleDateString(UI_LOCALE);
 };
 
 export function ProductInsightCard({ product, onChanged, onEdit }: { product: ProductRow; onChanged: (row: ProductRow) => void; onEdit: () => void }) {
@@ -145,7 +146,7 @@ export function ProductInsightCard({ product, onChanged, onEdit }: { product: Pr
         <div className="flex min-w-0 flex-1 basis-[280px] items-start gap-3">
           <TintIcon tone="accent" size="sm"><IconSparkles /></TintIcon>
           <div className="min-w-0 flex-1">
-            <div className="flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1">
+            <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1">
               <h3 className="text-sm font-medium">AI product profile</h3>
               {status}
               {row.insight_applied_at && <Badge>Applied {ago(row.insight_applied_at)}</Badge>}
@@ -204,7 +205,7 @@ function balance(tiles: (Tile | null | false | "" | undefined)[]): Tile[] {
 
 function TileView({ tile }: { tile: Tile }) {
   return (
-    <section className={cx("flex min-w-0 flex-col gap-2.5 rounded-inner border border-line bg-card p-4", tile.wide && "@2xl:col-span-2")}>
+    <section className={cx("flex min-w-0 flex-col gap-2 rounded-small border border-line bg-card p-3", tile.wide && "@2xl:col-span-2")}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h4 className="eyebrow">{tile.title}</h4>
         {tile.aside}
@@ -312,8 +313,8 @@ export function InsightView({ insight }: { insight: ProductInsight }) {
           {brand.colors.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {brand.colors.map((c) => (
-                <div key={c.hex} className="flex min-w-0 items-center gap-2 rounded-inner border border-line bg-raised py-1.5 pr-3 pl-1.5" title={c.evidence}>
-                  <span className="size-8 shrink-0 rounded-inner border border-ink/10" style={{ background: c.hex }} />
+                <div key={c.hex} className="flex min-w-0 items-center gap-2 rounded-small border border-line bg-raised py-1 pr-2.5 pl-1" title={c.evidence}>
+                  <span className="size-6 shrink-0 rounded-md border border-ink/10" style={{ background: c.hex }} />
                   <span className="min-w-0 text-xs"><span className="block truncate font-medium">{c.name || c.hex}</span><span className="font-mono text-muted">{c.hex}{c.role ? ` · ${c.role}` : ""}</span></span>
                 </div>
               ))}
@@ -344,7 +345,7 @@ export function InsightView({ insight }: { insight: ProductInsight }) {
     <div className="grid gap-4 border-t border-line px-4 pt-4 pb-4">
       <div className="grid gap-2 px-1">
         <h4 className="eyebrow">What it is</h4>
-        {insight.tagline && <p className="text-title font-medium [overflow-wrap:anywhere]">{insight.tagline}</p>}
+        {insight.tagline && <p className="text-sm font-medium [overflow-wrap:anywhere]">{insight.tagline}</p>}
         {insight.summary && <Text className="leading-relaxed text-label">{insight.summary}</Text>}
         {(insight.category || insight.sales_channel !== "unknown" || insight.region) && (
           <div className="flex flex-wrap gap-1.5">
@@ -370,7 +371,7 @@ export function InsightView({ insight }: { insight: ProductInsight }) {
           </ul>
         )}
         {missed.length > 0 && <p className="text-xs text-faint [overflow-wrap:anywhere]">Couldn&apos;t open: {missed.map((s) => s.url.replace(/^https?:\/\//, "")).join(", ")}</p>}
-        <p className="text-xs text-faint">Written by {insight.model} on {new Date(insight.generatedAt).toLocaleString()}. Check numbers and claims before they go in an ad.</p>
+        <p className="text-xs text-faint">Written by {insight.model} on {new Date(insight.generatedAt).toLocaleString(UI_LOCALE)}. Check numbers and claims before they go in an ad.</p>
       </footer>
     </div>
   );

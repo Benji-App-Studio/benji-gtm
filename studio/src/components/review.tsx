@@ -141,7 +141,7 @@ export function Review({ project, estimate, onChange, onStarted }: {
           <Card className="border-dashed p-4">
             {adding ? (
               <div className="grid gap-3">
-                <input className={inputClass} placeholder={`${copy.noun[0].toUpperCase()}${copy.noun.slice(1)} name`} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+                <input className={inputClass} aria-label={`${copy.noun[0].toUpperCase()}${copy.noun.slice(1)} name`} placeholder={`${copy.noun[0].toUpperCase()}${copy.noun.slice(1)} name`} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
                 <div className="grid gap-2 @xl:grid-cols-2">
                   {PLATFORMS.map((p) => (
                     <label key={p} className="flex items-center gap-2 text-xs">

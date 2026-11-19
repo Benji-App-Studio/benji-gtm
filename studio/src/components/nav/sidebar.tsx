@@ -12,13 +12,16 @@ import { featureState } from "@/lib/capabilities";
 import { canManage, roleLabel, useInstall } from "@/lib/install/use-install";
 import { applyTheme } from "@/lib/theme";
 import { WORKSPACE_MODULES, workspaceHref, type WorkspaceModule } from "@/lib/workspace-schema";
+import { noticeText, percent } from "@/lib/storage-usage";
+import { useStorage } from "@/lib/use-storage";
 import { THEME_OPTIONS, useTheme } from "../appearance";
 import { notice } from "../dialog";
 import {
   IconChart, IconChevronDown, IconChevronRight, IconCompass, IconCompose, IconHelp, IconHome, IconLayers, IconLogout, IconMegaphone, IconMenu,
-  IconMonitor, IconMoon, IconPlug, IconPlus, IconRocket, IconSearch, IconSettings, IconSparkles, IconSun, IconTarget, IconUser, IconWand, IconX,
+  IconMonitor, IconMoon, IconPlug, IconPlus, IconRocket, IconSearch, IconSettings, IconSparkles, IconSun, IconTarget, IconTrendUp, IconUser, IconWand, IconX,
 } from "../icons";
 import { goInstant } from "../instant";
+import { useLayer } from "../layers";
 import { useProjects } from "../project-list";
 import { SettingsNav } from "../settings/settings-nav";
 import { Badge, cx, Gear, Kbd, Menu, MenuItem, MenuSeparator, MenuSub } from "../ui";
@@ -33,6 +36,7 @@ type NavLink = { href: string; label: string; icon: ReactNode; exact?: boolean; 
 const MODULE_ICONS: Record<WorkspaceModule, ReactNode> = {
   brand: <IconTarget />,
   research: <IconCompass />,
+  market: <IconTrendUp />,
   formats: <IconLayers />,
   studio: <IconSparkles />,
   playground: <IconWand />,
@@ -64,42 +68,37 @@ function useStoredFlag(name: string, fallback: boolean): [boolean, (value: boole
 
 // MARK: The column
 
-type Who = { name?: string | null; email?: string };
+/** `local`: a copy in local mode signs its owner in by itself, so it has no Sign out. */
+type Who = { name?: string | null; email?: string; local?: boolean };
 
-export function Sidebar({ name, email }: Who) {
+export function Sidebar({ name, email, local }: Who) {
   return (
     <aside className="hidden w-[244px] shrink-0 flex-col bg-sidebar lg:flex">
-      <NavBody name={name} email={email} />
+      <NavBody name={name} email={email} local={local} />
     </aside>
   );
 }
 
 /** Below lg: a top bar with the menu button, the workspace and search; the menu button opens the sidebar as a drawer. */
-export function MobileBar({ name, email }: Who) {
+export function MobileBar({ name, email, local }: Who) {
   const [open, setOpen] = useState(false);
   const path = useAppPath();
   const { install, loading } = useInstall();
   const [openedOn, setOpenedOn] = useState(path);
   if (open && openedOn !== path) setOpen(false);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    closeRef.current?.focus();
-    const menuButton = menuRef.current;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
-    window.addEventListener("keydown", onKey);
-    // Closing puts the keyboard back on the button that opened the drawer (unless focus already moved on).
-    return () => { window.removeEventListener("keydown", onKey); if (!document.activeElement || document.activeElement === document.body) menuButton?.focus(); };
-  }, [open]);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  // A layer while open: Tab stays in the drawer, Escape closes it, and closing puts the keyboard back on
+  // the menu button (unless focus already moved on).
+  useLayer(drawerRef, { enabled: open, onEscape: () => setOpen(false), initialFocus: closeRef });
   const workspace = install?.name?.trim() || APP_NAME;
   const settings = inSettings(path);
   // While the install loads the name isn't known yet: keep its place instead of flashing the product's name.
   const pending = loading && !settings;
   return (
     <>
-      <header className="sticky top-0 z-30 flex h-11 items-center gap-1 border-b border-line bg-canvas/90 px-2 backdrop-blur lg:hidden">
-        <button ref={menuRef} type="button" onClick={() => { setOpenedOn(path); setOpen(true); }} aria-label="Open menu" aria-expanded={open} className="grid size-8 shrink-0 place-items-center rounded-control text-label hover:bg-hover"><IconMenu className="size-[18px]" /></button>
+      <header className="sticky top-0 z-30 flex h-11 items-center gap-1 border-b border-line bg-shell/95 px-2 backdrop-blur lg:hidden">
+        <button type="button" onClick={() => { setOpenedOn(path); setOpen(true); }} aria-label="Open menu" aria-expanded={open} className="grid size-8 shrink-0 place-items-center rounded-control text-label hover:bg-hover"><IconMenu className="size-[18px]" /></button>
         <Link href={settings ? SETTINGS_ROOT : "/app"} className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-control px-1.5">
           <InstallMark name={workspace} className={cx(pending && "invisible")} />
           <span className={cx("truncate text-sm font-medium", pending && "invisible")}>{settings ? "Settings" : workspace}</span>
@@ -109,8 +108,8 @@ export function MobileBar({ name, email }: Who) {
       {open && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="page-in absolute inset-0 bg-scrim/30" onClick={() => setOpen(false)} />
-          <div role="dialog" aria-modal="true" aria-label="Menu" className="absolute inset-y-0 left-0 flex w-[min(288px,86vw)] flex-col border-r border-hairline bg-sidebar shadow-pop">
-            <NavBody name={name} email={email} onNavigate={() => setOpen(false)}
+          <div ref={drawerRef} role="dialog" aria-modal="true" aria-label="Menu" className="absolute inset-y-0 left-0 flex w-[min(288px,86vw)] flex-col border-r border-hairline bg-sidebar shadow-pop">
+            <NavBody name={name} email={email} local={local} onNavigate={() => setOpen(false)}
               close={<button ref={closeRef} type="button" onClick={() => setOpen(false)} aria-label="Close menu" className="grid size-8 shrink-0 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink"><IconX className="size-4" /></button>} />
           </div>
         </div>
@@ -128,7 +127,7 @@ function NavBody(props: BodyProps) {
 
 // MARK: The app's own navigation
 
-function AppNav({ name, email, onNavigate, close }: BodyProps) {
+function AppNav({ name, email, local, onNavigate, close }: BodyProps) {
   const path = useAppPath();
   const { products } = useWorkspaces();
   const projects = useProjects();
@@ -163,11 +162,11 @@ function AppNav({ name, email, onNavigate, close }: BodyProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* The workspace, search and new */}
-      <div className="flex shrink-0 items-center gap-0.5 px-2 pt-2 pb-1.5">
-        <WorkspaceMenu name={name} email={email} />
-        <button type="button" onClick={openCommandMenu} aria-label="Search" title="Search (⌘K)" className="grid size-7 shrink-0 place-items-center rounded-control text-muted transition-colors hover:bg-hover hover:text-ink max-lg:size-8"><IconSearch className="size-4" /></button>
+      <div className="flex shrink-0 items-center gap-1 px-3 pt-2.5 pb-3">
+        <WorkspaceMenu name={name} email={email} local={local} />
+        <button type="button" onClick={openCommandMenu} aria-label="Search" title="Search (⌘K)" className="grid size-7 shrink-0 place-items-center rounded-full text-nav transition-colors hover:bg-hover hover:text-ink max-lg:size-8"><IconSearch className="size-3.5" /></button>
         <Menu label="New" align="end" width={200} trigger={(trigger) => (
-          <button {...trigger} aria-label="New" title="New" className="grid size-7 shrink-0 place-items-center rounded-control text-muted transition-colors hover:bg-hover hover:text-ink aria-expanded:bg-hover aria-expanded:text-ink max-lg:size-8"><IconCompose className="size-4" /></button>
+          <button {...trigger} aria-label="New" title="New" className="grid size-7 shrink-0 place-items-center rounded-full border border-hairline bg-raised text-label transition-colors hover:bg-hover hover:text-ink aria-expanded:bg-hover aria-expanded:text-ink max-lg:size-8"><IconCompose className="size-3.5" /></button>
         )}>
           <MenuItem icon={<IconPlus />} href="/app/new" onSelect={onNavigate}>New analysis</MenuItem>
           <MenuItem icon={<IconLayers />} href="/app/product/new" onSelect={onNavigate}>New app</MenuItem>
@@ -176,15 +175,15 @@ function AppNav({ name, email, onNavigate, close }: BodyProps) {
       </div>
 
       {/* The links scroll on short windows; the row above and the footer stay put. */}
-      <div className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-2 pb-2">
-        <nav aria-label="Main" className="flex flex-col gap-px">{TOP_LINKS.map((link) => row(link))}</nav>
+      <div className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 pb-3">
+        <nav aria-label="Main" className="flex flex-col">{TOP_LINKS.map((link) => row(link))}</nav>
 
         <div className="mt-4">
           <button type="button" onClick={() => setAppsOpen(!appsOpen)} aria-expanded={appsOpen} aria-controls={appsId} className={cx(navSectionClass, "transition-colors hover:bg-hover hover:text-label")}>
             Your apps<IconChevronDown className={cx("size-3 transition-transform motion-reduce:transition-none", !appsOpen && "-rotate-90")} />
           </button>
           {appsOpen && (
-            <nav id={appsId} aria-label="Your apps" className="mt-0.5 flex flex-col gap-px">
+            <nav id={appsId} aria-label="Your apps" className="flex flex-col">
               {(products ?? []).map((product) => {
                 const open = toggled[product.id] ?? (product.id === urlApp || products?.length === 1);
                 const home = workspaceHref(product.id);
@@ -193,16 +192,16 @@ function AppNav({ name, email, onNavigate, close }: BodyProps) {
                   <div key={product.id}>
                     <div className="group/app relative flex items-center">
                       <Link href={home} onClick={(event) => { setToggled((t) => ({ ...t, [product.id]: true })); rememberWorkspace(product.id); go(home)(event); }}
-                        className={cx(navRowClass(false), "pr-8 font-medium text-ink")}>
+                        className={cx(navRowClass(false), "pr-8")}>
                         <WorkspaceMark name={product.name} /><span className="min-w-0 truncate">{product.name}</span>
                       </Link>
                       <button type="button" onClick={() => setToggled((t) => ({ ...t, [product.id]: !open }))} aria-expanded={open} aria-controls={listId} aria-label={`${open ? "Hide" : "Show"} ${product.name}'s pages`}
-                        className="absolute right-0.5 grid size-6 place-items-center rounded-sm text-faint transition-colors hover:bg-hover hover:text-ink max-lg:size-8">
-                        <IconChevronRight className={cx("size-3.5 transition-transform motion-reduce:transition-none", open && "rotate-90")} />
+                        className="absolute right-0.5 grid size-6 place-items-center rounded-control text-faint transition-colors hover:bg-hover hover:text-ink max-lg:size-8">
+                        <IconChevronRight className={cx("size-3 transition-transform motion-reduce:transition-none", open && "rotate-90")} />
                       </button>
                     </div>
                     {open && (
-                      <div id={listId} className="mb-1 flex flex-col gap-px pl-[13px]">
+                      <div id={listId} className="mb-1 flex flex-col pl-4">
                         {row({ href: home, label: "Home", icon: <IconHome />, exact: true })}
                         {modules.map((m) => row({ href: workspaceHref(product.id, m.key), label: m.label, icon: MODULE_ICONS[m.key] }))}
                       </div>
@@ -210,7 +209,7 @@ function AppNav({ name, email, onNavigate, close }: BodyProps) {
                   </div>
                 );
               })}
-              <Link href="/app/product/new" onClick={() => onNavigate?.()} className={cx(navRowClass(at === "/app/product/new"), !(at === "/app/product/new") && "text-muted")}><IconPlus />New app</Link>
+              <Link href="/app/product/new" onClick={() => onNavigate?.()} className={navRowClass(at === "/app/product/new")}><IconPlus />New app</Link>
             </nav>
           )}
         </div>
@@ -231,12 +230,25 @@ function NextStep({ attention, onNavigate, go }: { attention: number; onNavigate
   // The one key nothing reads without: the AI's, for whichever provider Settings chose.
   const ai = featureState("ai", install);
   const missing = install && !ai.ok ? ai.missingKeys[0] : undefined;
-  const card = "block rounded-card border border-line bg-card px-2.5 py-2 transition-colors hover:border-hairline hover:bg-raised";
-  if (install && missing) {
+  const card = "block rounded-small border border-line bg-card px-3 py-2.5 transition-colors hover:border-hairline hover:bg-raised";
+  // From 80% of the plan's storage: a quiet card (Settings > Storage has the rest).
+  const { summary: storage } = useStorage();
+  const notice80 = storage ? Boolean(noticeText(storage)) : false;
+  // Almost full or full outranks everything: collecting, generating and uploading are about to stop.
+  const urgent = storage && (storage.level === "warn" || storage.level === "full");
+  if (install && missing && !urgent) {
     return (
       <Link href={`${SETTINGS_ROOT}/keys`} onClick={() => onNavigate?.()} className={card}>
         <span className="block text-xs font-medium text-ink">{missing} key needed</span>
         <span className="mt-0.5 block text-xs text-muted">{canManage(install) ? "Add it to start analysing competitors." : install.owned ? "Ask the owner to add it in Settings." : "It is set on the server for this install."}</span>
+      </Link>
+    );
+  }
+  if (storage && notice80) {
+    return (
+      <Link href={`${SETTINGS_ROOT}/storage`} onClick={() => onNavigate?.()} className={card}>
+        <span className={cx("block text-xs font-medium", storage.level === "notice" ? "text-ink" : "text-warn")}>{storage.level === "full" ? "Storage is full" : storage.level === "warn" ? "Storage is almost full" : `Storage ${percent(storage.ratio)} full`}</span>
+        <span className="mt-0.5 block text-xs text-muted">{storage.level === "notice" ? "Free up space before it fills." : "Free up space to keep saving ads and creatives."}</span>
       </Link>
     );
   }
@@ -263,17 +275,17 @@ function signOut() {
 
 const THEME_ICONS = { light: <IconSun />, dark: <IconMoon />, system: <IconMonitor /> };
 
-function WorkspaceMenu({ name, email }: Who) {
+function WorkspaceMenu({ name, email, local }: Who) {
   const { install, loading } = useInstall();
   const theme = useTheme();
   const workspace = install?.name?.trim() || APP_NAME;
   const role = roleLabel(install?.role);
   return (
     <Menu label="Workspace" width={252} trigger={(trigger) => (
-      <button {...trigger} className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-control px-1.5 text-left transition-colors hover:bg-hover aria-expanded:bg-hover max-lg:h-8">
+      <button {...trigger} className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-control px-1 text-left transition-colors hover:bg-hover aria-expanded:bg-hover">
         {/* The name is unknown while the install loads: its place is kept, so the product's name never flashes first. */}
-        <InstallMark name={workspace} className={cx(loading && "invisible")} />
-        <span className={cx("min-w-0 truncate text-sm font-medium", loading && "invisible")}>{workspace}</span>
+        <InstallMark name={workspace} className={cx("size-6 rounded-[6px] text-xs", loading && "invisible")} />
+        <span className={cx("min-w-0 truncate text-sm font-[550] tracking-[-0.1px]", loading && "invisible")}>{workspace}</span>
         <IconChevronDown className="size-3 shrink-0 text-faint" />
       </button>
     )}>
@@ -295,8 +307,12 @@ function WorkspaceMenu({ name, email }: Who) {
           <MenuItem key={option.value} icon={THEME_ICONS[option.value]} checked={theme === option.value} keepOpen onSelect={() => applyTheme(option.value)}>{option.label}</MenuItem>
         ))}
       </MenuSub>
-      <MenuSeparator />
-      <MenuItem icon={<IconLogout />} onSelect={signOut}>Sign out</MenuItem>
+      {!local && (
+        <>
+          <MenuSeparator />
+          <MenuItem icon={<IconLogout />} onSelect={signOut}>Sign out</MenuItem>
+        </>
+      )}
     </Menu>
   );
 }

@@ -20,7 +20,7 @@ type Props = {
 
 export function BrandAssetsTab({ productId, basics, insightAt, onChange, onError }: Props) {
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-3">
       <AppBlock productId={productId} basics={basics} onChange={onChange} onError={onError} />
       <Card className="overflow-hidden p-0 [&>section]:border-t-0">
         <ProductImages productId={productId} refreshKey={insightAt} />
@@ -76,12 +76,12 @@ function AppBlock({ productId, basics, onChange, onError }: Omit<Props, "insight
             {shots.map((url, i) => (
               <li key={url} className="grid gap-1">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt={`Screenshot ${i + 1}`} loading="lazy" className="aspect-[9/19.5] w-full rounded-inner border border-line bg-raised object-cover" />
+                <img src={url} alt={`Screenshot ${i + 1}`} loading="lazy" className="aspect-[9/19.5] w-full rounded-small border border-line bg-raised object-cover" />
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-mono text-faint">{String(i + 1).padStart(2, "0")}</span>
                   <span className="flex">
-                    <button type="button" aria-label="Move earlier" disabled={i === 0} onClick={() => move(i, i - 1)} className="grid size-6 place-items-center rounded text-muted hover:bg-raised hover:text-ink disabled:opacity-30">←</button>
-                    <button type="button" aria-label="Move later" disabled={i === shots.length - 1} onClick={() => move(i, i + 1)} className="grid size-6 place-items-center rounded text-muted hover:bg-raised hover:text-ink disabled:opacity-30">→</button>
+                    <button type="button" aria-label="Move earlier" disabled={i === 0} onClick={() => move(i, i - 1)} className="grid size-6 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink disabled:opacity-30">←</button>
+                    <button type="button" aria-label="Move later" disabled={i === shots.length - 1} onClick={() => move(i, i + 1)} className="grid size-6 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink disabled:opacity-30">→</button>
                     <RemoveButton label={`Remove screenshot ${i + 1}`} onClick={() => onChange({ screenshotUrls: shots.filter((u) => u !== url) })} />
                   </span>
                 </div>

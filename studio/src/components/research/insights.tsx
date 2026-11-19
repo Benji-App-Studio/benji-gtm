@@ -13,6 +13,7 @@ import { IconChevronDown } from "../icons";
 import { Card, cx, segmentClass, segmentTrackClass, Table, Td, Th, Tr } from "../ui";
 import { PageLogo } from "./page-logo";
 import { readStored, storageKey } from "@/lib/storage-keys";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 const pct = (n: number | null) => (n == null ? "–" : `${Math.round(n * 100)}%`);
 const TYPE_LABEL = Object.fromEntries(TYPE_GROUPS.map((g) => [g.id, g.label])) as Record<string, string>;
@@ -36,7 +37,7 @@ function WeeklyBars({ weekly, now }: { weekly: number[]; now: number }) {
         const weeksAgo = weekly.length - 1 - i;
         const from = new Date(now - (weeksAgo + 1) * 7 * 86_400_000 + 86_400_000);
         return (
-          <span key={i} title={`${weeksAgo === 0 ? "Last 7 days" : `Week from ${from.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}: ${n} launched`}
+          <span key={i} title={`${weeksAgo === 0 ? "Last 7 days" : `Week from ${from.toLocaleDateString(UI_LOCALE, { month: "short", day: "numeric" })}`}: ${n} launched`}
             className={cx("w-[7px] rounded-t-[2px]", i === weekly.length - 1 ? "bg-accent" : "bg-accent-muted")}
             style={{ height: `${n ? Math.max(12, (n / max) * 100) : 4}%`, opacity: n ? 1 : 0.35 }} />
         );
@@ -50,7 +51,7 @@ function Lasting({ title, rows, label }: { title: string; rows: LastingRow[]; la
     <div className="min-w-0">
       <p className="eyebrow mb-1 px-3">{title}</p>
       {rows.length
-        ? <RankBars tone="accent" rows={rows.slice(0, 8).map((r) => ({ key: r.key, label: label(r.key), value: r.rate, note: `${r.lasted.toLocaleString()} of ${r.ads.toLocaleString()}` }))} format={(v) => pct(v)} />
+        ? <RankBars tone="accent" rows={rows.slice(0, 8).map((r) => ({ key: r.key, label: label(r.key), value: r.rate, note: `${r.lasted.toLocaleString(UI_LOCALE)} of ${r.ads.toLocaleString(UI_LOCALE)}` }))} format={(v) => pct(v)} />
         : <p className="px-3 py-2 text-sm text-muted">Not enough ads seen {KEPT_AFTER_DAYS}+ days ago yet: import again in a week or two.</p>}
     </div>
   );
@@ -76,12 +77,12 @@ export function ResearchInsights({ ads, competitor, ours, onPick }: {
 
   return (
     <Card className="mb-4 overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3">
-        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="-ml-1 flex min-w-0 items-center gap-2 rounded-control py-1 pr-2 pl-1 text-left transition hover:bg-hover">
-          <IconChevronDown className={cx("size-4 shrink-0 text-muted transition", !open && "-rotate-90")} />
-          <span className="text-title font-medium">Insights</span>
-          <span className="truncate text-sm text-muted">
-            Last 14 days: {launched.toLocaleString()} launched · {stopped.toLocaleString()} stopped{busiest?.launched ? ` · ${busiest.name} tests the most` : ""}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2">
+        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex min-h-7 min-w-0 items-center gap-2 rounded-control pr-2 pl-1 text-left transition-colors hover:bg-hover">
+          <IconChevronDown className={cx("size-3.5 shrink-0 text-muted transition", !open && "-rotate-90")} />
+          <span className="shrink-0 text-sm font-medium">Insights</span>
+          <span className="truncate text-xs text-muted">
+            Last 14 days: {launched.toLocaleString(UI_LOCALE)} launched · {stopped.toLocaleString(UI_LOCALE)} stopped{busiest?.launched ? ` · ${busiest.name} tests the most` : ""}
           </span>
         </button>
         {open && (
@@ -93,7 +94,7 @@ export function ResearchInsights({ ads, competitor, ours, onPick }: {
       </div>
 
       {open && tab === "competitors" && (
-        <div className="border-t border-line px-2 pt-3 pb-2">
+        <div className="border-t border-line px-1 pt-2 pb-2">
           <Table minWidth={760}>
             <thead>
               <tr>
@@ -112,12 +113,12 @@ export function ResearchInsights({ ads, competitor, ours, onPick }: {
               {stats.map((c) => (
                 <Tr key={c.name} className={cx("cursor-pointer", competitor === c.name && "[&>td]:bg-raised")} onClick={() => onPick(competitor === c.name ? "" : c.name)} title={`Show ${c.name}'s ads`}>
                   <Td><span className="flex items-center gap-2"><PageLogo pageId={c.pageId} name={c.name} size="sm" /><span className="truncate font-medium">{c.name}</span></span></Td>
-                  <Td className="text-right tabular-nums">{c.live.toLocaleString()}</Td>
-                  <Td className="text-right tabular-nums">{c.launched.toLocaleString()}</Td>
-                  <Td className="text-right tabular-nums">{c.stopped.toLocaleString()}</Td>
+                  <Td className="text-right tabular-nums">{c.live.toLocaleString(UI_LOCALE)}</Td>
+                  <Td className="text-right tabular-nums">{c.launched.toLocaleString(UI_LOCALE)}</Td>
+                  <Td className="text-right tabular-nums">{c.stopped.toLocaleString(UI_LOCALE)}</Td>
                   <Td className="text-right tabular-nums">{pct(c.keptRate)}</Td>
-                  <Td className="text-right tabular-nums">{c.longRunners.toLocaleString()}</Td>
-                  <Td className="text-right tabular-nums">{c.scaled.toLocaleString()}</Td>
+                  <Td className="text-right tabular-nums">{c.longRunners.toLocaleString(UI_LOCALE)}</Td>
+                  <Td className="text-right tabular-nums">{c.scaled.toLocaleString(UI_LOCALE)}</Td>
                   <Td className="text-right tabular-nums">{pct(c.videoShare)}</Td>
                   <Td><WeeklyBars weekly={c.weekly} now={now} /></Td>
                 </Tr>
@@ -129,8 +130,8 @@ export function ResearchInsights({ ads, competitor, ours, onPick }: {
       )}
 
       {open && tab === "lasting" && (
-        <div className="border-t border-line px-1 pt-3 pb-2">
-          <div className="grid gap-4 @3xl:grid-cols-3">
+        <div className="border-t border-line px-1 pt-2 pb-2">
+          <div className="grid gap-3 @3xl:grid-cols-3">
             <Lasting title="By format" rows={lasting.format} label={(k) => AD_FORMAT_LABEL[k] ?? k} />
             <Lasting title="By hook" rows={lasting.hook} label={(k) => HOOK_LABEL[k] ?? k} />
             <Lasting title="By creative type" rows={lasting.type} label={(k) => TYPE_LABEL[k] ?? k} />

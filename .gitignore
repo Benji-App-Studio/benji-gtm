@@ -7,6 +7,7 @@ dist/
 out/
 .vercel/
 start-log.txt
+.app-running
 *.log
 /package-lock.json
 .env*

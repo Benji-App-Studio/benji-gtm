@@ -1,11 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { getInstallConfig } from "@/lib/install/config";
+import { getInstallConfig, readStoredOwner } from "@/lib/install/config";
+import { decideProxy, isLocalMode, loginFor, signInStoredOwner, startedLocalOnly } from "@/lib/install/local-auth";
 
-const PROTECTED = ["/app", "/onboarding"];
-const AUTH_PAGES = ["/login", "/signup"];
-
-/** Keeps the Supabase session fresh on every request and guards the signed-in parts of the app. */
+/**
+ * Keeps the Supabase session fresh on every request and guards the signed-in parts of the app. On a copy
+ * run on its owner's own computer (local mode, lib/install/local-auth.ts) it also signs the owner in by
+ * itself, so there is no login page there.
+ */
 export async function proxy(request: NextRequest) {
   // A fresh copy has no Supabase project yet: everything leads to the setup checklist.
   const config = getInstallConfig();
@@ -38,19 +40,33 @@ export async function proxy(request: NextRequest) {
   // getClaims checks the session's signed JWT locally (no round trip to Supabase on every click);
   // it only goes to the network to refresh an expired session.
   const { data } = await supabase.auth.getClaims();
-  const user = data?.claims?.sub ? data.claims : null;
+  const signedIn = Boolean(data?.claims?.sub);
   const path = request.nextUrl.pathname;
+  const local = isLocalMode({
+    source: config.source, startedLocal: startedLocalOnly(),
+    host: request.headers.get("host"), forwardedFor: request.headers.get("x-forwarded-for"),
+  });
+  // The stored sign-in is read only when it may be used: local mode, nobody signed in.
+  const owner = local && !signedIn ? readStoredOwner() : null;
+
   const redirect = (to: string) => {
-    const url = request.nextUrl.clone();
-    url.pathname = to;
-    url.search = to === "/login" ? `?next=${encodeURIComponent(path)}` : "";
+    const url = new URL(to, request.nextUrl.origin);
     const out = NextResponse.redirect(url);
     response.cookies.getAll().forEach((cookie) => out.cookies.set(cookie));
     return out;
   };
-  if (!user && PROTECTED.some((p) => path === p || path.startsWith(`${p}/`))) return redirect("/login");
-  if (user && AUTH_PAGES.includes(path)) return redirect("/app/w");
-  return response;
+
+  const decision = decideProxy({
+    path, local, signedIn, storedOwner: Boolean(owner),
+    next: request.nextUrl.searchParams.get("next"), reason: request.nextUrl.searchParams.get("reason"),
+  });
+  if (decision.action === "next") return response;
+  if (decision.action === "redirect") return redirect(decision.to);
+  // Automatic sign-in: the same client, so the session cookies land on this response.
+  const result = owner ? await signInStoredOwner(supabase.auth, owner) : { ok: false as const, reason: "signin" as const };
+  if (result.ok) return decision.then.action === "next" ? response : redirect(decision.then.to);
+  if (decision.quiet) return response;
+  return redirect(loginFor(result.reason, decision.failNext === "/app" ? null : decision.failNext));
 }
 
 export const config = {

@@ -13,6 +13,8 @@ import { isSafetyBlock } from "@/lib/playground-video";
 import { ask, Facts, notice } from "../dialog";
 import { Badge, Button, Card, cx, EmptyState, Gear, Locked } from "../ui";
 import { KEYS_HREF, RunnerLock, type Features } from "./features";
+import { UI_LOCALE } from "@/lib/ui-locale";
+import { confirmRetry } from "./retry-confirm";
 
 const STATUS: Record<JobStatus, { label: string; tone: "neutral" | "accent" | "win" | "warn" }> = {
   queued: { label: "queued", tone: "neutral" }, running: { label: "making", tone: "accent" }, finalizing: { label: "saving", tone: "accent" }, done: { label: "done", tone: "win" },
@@ -35,7 +37,7 @@ function WaitingFor({ job, features }: { job: CreativeJobRow; features?: Feature
 }
 const ago = (iso: string) => {
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
-  return s < 90 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : new Date(iso).toLocaleDateString();
+  return s < 90 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : new Date(iso).toLocaleDateString(UI_LOCALE);
 };
 
 export function JobList({ batches, jobs, onChanged, launchableByBatch, onSendToMeta, features }: {
@@ -80,6 +82,12 @@ export function JobList({ batches, jobs, onChanged, launchableByBatch, onSendToM
   }
 
   async function act(job: CreativeJobRow, action: "cancel" | "retry") {
+    // A retry spends again: its price first.
+    if (action === "retry") {
+      const provider = providerOfJob(job.params);
+      const ok = await confirmRetry({ provider, credits: Number(job.cost_estimate) || 0, usd: Number(job.params.est_usd) || 0, what: `${KIND_LABEL[job.kind]} · ${job.aspect} · v${job.variant}`, free: job.backend === "template" });
+      if (!ok) return;
+    }
     setActing(job.id);
     const response = await fetch(`/api/studio/jobs/${job.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
     setActing(null);
@@ -90,7 +98,7 @@ export function JobList({ batches, jobs, onChanged, launchableByBatch, onSendToM
   if (!shown.length) return <EmptyState className="py-8" title="No batches yet" body="Start one in New batch above. Its jobs show here as they run." />;
 
   return (
-    <div className="grid gap-3">
+    <Card className="divide-y divide-line overflow-hidden">
       {shown.map((batch, i) => {
         const list = byBatch.get(batch.id) ?? [];
         const count = (s: JobStatus) => list.filter((j) => j.status === s).length;
@@ -99,8 +107,8 @@ export function JobList({ batches, jobs, onChanged, launchableByBatch, onSendToM
         const spent = list.reduce((n, j) => n + Number(j.cost_credits ?? 0), 0);
         const launchable = launchableByBatch?.get(batch.id) ?? [];
         return (
-          <Card key={batch.id} className="overflow-hidden">
-            <button type="button" onClick={() => setOpen(expanded ? "" : batch.id)} aria-expanded={expanded} className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 text-left transition-colors hover:bg-hover">
+          <div key={batch.id}>
+            <button type="button" onClick={() => setOpen(expanded ? "" : batch.id)} aria-expanded={expanded} className="flex min-h-12 w-full flex-wrap items-center gap-x-4 gap-y-1.5 px-3 py-1.5 text-left transition-colors hover:bg-hover">
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium" title={batch.brief || undefined}>{batch.brief ? batchTitle(batch.brief) : batch.format_card_id ? `Format ${batch.format_card_id}` : "Posts"}</span>
                 <span className="block text-xs text-muted">{ago(batch.created_at)} · est. {Number(batch.cost_estimate)} credits{Number(batch.settings?.usdEstimate) ? ` + ≈${fmtUsd(Number(batch.settings.usdEstimate))} at OpenAI` : ""}{spent ? ` · spent ${spent}` : ""}</span>
@@ -112,19 +120,19 @@ export function JobList({ batches, jobs, onChanged, launchableByBatch, onSendToM
               </span>
             </button>
             {launchable.length > 0 && onSendToMeta && (
-              <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-2 text-xs text-muted">
+              <div className="flex items-center justify-between gap-3 border-t border-line px-3 py-1.5 text-xs text-muted">
                 <span>{launchable.length} approved creative{launchable.length === 1 ? "" : "s"} from this batch</span>
                 <Button size="sm" variant="secondary" onClick={() => onSendToMeta(launchable)}>Send to Meta</Button>
               </div>
             )}
             {expanded && (
-              <ol className="grid gap-px border-t border-line bg-line">
+              <ol className="grid border-t border-line bg-canvas/40 py-1">
                 {list.map((job) => {
                   const higgsfield = providerOfJob(job.params) !== "openai";
                   // Only Higgsfield's own word sets a failed job's charge to 0 (core/jobs.ts afterRequestEnded / afterRunnerFailure).
                   const notCharged = higgsfield && job.status === "failed" && job.backend !== "template" && job.cost_credits != null && Number(job.cost_credits) === 0;
                   return (
-                  <li key={job.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 bg-card px-4 py-2 text-sm">
+                  <li key={job.id} className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 text-sm">
                     <span className="w-32 shrink-0 truncate">{KIND_LABEL[job.kind]}</span>
                     <span className="w-16 shrink-0 tabular-nums text-muted">{job.aspect} · v{job.variant}</span>
                     <Badge tone={STATUS[job.status].tone}>{job.status === "running" && <Gear className="size-3" />}{STATUS[job.status].label}</Badge>
@@ -140,14 +148,19 @@ export function JobList({ batches, jobs, onChanged, launchableByBatch, onSendToM
                     {(job.status === "failed" || job.status === "cancelled") && job.backend !== "template" && <Button size="sm" variant="ghost" disabled={acting === job.id} onClick={() => act(job, "retry")}>Retry</Button>}
                     {job.status === "failed" && job.model === "gpt_image_2_5" && (features?.imageProviders?.[otherProvider(providerOfJob(job.params))] ?? true) && <Button size="sm" variant="ghost" disabled={acting === job.id} onClick={() => tryOther(job)}>{tryOtherLabel(providerOfJob(job.params))}</Button>}
                     {job.error && <p className={cx("basis-full text-xs", job.status === "failed" ? "text-warn" : "text-muted")}>{job.error}</p>}
+                    {Array.isArray(job.params.result_urls) && job.params.result_urls.length > 0 && (
+                      <p className="basis-full text-xs text-muted">The finished file is still at the provider: {(job.params.result_urls as string[]).filter((u) => /^https:\/\//.test(u)).map((u, n) => (
+                        <a key={u} href={u} target="_blank" rel="noopener noreferrer" className="font-medium text-accent hover:underline">{n ? ` file ${n + 1}` : "download it"}</a>
+                      ))} (links may expire).</p>
+                    )}
                   </li>
                   );
                 })}
               </ol>
             )}
-          </Card>
+          </div>
         );
       })}
-    </div>
+    </Card>
   );
 }

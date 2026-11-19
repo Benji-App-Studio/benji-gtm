@@ -66,6 +66,18 @@ export function mediaTimings(limits: Pick<InstallLimits, "wallClockSec">): { cla
   return { claimMs: Math.round(wall * 125), streamMs, fetchMs: Math.min(60_000, streamMs), leaseSeconds: Math.ceil(wall * 1.05) };
 }
 
+/** What a worker's lease holds past the wall clock (WORKER_LEASE_MARGIN_SEC). */
+export const WORKER_LEASE_MARGIN_SEC = 30;
+
+/**
+ * How long a job worker's lease lasts (radar's jobs): the whole wall clock plus a margin. A lease shorter
+ * than the time a worker may still be running would let the watchdog hand the same job to a second,
+ * paid worker while the first is busy with a slow step; by the time this one runs out the first worker
+ * is gone for certain.
+ */
+export const workerLeaseSeconds = (limits: Pick<InstallLimits, "wallClockSec">) =>
+  Math.ceil(Math.max(MIN_WALL_CLOCK_SEC, limits.wallClockSec) + WORKER_LEASE_MARGIN_SEC);
+
 /** The reserve kept after a long request, to write down how it ended before the function is stopped. */
 export const WALL_CLOCK_RESERVE_MS = 20_000;
 

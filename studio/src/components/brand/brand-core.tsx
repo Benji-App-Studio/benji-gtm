@@ -61,7 +61,7 @@ export function BrandCoreTab({ productId, basics, sys, placeholder, hasProfile, 
   const detail = moreDetailCount(sys);
 
   return (
-    <div className="grid items-start gap-4 @4xl:grid-cols-[minmax(0,1fr)_minmax(300px,380px)]">
+    <div className="grid items-start gap-6 @4xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
       <div className="grid min-w-0 gap-3">
         <NameBlock productId={productId} basics={basics} placeholder={placeholder} onChange={editBasics} onError={onError} />
 
@@ -82,10 +82,10 @@ export function BrandCoreTab({ productId, basics, sys, placeholder, hasProfile, 
           {sys.palette.map((c: BrandColor, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2">
               <input type="color" aria-label="Pick a colour" value={hexColor(c.hex) ?? "#000000"} onChange={(e) => editAt("palette", i, { hex: e.target.value.toUpperCase() })} className="size-7 shrink-0 cursor-pointer rounded-full border border-ink/10 bg-card p-0" />
-              <input className={cx(inputClass, "h-9 w-28! py-1.5")} value={c.hex} aria-label="Hex" onChange={(e) => editAt("palette", i, { hex: e.target.value })} />
-              <input className={cx(inputClass, "h-9 w-36! py-1.5")} value={c.name} aria-label="Name" placeholder="Name" onChange={(e) => editAt("palette", i, { name: e.target.value })} />
-              <select className={cx(inputClass, "h-9 w-32! py-1.5")} value={c.role} aria-label="Role" onChange={(e) => editAt("palette", i, { role: e.target.value as ColorRole })}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select>
-              <input className={cx(inputClass, "h-9 min-w-40 flex-1 py-1.5")} value={c.use} aria-label="Use" placeholder="What it's for" onChange={(e) => editAt("palette", i, { use: e.target.value })} />
+              <input className={cx(inputClass, "w-28!")} value={c.hex} aria-label="Hex" onChange={(e) => editAt("palette", i, { hex: e.target.value })} />
+              <input className={cx(inputClass, "w-36!")} value={c.name} aria-label="Name" placeholder="Name" onChange={(e) => editAt("palette", i, { name: e.target.value })} />
+              <select className={cx(inputClass, "w-32!")} value={c.role} aria-label="Role" onChange={(e) => editAt("palette", i, { role: e.target.value as ColorRole })}>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select>
+              <input className={cx(inputClass, "min-w-40 flex-1")} value={c.use} aria-label="Use" placeholder="What it's for" onChange={(e) => editAt("palette", i, { use: e.target.value })} />
               <RemoveButton label={`Remove ${c.hex}`} onClick={() => removeAt("palette", i)} />
             </div>
           ))}
@@ -98,9 +98,9 @@ export function BrandCoreTab({ productId, basics, sys, placeholder, hasProfile, 
         <Block title="Fonts" hint="Composed ads set every line in these files (TTF, OTF or WOFF)." count={`${sys.fonts.filter((f) => f.url).length}/${sys.fonts.length} with files`}>
           {sys.fonts.map((f: BrandFont, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2">
-              <select className={cx(inputClass, "h-9 w-28! py-1.5")} value={f.role} aria-label="Role" onChange={(e) => editAt("fonts", i, { role: e.target.value as FontRole })}>{FONT_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select>
-              <input className={cx(inputClass, "h-9 w-40! py-1.5")} value={f.family} aria-label="Family" onChange={(e) => editAt("fonts", i, { family: e.target.value })} />
-              <input className={cx(inputClass, "h-9 w-20! py-1.5")} type="number" step={100} min={100} max={900} value={f.weight} aria-label="Weight" onChange={(e) => editAt("fonts", i, { weight: Number(e.target.value) })} />
+              <select className={cx(inputClass, "w-28!")} value={f.role} aria-label="Role" onChange={(e) => editAt("fonts", i, { role: e.target.value as FontRole })}>{FONT_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select>
+              <input className={cx(inputClass, "w-40!")} value={f.family} aria-label="Family" onChange={(e) => editAt("fonts", i, { family: e.target.value })} />
+              <input className={cx(inputClass, "w-20!")} type="number" step={100} min={100} max={900} value={f.weight} aria-label="Weight" onChange={(e) => editAt("fonts", i, { weight: Number(e.target.value) })} />
               {f.url ? <Badge tone="win"><IconCheck className="mr-1 size-3" />file</Badge> : <Badge tone="caution">no file</Badge>}
               <label className="cursor-pointer text-xs text-accent hover:underline">
                 {f.url ? "Replace file" : "Upload file"}
@@ -121,8 +121,8 @@ export function BrandCoreTab({ productId, basics, sys, placeholder, hasProfile, 
           {sys.offers.map((o: BrandOffer, i) => (
             <div key={o.id + i} className="grid gap-2 rounded-inner border border-line bg-raised p-3">
               <div className="flex items-center gap-2">
-                <input className={cx(inputClass, "h-9 w-16! py-1.5 font-medium")} value={o.id} aria-label="Id" onChange={(e) => editAt("offers", i, { id: e.target.value })} />
-                <input className={cx(inputClass, "h-9 flex-1 py-1.5")} value={o.name} aria-label="Name" placeholder="Free 7-day trial" onChange={(e) => editAt("offers", i, { name: e.target.value })} />
+                <input className={cx(inputClass, "w-16! font-medium")} value={o.id} aria-label="Id" onChange={(e) => editAt("offers", i, { id: e.target.value })} />
+                <input className={cx(inputClass, "flex-1")} value={o.name} aria-label="Name" placeholder="Free 7-day trial" onChange={(e) => editAt("offers", i, { name: e.target.value })} />
                 <RemoveButton label={`Remove ${o.id}`} onClick={() => removeAt("offers", i)} />
               </div>
               <Text label="Exact wording allowed on a creative" hint="Shown word for word, e.g. From $9.99/month." value={o.wording} onChange={(v) => editAt("offers", i, { wording: v })} max={160} />
@@ -137,8 +137,8 @@ export function BrandCoreTab({ productId, basics, sys, placeholder, hasProfile, 
           {facts.map((f: BrandFact, i) => (
             <div key={f.id + i} className="grid gap-2 rounded-inner border border-line bg-raised p-3">
               <div className="flex flex-wrap items-center gap-2">
-                <input className={cx(inputClass, "h-9 w-48! py-1.5 font-medium")} value={f.label} aria-label="What it is" placeholder="App Store rating" onChange={(e) => editFact(i, { label: e.target.value })} />
-                <input className={cx(inputClass, "h-9 min-w-48 flex-1 py-1.5")} value={f.value} aria-label="Exact wording" placeholder="4.8★ · 2,000+ ratings" maxLength={160} onChange={(e) => editFact(i, { value: e.target.value })} />
+                <input className={cx(inputClass, "w-48! font-medium")} value={f.label} aria-label="What it is" placeholder="App Store rating" onChange={(e) => editFact(i, { label: e.target.value })} />
+                <input className={cx(inputClass, "min-w-48 flex-1")} value={f.value} aria-label="Exact wording" placeholder="4.8★ · 2,000+ ratings" maxLength={160} onChange={(e) => editFact(i, { value: e.target.value })} />
                 <RemoveButton label={`Remove ${f.label || "this fact"}`} onClick={() => edit({ facts: facts.filter((_, j) => j !== i) })} />
               </div>
               <SourceField value={f.source} onChange={(v) => editFact(i, { source: v ?? { kind: "manual" } })} />
@@ -152,10 +152,10 @@ export function BrandCoreTab({ productId, basics, sys, placeholder, hasProfile, 
             <span className="text-xs font-medium text-label">Say this, never that</span>
             {substitutions.map((x: BrandSubstitution, i) => (
               <div key={i} className="flex flex-wrap items-center gap-2">
-                <input className={cx(inputClass, "h-9 w-44! py-1.5")} value={x.avoid} aria-label="Never say" placeholder="cheap" maxLength={80} onChange={(e) => editSubstitution(i, { avoid: e.target.value })} />
+                <input className={cx(inputClass, "w-44!")} value={x.avoid} aria-label="Never say" placeholder="cheap" maxLength={80} onChange={(e) => editSubstitution(i, { avoid: e.target.value })} />
                 <span className="text-xs text-muted">→ say</span>
-                <input className={cx(inputClass, "h-9 w-52! py-1.5")} value={x.use} aria-label="Say instead" placeholder="affordable" maxLength={120} onChange={(e) => editSubstitution(i, { use: e.target.value })} />
-                <input className={cx(inputClass, "h-9 min-w-40 flex-1 py-1.5")} value={x.note ?? ""} aria-label="Why" placeholder="Why (optional)" maxLength={200} onChange={(e) => editSubstitution(i, { note: e.target.value })} />
+                <input className={cx(inputClass, "w-52!")} value={x.use} aria-label="Say instead" placeholder="affordable" maxLength={120} onChange={(e) => editSubstitution(i, { use: e.target.value })} />
+                <input className={cx(inputClass, "min-w-40 flex-1")} value={x.note ?? ""} aria-label="Why" placeholder="Why (optional)" maxLength={200} onChange={(e) => editSubstitution(i, { note: e.target.value })} />
                 <RemoveButton label={`Remove ${x.avoid || "this rule"}`} onClick={() => editVoice({ substitutions: substitutions.filter((_, j) => j !== i) })} />
               </div>
             ))}
@@ -166,9 +166,9 @@ export function BrandCoreTab({ productId, basics, sys, placeholder, hasProfile, 
             {required.map((x: RequiredPhrase, i) => (
               <div key={i} className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-muted">When copy mentions</span>
-                <input className={cx(inputClass, "h-9 w-44! py-1.5")} value={x.when} aria-label="When copy mentions" placeholder="free trial" maxLength={80} onChange={(e) => editRequired(i, { when: e.target.value })} />
+                <input className={cx(inputClass, "w-44!")} value={x.when} aria-label="When copy mentions" placeholder="free trial" maxLength={80} onChange={(e) => editRequired(i, { when: e.target.value })} />
                 <span className="text-xs text-muted">also say</span>
-                <input className={cx(inputClass, "h-9 min-w-48 flex-1 py-1.5")} value={x.phrase} aria-label="Also say" placeholder="cancel anytime" maxLength={200} onChange={(e) => editRequired(i, { phrase: e.target.value })} />
+                <input className={cx(inputClass, "min-w-48 flex-1")} value={x.phrase} aria-label="Also say" placeholder="cancel anytime" maxLength={200} onChange={(e) => editRequired(i, { phrase: e.target.value })} />
                 <RemoveButton label={`Remove ${x.when || "this rule"}`} onClick={() => editVoice({ requiredPhrases: required.filter((_, j) => j !== i) })} />
               </div>
             ))}
@@ -189,8 +189,8 @@ export function BrandCoreTab({ productId, basics, sys, placeholder, hasProfile, 
               </summary>
               <div className="grid gap-2 border-t border-line p-3">
                 <div className="flex items-center gap-2">
-                  <input className={cx(inputClass, "h-9 w-36! py-1.5 font-medium")} value={a.name} aria-label="Name" placeholder="Name" onChange={(e) => editAt("avatars", i, { name: e.target.value })} />
-                  <input className={cx(inputClass, "h-9 flex-1 py-1.5")} value={a.type} aria-label="Type" placeholder="The busy parent, 30–45" onChange={(e) => editAt("avatars", i, { type: e.target.value })} />
+                  <input className={cx(inputClass, "w-36! font-medium")} value={a.name} aria-label="Name" placeholder="Name" onChange={(e) => editAt("avatars", i, { name: e.target.value })} />
+                  <input className={cx(inputClass, "flex-1")} value={a.type} aria-label="Type" placeholder="The busy parent, 30–45" onChange={(e) => editAt("avatars", i, { type: e.target.value })} />
                   <RemoveButton label={`Remove ${a.name || "this avatar"}`} onClick={() => removeAt("avatars", i)} />
                 </div>
                 <Text label="A moment" value={a.moment} onChange={(v) => editAt("avatars", i, { moment: v })} area max={600} />
@@ -291,7 +291,7 @@ export function BrandCoreTab({ productId, basics, sys, placeholder, hasProfile, 
         </details>
       </div>
 
-      <Card className="grid gap-2 p-4 @4xl:sticky @4xl:top-4">
+      <Card className="grid gap-2 p-3 @4xl:sticky @4xl:top-14">
         <p className="text-sm font-medium">What every image prompt gets</p>
         <p className="text-xs text-muted">{summary.length ? `Using ${summary.join(", ")}.` : "Nothing yet."} Variant 1 shown; later variants speak to the next avatar.</p>
         <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-inner bg-raised p-3 font-mono text-xs leading-relaxed text-ink">{preview || "Fill the Look and Voice to see what prompts receive."}</pre>
@@ -338,7 +338,7 @@ function NameBlock({ productId, basics, placeholder, onChange, onError }: { prod
         <Field label="One-line positioning" hint="What it does and for whom, as it would appear under the name."><input className={inputClass} value={basics.tagline} maxLength={160} placeholder="What the app does, in one line" onChange={(e) => onChange({ tagline: e.target.value })} /></Field>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <WorkspaceIcon name={basics.appName || placeholder} url={basics.iconUrl || undefined} className="size-14 text-2xl" />
+        <WorkspaceIcon name={basics.appName || placeholder} url={basics.iconUrl || undefined} className="size-10 text-base" />
         <div className="grid gap-1">
           <span className="text-xs text-muted">Logo (the app icon) · PNG, JPEG or WebP, up to 15 MB</span>
           <div className="flex flex-wrap gap-2">

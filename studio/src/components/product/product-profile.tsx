@@ -21,7 +21,7 @@ export function ProductProfileTab({ product: p, onChanged }: { product: ProductR
 
   if (editing) {
     return (
-      <div className="max-w-3xl">
+      <div className="max-w-[700px]">
         <button onClick={() => setEditing(false)} className="mb-3 text-caption text-muted hover:text-ink">‹ Back to the profile</button>
         <ProductForm product={p} onDone={async (row) => {
           setEditing(false);
@@ -37,13 +37,13 @@ export function ProductProfileTab({ product: p, onChanged }: { product: ProductR
   const hasSocials = socialEntries(p.socials).length > 0;
   const site = p.website?.trim();
   return (
-    <div className="grid max-w-4xl gap-3">
+    <div className="grid max-w-[700px] gap-3">
       <Card className="overflow-hidden p-0">
         <div className="grid gap-4 p-4">
           <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
             <div className="min-w-0 flex-1 basis-[240px]">
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-                <h2 className="text-title font-medium [overflow-wrap:anywhere]">{p.name}</h2>
+                <h2 className="text-sm font-medium [overflow-wrap:anywhere]">{p.name}</h2>
                 <span className="flex flex-wrap items-center gap-1.5">
                   {p.is_primary && several && <Badge tone="win">main</Badge>}
                   <Badge>{KIND_LABEL[p.kind]}</Badge>

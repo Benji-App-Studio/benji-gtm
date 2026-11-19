@@ -158,9 +158,9 @@ export function CustomTemplateDetail({ template, analysis, ctx, loading, product
       <DetailHeader title={template.name} aspect={aspect} onBack={onBack} />
       <WhatItsFor guidance={analysis} productKind={productKind} productName={context.appName} />
 
-      <div className="grid gap-5 @3xl:grid-cols-[232px_minmax(0,1fr)]">
+      <div className="grid gap-4 @3xl:grid-cols-[232px_minmax(0,1fr)]">
         <aside className="flex gap-3 @3xl:flex-col">
-          <a href={template.templateUrl ?? undefined} target="_blank" rel="noreferrer" className="block w-28 shrink-0 overflow-hidden rounded-inner border border-line bg-control @3xl:w-full" title="Open the template">
+          <a href={template.templateUrl ?? undefined} target="_blank" rel="noreferrer" className="block w-24 shrink-0 overflow-hidden rounded-small border border-line bg-control @3xl:w-full" title="Open the template">
             <StyleThumb src={template.templateUrl ?? ""} alt={`${template.name} template`} className="w-full" fallbackClassName="aspect-[4/5]" fallback="No image" />
           </a>
           <div className="min-w-0 space-y-3">
@@ -189,7 +189,7 @@ export function CustomTemplateDetail({ template, analysis, ctx, loading, product
 
           {aspects.length > 1 && (
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-medium text-label">Ratio</span>
+              <span className="text-xs font-medium text-muted">Ratio</span>
               <Segmented label="Ratio" value={aspect} onChange={setAspect} options={aspects.map((a) => ({ value: a, label: a }))} />
             </div>
           )}

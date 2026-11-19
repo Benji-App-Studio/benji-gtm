@@ -10,6 +10,7 @@ import type { BackgroundTask } from "@/lib/server/background";
 import { DONE_SHOWN_MS, useLocalTasks, useLocalTasksVersion } from "@/lib/local-tasks";
 import { IconAlert, IconCheckCircle, IconChevronDown } from "./icons";
 import { cx, Gear } from "./ui";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 const POLL_MS = 5_000;
 const IDLE_POLL_MS = 30_000;
@@ -93,14 +94,14 @@ export function BackgroundTasks() {
     <div className="fixed right-4 bottom-4 z-40 w-[min(360px,calc(100vw-2rem))] print:hidden" aria-live="polite">
       <div className="overflow-hidden rounded-card border border-line bg-raised shadow-pop">
         <button type="button" onClick={() => setOpen(!open)} aria-expanded={open}
-          className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm">
-          {running.length ? <Gear className="size-4 shrink-0 text-accent" /> : failed.length ? <IconAlert className="size-4 shrink-0 text-warn" /> : <IconCheckCircle className="size-4 shrink-0 text-win" />}
+          className="flex h-10 w-full items-center gap-2.5 px-3 text-left text-sm">
+          {running.length ? <Gear className="size-3.5 shrink-0 text-accent" /> : failed.length ? <IconAlert className="size-3.5 shrink-0 text-warn" /> : <IconCheckCircle className="size-3.5 shrink-0 text-win" />}
           <span className="min-w-0 flex-1 truncate">
             {running.length
               ? <><span className="font-medium">{running.length} running</span><span className="text-muted"> · {first.label}{pct(first) != null ? ` ${pct(first)}%` : ""}</span></>
               : failed.length ? <><span className="font-medium text-warn">Failed</span><span className="text-muted"> · {failed[0].label}</span></> : <><span className="font-medium">Done</span><span className="text-muted"> · {first.label}</span></>}
           </span>
-          <IconChevronDown className={cx("size-4 shrink-0 text-muted transition-transform", open ? "rotate-180" : "")} />
+          <IconChevronDown className={cx("size-3.5 shrink-0 text-muted transition-transform", open ? "rotate-180" : "")} />
         </button>
         {!open && running.length > 0 && <Bar value={pct(first)} />}
         {open && (
@@ -112,7 +113,7 @@ export function BackgroundTasks() {
                   <span className="flex items-baseline justify-between gap-2 text-sm">
                     <span className="min-w-0 truncate font-medium">{t.label}</span>
                     <span className={cx("shrink-0 text-xs tabular-nums", t.failed ? "text-warn" : "text-muted")}>
-                      {t.failed ? "Failed" : t.finishedAt ? "Done" : t.total ? `${(t.done ?? 0).toLocaleString()} / ${t.total.toLocaleString()}` : "Running"}
+                      {t.failed ? "Failed" : t.finishedAt ? "Done" : t.total ? `${(t.done ?? 0).toLocaleString(UI_LOCALE)} / ${t.total.toLocaleString(UI_LOCALE)}` : "Running"}
                     </span>
                   </span>
                   {(t.productName || t.detail) && <span className={cx("mt-0.5 block truncate text-xs", t.failed ? "text-warn" : "text-muted")}>{[t.productName, t.detail].filter(Boolean).join(" · ")}</span>}
@@ -120,7 +121,7 @@ export function BackgroundTasks() {
                 </>
               );
               return (
-                <li key={t.id} className="border-b border-line px-3.5 py-3 last:border-0">
+                <li key={t.id} className="border-b border-line px-3 py-2.5 last:border-0">
                   {t.href ? <Link href={t.href} className="block hover:opacity-80">{body}</Link> : body}
                 </li>
               );

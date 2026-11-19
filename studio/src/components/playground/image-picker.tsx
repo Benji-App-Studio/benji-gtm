@@ -36,12 +36,7 @@ export function ImagePicker({ title, sources, initial = "product", picked, max =
   const multi = max > 1;
   const tiles = sources[source];
 
-  useEffect(() => {
-    closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEffect(() => { closeRef.current?.focus(); }, []);
 
   function toggle(url: string) {
     if (!multi) { onPick([url]); return; }
@@ -49,17 +44,17 @@ export function ImagePicker({ title, sources, initial = "product", picked, max =
   }
 
   return (
-    <PanelPortal>
+    <PanelPortal onClose={onClose}>
       <div className="fixed inset-0 z-[70] grid place-items-center bg-scrim/30 p-3" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-        <div role="dialog" aria-modal="true" aria-label={title} className="page-in flex h-[min(560px,88dvh)] w-full max-w-[720px] flex-col overflow-hidden rounded-dialog bg-card shadow-pop">
-          <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">
-            <h2 className="mr-auto text-title font-medium">{title}</h2>
+        <div role="dialog" aria-modal="true" aria-label={title} className="page-in flex h-[min(560px,88dvh)] w-full max-w-[720px] flex-col overflow-hidden rounded-dialog border border-hairline bg-card shadow-pop">
+          <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2.5">
+            <h2 className="mr-auto text-sm font-medium">{title}</h2>
             <Segmented label="Source" value={source} onChange={setSource} options={(Object.keys(SOURCE_LABEL) as PickSource[]).map((s) => ({ value: s, label: <>{SOURCE_LABEL[s]} <span className="text-faint tabular-nums">{sources[s].length}</span></> }))} />
             <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="grid size-7 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink"><IconX className="size-4" /></button>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
             {tiles.length ? (
-              <ul className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2.5">
+              <ul className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
                 {tiles.map((t) => {
                   const n = chosen.indexOf(t.url) + 1;
                   const full = multi && !n && chosen.length >= max;
@@ -68,7 +63,7 @@ export function ImagePicker({ title, sources, initial = "product", picked, max =
                       <button
                         type="button" onClick={() => toggle(t.url)} aria-pressed={multi ? n > 0 : undefined} disabled={full}
                         title={[t.label, t.caption, full ? `Up to ${max}: unpick one first` : null].filter(Boolean).join(" · ")}
-                        className={cx("relative aspect-square overflow-hidden rounded-inner border bg-canvas transition", n ? "border-accent ring-2 ring-accent" : "border-line hover:border-ink/30", full && "cursor-not-allowed opacity-45")}
+                        className={cx("relative aspect-square overflow-hidden rounded-small border bg-canvas transition", n ? "border-accent ring-2 ring-accent" : "border-line hover:border-ink/30", full && "cursor-not-allowed opacity-45")}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={thumbUrl(t.url, 320, 320)} alt={t.label ?? ""} loading="lazy" decoding="async" onError={(e) => showOriginal(e.currentTarget)} className="size-full object-cover" />

@@ -83,7 +83,7 @@ export function LabelledRow({ label, children }: { label: string; children: Reac
   );
 }
 
-export const chipClass = "inline-flex max-w-full items-center rounded-full bg-control px-2.5 py-1 text-xs leading-4 [overflow-wrap:anywhere]";
+export const chipClass = "inline-flex max-w-full items-center rounded-full bg-control px-2 py-0.5 text-xs leading-4 [overflow-wrap:anywhere]";
 
 export function Chips({ items, className }: { items: string[]; className?: string }) {
   return <div className={cx("flex flex-wrap gap-1.5", className)}>{items.map((x) => <span key={x} className={chipClass}>{x}</span>)}</div>;

@@ -26,6 +26,7 @@ import { showOriginal } from "@/lib/thumb";
 import { readBrandKit } from "@/lib/workspace-schema";
 import { IconAlert, IconCheck, IconChevronDown, IconChevronLeft } from "../icons";
 import { Badge, Button, cx, inputClass, Segmented, Thumb } from "../ui";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 /** The workspace's product images (public URLs) the person can attach to a template; `kind` is the image's AssetKind, when known. */
 export type ProductImage = { url: string; label: string | null; kind?: string | null };
@@ -67,7 +68,7 @@ export function useStyleContext(productId: string, override?: StyleContext): { c
 /** A style's example image; until the file exists (or if it fails to load), a quiet empty tile instead of a broken image. */
 export function StyleThumb({ src, alt, className, fallbackClassName, fallback = "" }: { src: string; alt: string; className?: string; fallbackClassName?: string; fallback?: string }) {
   const [failed, setFailed] = useState<string | null>(null);
-  if (failed === src) return <div role="img" aria-label={alt} className={cx("grid place-items-center bg-gradient-to-br from-line to-canvas text-xs text-faint", className, fallbackClassName)}>{fallback}</div>;
+  if (failed === src) return <div role="img" aria-label={alt} className={cx("grid place-items-center bg-control text-xs text-faint", className, fallbackClassName)}>{fallback}</div>;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img src={src} alt={alt} loading="lazy" decoding="async" className={cx("object-cover", className)}
@@ -143,9 +144,9 @@ export function StyleDetail({ style, title, ctx, loading, productKind = null, pr
       <DetailHeader title={title || style.name} aspect={aspect} onBack={onBack} />
       <WhatItsFor guidance={style} productKind={productKind} productName={context.appName} />
 
-      <div className="grid gap-5 @3xl:grid-cols-[232px_minmax(0,1fr)]">
+      <div className="grid gap-4 @3xl:grid-cols-[232px_minmax(0,1fr)]">
         <aside className="flex gap-3 @3xl:flex-col">
-          <a href={style.referenceImage} target="_blank" rel="noreferrer" className="block w-28 shrink-0 overflow-hidden rounded-inner border border-line bg-control @3xl:w-full" title="Open the example">
+          <a href={style.referenceImage} target="_blank" rel="noreferrer" className="block w-24 shrink-0 overflow-hidden rounded-small border border-line bg-control @3xl:w-full" title="Open the example">
             <StyleThumb src={style.referenceImage} alt={`${style.name} example`} className="w-full" fallbackClassName="aspect-[4/5]" />
           </a>
           <div className="min-w-0 space-y-3">
@@ -168,7 +169,7 @@ export function StyleDetail({ style, title, ctx, loading, productKind = null, pr
 
           {style.aspects.length > 1 && (
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-medium text-label">Ratio</span>
+              <span className="text-xs font-medium text-muted">Ratio</span>
               <Segmented label="Ratio" value={aspect} onChange={setAspect} options={style.aspects.map((a) => ({ value: a, label: a }))} />
             </div>
           )}
@@ -223,7 +224,7 @@ export function WhatItsFor({ guidance, productKind, productName }: { guidance: T
   return (
     <section aria-label="What it's for" className="mb-4 rounded-inner border border-line bg-raised px-3 py-2.5">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="text-xs font-medium text-label">What it&apos;s for</span>
+        <span className="text-xs font-medium text-muted">What it&apos;s for</span>
         {guidance?.angle && <Badge>{angleLabel(guidance.angle)}</Badge>}
       </div>
       {guidance?.bestFor && <p className="mt-1 text-caption text-muted">{guidance.bestFor}</p>}
@@ -245,14 +246,14 @@ export function ProductImagePicker({ productImages, chosen, onToggle, hint, empt
   return (
     <section>
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-xs font-medium text-label">Your images</span>
+        <span className="text-xs font-medium text-muted">Your images</span>
         <span className="text-xs text-faint tabular-nums">{chosen.length} of {Math.min(PLAYGROUND_MAX_INPUTS, productImages.length)} attached</span>
       </div>
       <p className="mt-0.5 text-xs text-muted">{hint}</p>
       {productImages.length > 0 && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
-            className="inline-flex h-8 items-center gap-1.5 rounded-control border border-line bg-raised px-2.5 text-xs font-medium text-ink transition hover:border-ink/20">
+            className="inline-flex h-7 items-center gap-1.5 rounded-control border border-hairline bg-raised px-2.5 text-xs font-medium text-ink transition hover:bg-hover">
             <IconChevronDown className={cx("size-3.5 transition", !open && "-rotate-90")} />
             {open ? "Hide images" : `Show ${productImages.length} image${productImages.length === 1 ? "" : "s"}`}
           </button>
@@ -289,9 +290,9 @@ export function ProductImagePicker({ productImages, chosen, onToggle, hint, empt
 export function PromptPreview({ prompt, overBy, mustAvoid }: { prompt: string; overBy: number; mustAvoid?: string[] }) {
   return (
     <details className="group rounded-inner border border-line bg-raised">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-medium text-label [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-medium text-muted [&::-webkit-details-marker]:hidden">
         <span className="flex items-center gap-1.5"><IconChevronDown className="size-3.5 -rotate-90 transition group-open:rotate-0" />Prompt preview</span>
-        <span className={cx("font-normal tabular-nums", overBy ? "text-warn" : "text-faint")}>{prompt.length.toLocaleString()} / {STYLE_PROMPT_MAX.toLocaleString()}</span>
+        <span className={cx("font-normal tabular-nums", overBy ? "text-warn" : "text-faint")}>{prompt.length.toLocaleString(UI_LOCALE)} / {STYLE_PROMPT_MAX.toLocaleString(UI_LOCALE)}</span>
       </summary>
       <div className="border-t border-line px-3 py-2.5">
         <pre className="max-h-72 overflow-auto font-mono text-[11px] leading-[1.55] whitespace-pre-wrap text-label">{prompt}</pre>
@@ -328,7 +329,7 @@ export function wideKeys(list: StyleField[]): Set<string> {
 export function Note({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
-      <p className="text-xs font-medium text-label">{title}</p>
+      <p className="text-xs font-medium text-muted">{title}</p>
       <p className="mt-0.5 text-caption text-muted">{children}</p>
     </div>
   );
@@ -340,7 +341,7 @@ export function FieldInput({ field, value, error, onChange, className }: { field
   return (
     <div className={cx("flex min-w-0 flex-col gap-1", className)}>
       <div className="flex h-[18px] items-baseline justify-between gap-2">
-        <label htmlFor={id} className="text-xs font-medium text-label">{field.label}</label>
+        <label htmlFor={id} className="text-xs font-medium text-muted">{field.label}</label>
         {!field.options && <span className={cx("text-xs tabular-nums", over ? "text-warn" : "text-faint")}>{value.trim().length}/{field.maxLength}</span>}
       </div>
       {field.options ? (
@@ -349,7 +350,7 @@ export function FieldInput({ field, value, error, onChange, className }: { field
         <textarea id={id} value={value} onChange={(e) => onChange(e.target.value)} placeholder={field.placeholder} rows={field.maxLength > 300 ? 4 : 2}
           className={cx(inputClass, "resize-y leading-[1.45]", error && "border-warn/60")} />
       ) : (
-        <input id={id} value={value} onChange={(e) => onChange(e.target.value)} placeholder={field.placeholder} className={cx(inputClass, "h-8 py-0", error && "border-warn/60")} />
+        <input id={id} value={value} onChange={(e) => onChange(e.target.value)} placeholder={field.placeholder} className={cx(inputClass, error && "border-warn/60")} />
       )}
       {error ? <p className="text-xs text-warn">{error}</p> : field.hint ? <p className="text-xs text-muted">{field.hint}</p> : null}
     </div>
@@ -377,7 +378,7 @@ function FieldTable({ table, cells, fields, errors, set }: {
           return (
             <input key={f.key} aria-label={f.label} value={fields[f.key] ?? ""} placeholder={f.placeholder} maxLength={f.maxLength + 20}
               onChange={(e) => set(f.key, e.target.value)}
-              className={cx(inputClass, "h-8 py-0", c.center && "text-center", errors[f.key] && "border-warn/60")} />
+              className={cx(inputClass, c.center && "text-center", errors[f.key] && "border-warn/60")} />
           );
         }))}
       </div>

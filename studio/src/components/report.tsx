@@ -4,10 +4,10 @@ import { HOOK_LABEL, PLATFORM_LABEL, ROLE_LABEL, THEME_LABEL, TYPE_COPY, VISUAL_
 import { peek, refresh } from "@/lib/client-cache";
 import { ReportSkeleton } from "./page-skeletons";
 import { RecreatePostDialog, ROLE_COLOR } from "./recreate-panel";
-import { useEscape } from "./research/escape";
 import { ScrollRow } from "./scroll-row";
 import { Badge, Button, Card, cx, ErrorNote, fmt, PlatformBadge, segmentTrackClass, Stat, tabClass, Thumb } from "./ui";
 import { PANEL, PANEL_OVERLAY, PanelPortal } from "./panel-portal";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 type Tab = "overview" | "content" | "playbook" | "audience" | "creators" | "partners" | "competitors";
 type Sort = "score" | "converting" | "views" | "velocity";
@@ -68,7 +68,7 @@ export function ReportView({ runId, project }: { runId: string; project: Project
             <button key={key} type="button" aria-pressed={tab === key} onClick={() => setTab(key)} className={tabClass(tab === key)}>{label}</button>
           ))}
         </ScrollRow>
-        <span className="text-caption text-muted">Last {report.sinceDays ?? project.sinceDays} days · {report.kpis.videos} posts · collected {report.status?.collectedAt ? new Date(report.status.collectedAt).toLocaleDateString() : "–"}</span>
+        <span className="text-caption text-muted">Last {report.sinceDays ?? project.sinceDays} days · {report.kpis.videos} posts · collected {report.status?.collectedAt ? new Date(report.status.collectedAt).toLocaleDateString(UI_LOCALE) : "–"}</span>
       </div>
 
       {tab === "overview" && <Overview type={project.type ?? "competitors"} report={report} posts={posts} thumb={thumb} formatName={formatName} onOpen={openContent} onSelect={setSelected} />}
@@ -140,12 +140,12 @@ function Overview({ type, report, posts, thumb, formatName, onOpen, onSelect }: 
       )}
 
       <div>
-        <h3 className="mb-3 text-title font-medium">Channels, ranked</h3>
+        <h3 className="mb-2 text-sm font-medium">Channels, ranked</h3>
         <div className="grid gap-3 @lg:grid-cols-2 @4xl:grid-cols-3">
           {byPlatform.map(({ platform, items, median: med, hitRate, best }) => (
-            <Card key={platform} className="flex flex-col gap-3 p-5">
+            <Card key={platform} className="flex flex-col gap-3 p-4">
               <div className="flex items-center justify-between"><PlatformBadge platform={platform} showBeta /><span className="text-xs text-muted">{items.length} posts</span></div>
-              <div className="flex items-end gap-6">
+              <div className="flex items-end gap-5">
                 <div><p className="text-figure font-medium tabular-nums">{fmt(med)}</p><p className="text-xs text-muted">typical views</p></div>
                 <div><p className="text-figure font-medium tabular-nums">{Math.round(hitRate * 100)}%</p><p className="text-xs text-muted">hit rate</p></div>
               </div>
@@ -164,7 +164,7 @@ function Overview({ type, report, posts, thumb, formatName, onOpen, onSelect }: 
       {type === "account" && <OverTime posts={posts} typical={typical} hitMultiple={report.hitMultiple} formatName={formatName} />}
 
       <Card className="overflow-x-auto p-0">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 p-5 pb-3"><h3 className="text-title font-medium">{type === "campaign" ? "Which creators deliver, where" : "Who wins where"}</h3><span className="text-xs text-muted">typical views per channel · darker = more hits</span></div>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 pt-3 pb-2"><h3 className="text-title font-medium">{type === "campaign" ? "Which creators deliver, where" : "Who wins where"}</h3><span className="text-xs text-muted">typical views per channel · darker = more hits</span></div>
         <table className="w-full text-sm" style={{ minWidth: 190 + platforms.length * 115 }}>
           <thead><tr className="border-b border-line text-left text-xs text-muted"><th className="px-5 py-2 font-normal">{TYPE_COPY[type].noun[0].toUpperCase() + TYPE_COPY[type].noun.slice(1)}</th>{platforms.map((p) => <th key={p} className="px-3 py-2 font-medium">{PLATFORM_LABEL[p]}</th>)}</tr></thead>
           <tbody>
@@ -198,7 +198,7 @@ function OverTime({ posts, typical, hitMultiple, formatName }: { posts: Post[]; 
   const peak = Math.max(...months.map((m) => median(posts.filter((p) => p.postedAt?.startsWith(m)).map((p) => p.views))), 1);
   return (
     <Card className="overflow-x-auto p-0">
-      <div className="flex items-baseline justify-between p-5 pb-3"><h3 className="text-title font-medium">Over time</h3><span className="text-xs text-muted">month by month</span></div>
+      <div className="flex items-baseline justify-between px-4 pt-3 pb-2"><h3 className="text-title font-medium">Over time</h3><span className="text-xs text-muted">month by month</span></div>
       <table className="w-full min-w-[560px] text-sm">
         <thead><tr className="border-b border-line text-left text-xs text-muted"><th className="px-5 py-2 font-normal">Month</th><th className="px-3 py-2 font-normal">Posts</th><th className="px-3 py-2 font-normal">Typical views</th><th className="px-3 py-2 font-normal">Hit rate</th><th className="px-3 py-2 font-normal">What worked</th></tr></thead>
         <tbody>
@@ -208,7 +208,7 @@ function OverTime({ posts, typical, hitMultiple, formatName }: { posts: Post[]; 
             const best = [...items].sort((a, b) => b.score - a.score)[0];
             return (
               <tr key={month} className="border-b border-line transition last:border-0 hover:bg-raised">
-                <td className="px-5 py-2.5 font-mono text-xs">{new Date(`${month}-01T00:00:00`).toLocaleDateString(undefined, { month: "short", year: "numeric" })}</td>
+                <td className="px-5 py-2.5 font-mono text-xs">{new Date(`${month}-01T00:00:00`).toLocaleDateString(UI_LOCALE, { month: "short", year: "numeric" })}</td>
                 <td className="px-3 py-2.5 tabular-nums">{items.length}</td>
                 <td className="px-3 py-2.5"><div className="flex items-center gap-2"><span className="h-1.5 bg-accent" style={{ width: `${Math.max(4, (med / peak) * 120)}px` }} /><span className="tabular-nums">{fmt(med)}</span></div></td>
                 <td className="px-3 py-2.5 tabular-nums">{Math.round((items.filter((p) => p.views >= hitMultiple * typical).length / items.length) * 100)}%</td>
@@ -240,7 +240,7 @@ function Content({ posts, report, filters, setFilters, thumb, formatName, onSele
   const hasIntent = posts.some((p) => p.buyerIntent != null);
   const select = (label: string, value: string, key: keyof typeof filters, values: string[], name: (v: string) => string) => (
     <label className="flex flex-col gap-1 text-xs text-muted">{label}
-      <select value={value} onChange={(e) => setFilters({ ...filters, [key]: e.target.value })} className="h-9 rounded-control border border-line bg-raised px-2.5 text-sm text-ink">
+      <select value={value} onChange={(e) => setFilters({ ...filters, [key]: e.target.value })} className="h-[30px] rounded-control border border-hairline bg-raised px-2.5 text-sm text-ink">
         <option value="">All</option>{values.map((v) => <option key={v} value={v}>{name(v)}</option>)}
       </select>
     </label>
@@ -248,13 +248,13 @@ function Content({ posts, report, filters, setFilters, thumb, formatName, onSele
 
   return (
     <div>
-      <Card className="mb-5 flex flex-wrap items-end gap-3 p-4">
+      <Card className="mb-4 flex flex-wrap items-end gap-3 p-3">
         {select("Channel", filters.platform, "platform", options((p) => p.platform), (v) => PLATFORM_LABEL[v as Platform] ?? v)}
         {select("Competitor", filters.account, "account", options((p) => p.account), (v) => v)}
         {select("Format", filters.format, "format", options((p) => p.format), formatName)}
         {select("Hook", filters.hook, "hook", options((p) => p.hookType), (v) => HOOK_LABEL[v] ?? v)}
         <label className="flex flex-col gap-1 text-xs text-muted">Sort by
-          <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value as Sort })} className="h-9 rounded-control border border-line bg-raised px-2.5 text-sm text-ink">
+          <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value as Sort })} className="h-[30px] rounded-control border border-hairline bg-raised px-2.5 text-sm text-ink">
             <option value="score">Best overall</option>{hasIntent && <option value="converting">Most converting</option>}<option value="views">Most views</option><option value="velocity">Fastest growing</option>
           </select>
         </label>
@@ -288,7 +288,7 @@ function Content({ posts, report, filters, setFilters, thumb, formatName, onSele
           </button>
         ))}
       </div>
-      {shown.length === 0 && <Card className="px-6 py-10 text-center text-sm text-muted">No posts match these filters.</Card>}
+      {shown.length === 0 && <Card className="px-4 py-8 text-center text-sm text-muted">No posts match these filters.</Card>}
     </div>
   );
 }
@@ -299,20 +299,20 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
   const [done, setDone] = useState(false);
   return (
     <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1200); }}
-      className="shrink-0 rounded-control border border-current/30 px-2 py-1 text-xs opacity-70 hover:opacity-100">{done ? "Copied" : label}</button>
+      className="h-6 shrink-0 rounded-control border border-hairline px-2 text-xs text-muted hover:bg-hover hover:text-ink">{done ? "Copied" : label}</button>
   );
 }
 
 function Playbook({ report, posts, formatName, onSelect }: { report: Report; posts: Post[]; formatName: (id: string | null) => string; onSelect: (p: Post) => void }) {
   const byId = new Map(posts.map((p) => [p.id, p]));
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4">
       <p className="max-w-3xl text-sm text-muted">What the best-performing competitor posts have in common on each channel. Borrow the pattern, not the post: keep the hook shape and structure, put your product and voice in it.</p>
       {report.playbook.map((channel) => (
         <section key={channel.platform}>
           <div className="mb-3 flex items-center gap-3"><PlatformBadge platform={channel.platform} showBeta /><span className="text-xs text-muted">from {channel.posts} posts</span></div>
           <div className="grid gap-4 @4xl:grid-cols-3">
-            <Card className="p-5 @4xl:col-span-2">
+            <Card className="p-4 @4xl:col-span-2">
               <h4 className="text-title font-medium">Hooks to adapt</h4>
               <p className="mt-0.5 text-xs text-muted">Opening lines of the top posts, verbatim.</p>
               <ul className="mt-4 grid gap-2">
@@ -335,7 +335,7 @@ function Playbook({ report, posts, formatName, onSelect }: { report: Report; pos
               </ul>
             </Card>
             <div className="grid content-start gap-4">
-              <Card className="p-5">
+              <Card className="p-4">
                 <h4 className="text-title font-medium">Formats that win</h4>
                 <ol className="mt-3 grid gap-2">
                   {channel.formats.length ? channel.formats.map((f, i) => (
@@ -343,11 +343,11 @@ function Playbook({ report, posts, formatName, onSelect }: { report: Report; pos
                   )) : <li className="text-sm text-muted">Not enough posts per format yet.</li>}
                 </ol>
               </Card>
-              <Card className="p-5">
+              <Card className="p-4">
                 <h4 className="text-title font-medium">Hook types that win</h4>
                 <div className="mt-3 flex flex-wrap gap-1.5">{channel.hooks.map((h) => <Badge key={h.id} tone="accent">{HOOK_LABEL[h.id] ?? h.id} · {fmt(h.medianViews)}</Badge>)}</div>
               </Card>
-              <Card className="p-5">
+              <Card className="p-4">
                 <h4 className="text-title font-medium">How winners are built</h4>
                 <ul className="mt-3 grid gap-2 text-sm">
                   {channel.structures.map((s) => <li key={s.shape} className="flex items-center justify-between gap-2"><span className="font-mono text-xs">{s.shape.split(" → ").map((r) => ROLE_LABEL[r] ?? r).join(" → ")}</span><span className="text-xs text-muted">{s.count}×</span></li>)}
@@ -375,7 +375,7 @@ function Competitors({ posts, thumb, onOpen, onSelect }: { posts: Post[]; thumb:
   return (
     <div className="grid gap-3">
       {rows.map((row) => (
-        <Card key={row.account} className="flex flex-col gap-4 p-5 @2xl:flex-row @2xl:items-center">
+        <Card key={row.account} className="flex flex-col gap-4 p-4 @2xl:flex-row @2xl:items-center">
           <div className="min-w-0 @2xl:w-64 @2xl:shrink-0">
             <button onClick={() => onOpen({ account: row.account })} className="truncate font-medium hover:underline">{row.account}</button>
             <div className="mt-1.5 flex flex-wrap gap-2">{row.platforms.map((p) => <PlatformBadge key={p} platform={p} />)}</div>
@@ -385,8 +385,8 @@ function Competitors({ posts, thumb, onOpen, onSelect }: { posts: Post[]; thumb:
             {row.mine.slice(0, 6).map((post) => (
               <button key={post.id} onClick={() => onSelect(post)} className="relative shrink-0" title={post.caption.slice(0, 80)}>
                 {post.platform === "x" || post.platform === "linkedin"
-                  ? <div className="flex h-28 w-36 items-center rounded-lg bg-raised p-2 text-left text-xs leading-snug">{(post.script[0]?.text ?? post.caption).slice(0, 90)}</div>
-                  : <Thumb src={thumb(post)} alt="" className="h-28 w-[84px] rounded-lg" />}
+                  ? <div className="flex h-28 w-36 items-center rounded-small bg-raised p-2 text-left text-xs leading-snug">{(post.script[0]?.text ?? post.caption).slice(0, 90)}</div>
+                  : <Thumb src={thumb(post)} alt="" className="h-28 w-[84px] rounded-small" />}
                 <span className="absolute bottom-1 left-1 rounded bg-ink/80 px-1 font-mono text-xs text-on-ink">{fmt(post.views)}</span>
               </button>
             ))}
@@ -403,7 +403,7 @@ function Competitors({ posts, thumb, onOpen, onSelect }: { posts: Post[]; thumb:
 function AudienceView({ audience, onOpenPost }: { audience: Audience; onOpenPost: (id: string) => void }) {
   if (!audience.total) {
     return (
-      <Card className="px-6 py-10 text-center">
+      <Card className="px-4 py-8 text-center">
         <p className="font-medium">No comments read in this run</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-muted">Turn on “Read more comments” and run it again: up to 25 comments are read on each channel&apos;s most-viewed posts and sorted into what buyers want, ask and doubt.</p>
       </Card>
@@ -449,7 +449,7 @@ function AudienceView({ audience, onOpenPost }: { audience: Audience; onOpenPost
           <p className="mb-3 text-sm text-muted">Real comments from the best posts. Each one is a post you can make yourself.</p>
           <div className="grid gap-4 @4xl:grid-cols-2">
             {ideas.map((idea) => (
-              <Card key={idea.id} className="p-5">
+              <Card key={idea.id} className="p-4">
                 <div className="flex items-baseline justify-between gap-3"><h4 className="text-title font-medium">{idea.title}</h4><span className="text-xs text-muted">{idea.theme!.count} comments</span></div>
                 <p className="mt-1 text-xs text-muted">{idea.body}</p>
                 <ul className="mt-3 grid gap-2">
@@ -470,7 +470,7 @@ function AudienceView({ audience, onOpenPost }: { audience: Audience; onOpenPost
 
       {platforms.length > 1 && (
         <Card className="overflow-x-auto p-0">
-          <div className="p-5 pb-3"><h3 className="text-title font-medium">By channel</h3><p className="text-xs text-muted">Share of each channel&apos;s comments</p></div>
+          <div className="px-4 pt-3 pb-2"><h3 className="text-title font-medium">By channel</h3><p className="text-xs text-muted">Share of each channel&apos;s comments</p></div>
           <table className="w-full min-w-[560px] text-sm">
             <thead><tr className="border-b border-line text-left text-xs text-muted"><th className="px-5 py-2 font-normal">Channel</th><th className="px-3 py-2 font-normal">Comments</th>{topThemes.map((t) => <th key={t.theme} className="px-3 py-2 font-medium">{label(t.theme)}</th>)}</tr></thead>
             <tbody>
@@ -491,7 +491,7 @@ function AudienceView({ audience, onOpenPost }: { audience: Audience; onOpenPost
 
       {audience.byAccount.length > 0 && (
         <Card className="overflow-x-auto p-0">
-          <div className="p-5 pb-3"><h3 className="text-title font-medium">Whose audience is buying</h3><p className="text-xs text-muted">Accounts with at least 3 comments read, most buyers first</p></div>
+          <div className="px-4 pt-3 pb-2"><h3 className="text-title font-medium">Whose audience is buying</h3><p className="text-xs text-muted">Accounts with at least 3 comments read, most buyers first</p></div>
           <table className="w-full min-w-[620px] text-sm">
             <thead><tr className="border-b border-line text-left text-xs text-muted"><th className="px-5 py-2 font-normal">Account</th><th className="px-3 py-2 font-normal">Comments</th><th className="px-3 py-2 font-normal">Want to buy</th><th className="px-3 py-2 font-normal">Asking how</th><th className="px-3 py-2 font-normal">Objections</th><th className="px-3 py-2 font-normal">Mostly</th></tr></thead>
             <tbody>
@@ -616,7 +616,7 @@ function Partners({ programs, byId, thumb, campaign, onOpenPost }: {
 }) {
   const [confirmedOnly, setConfirmedOnly] = useState(false);
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-4">
       <div className="grid gap-3">
         <p className="max-w-3xl text-sm text-muted">
           {campaign ? "Everyone posting for this brand, including creators you didn't list." : "Who creates for each competitor: the people to study, or to approach yourself."}
@@ -736,7 +736,6 @@ const DAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "
 /** Everything about one post, plus a free, code-built breakdown to make your own version (no generation). */
 function PostDrawer({ post, thumb, formatName, formats, productId, onClose }: { post: Post; thumb: string | null; formatName: (id: string | null) => string; formats: Report["formats"]; productId: string | null; onClose: () => void }) {
   const [recreating, setRecreating] = useState(false);
-  useEscape(onClose);
   const [allComments, setAllComments] = useState(false);
   const textPost = post.platform === "x" || post.platform === "linkedin";
   const lines = post.script.filter((l) => l.role);
@@ -745,14 +744,14 @@ function PostDrawer({ post, thumb, formatName, formats, productId, onClose }: { 
   const comments = post.commentList ?? [];
 
   return (
-    <PanelPortal>
+    <PanelPortal onClose={onClose}>
     <div className={`${PANEL_OVERLAY} z-40`} onClick={onClose}>
       <aside className={`${PANEL} max-w-xl`} onClick={(e) => e.stopPropagation()}>
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-card px-5 py-3">
+        <div className="sticky top-0 z-10 flex h-11 items-center justify-between border-b border-line bg-card px-4">
           <div className="flex items-center gap-2"><PlatformBadge platform={post.platform} /><span className="text-xs text-muted">{post.postedAt?.slice(0, 10)}</span>{post.niche && <Badge>niche</Badge>}</div>
-          <button onClick={onClose} className="px-2 py-1 text-muted hover:bg-ink/5 hover:text-ink" aria-label="Close">✕</button>
+          <button onClick={onClose} className="grid size-7 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink" aria-label="Close">✕</button>
         </div>
-        <div className="grid gap-6 p-5">
+        <div className="grid gap-4 p-4">
           <div className="flex gap-4">
             {!textPost && <Thumb src={thumb} alt="" className="h-40 w-28 shrink-0" />}
             <div className="min-w-0">
@@ -877,7 +876,7 @@ function Recreate({ post, hook, textPost, formatName, time, onRecreate }: { post
     ] as [string, string][]),
     ["Caption", `${post.caption.length} characters · ${hashtags.length} hashtag${hashtags.length === 1 ? "" : "s"}`],
   ];
-  if (posted) facts.push(["Posted", `${DAY[posted.getDay()]} around ${posted.toLocaleTimeString(undefined, { hour: "numeric" })} (your time)`]);
+  if (posted) facts.push(["Posted", `${DAY[posted.getDay()]} around ${posted.toLocaleTimeString(UI_LOCALE, { hour: "numeric" })} (your time)`]);
 
   const outline = [
     `${formatName(post.format)} · modelled on ${post.account} (${fmt(post.views)} views)`,
@@ -887,14 +886,14 @@ function Recreate({ post, hook, textPost, formatName, time, onRecreate }: { post
 
   return (
     <section className="overflow-hidden rounded-inner border border-line bg-raised">
-      <div className="flex items-start justify-between gap-3 bg-primary px-4 py-3 text-on-ink">
-        <div><p className="font-medium">Make your own version</p><p className="text-xs text-on-ink/60">Free: the post broken down so you can recreate it yourself. No generation, no credits.</p></div>
+      <div className="flex items-start justify-between gap-3 border-b border-line bg-card px-4 py-3">
+        <div><p className="text-sm font-medium">Make your own version</p><p className="text-xs text-muted">Free: the post broken down so you can recreate it yourself. No generation, no credits.</p></div>
         <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
           {beats.length > 0 && <CopyButton text={outline} label="Copy outline" />}
-          <button onClick={onRecreate} className="shrink-0 rounded-full bg-on-ink px-3 py-1 text-xs font-medium text-primary hover:opacity-90">Recreate for my app</button>
+          <button onClick={onRecreate} className="h-7 shrink-0 rounded-full bg-accent-fill px-3 text-xs font-medium text-on-accent hover:bg-accent-fill/90">Recreate for my app</button>
         </div>
       </div>
-      <div className="grid gap-5 p-4">
+      <div className="grid gap-4 p-4">
         <div className="bg-raised p-4">
           <div className="flex items-start justify-between gap-3"><p className="eyebrow">The hook{post.hookType ? ` · ${HOOK_LABEL[post.hookType] ?? post.hookType}` : ""}{silent ? " · from the caption" : ""}</p><CopyButton text={hook} /></div>
           <p className="mt-2 text-title">“{hook}”</p>

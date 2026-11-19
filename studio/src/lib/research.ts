@@ -3,10 +3,11 @@
 // `research` writes them.
 import type { MediaStatus } from "./ad-media";
 import type { CompetitorSource, CompetitorSuggestion } from "./competitors";
+import { UI_LOCALE } from "./ui-locale";
 
-export type AdNetwork = "meta" | "tiktok";
+export type AdNetwork = "meta" | "tiktok" | "google";
 export type AdMediaType = "video" | "image" | "carousel" | "dco" | "text" | "unknown";
-export type AdSource = "meta_api" | "meta_apify" | "meta_mcp" | "meta_local" | "tiktok_library" | "tiktok_creative_center" | "tiktok_apify";
+export type AdSource = "meta_api" | "meta_apify" | "meta_mcp" | "meta_local" | "tiktok_library" | "tiktok_creative_center" | "tiktok_apify" | "google_apify";
 
 export interface AdDecoded {
   format: string;
@@ -182,6 +183,8 @@ export interface PaidAdRow {
   metrics: { ctr?: number | null; likes?: number | null; budget?: string | null } | null;
   decoded: AdDecoded | null;
   decoded_at: string | null;
+  /** Why the last try at reading it failed, in plain words; null once it is read (absent before the reliability update). */
+  decode_error?: string | null;
   sent_to_library_at: string | null;
   scan?: AdScan | null;
   scanned_at?: string | null;
@@ -191,7 +194,7 @@ export interface PaidAdRow {
   last_seen_at: string;
 }
 
-export const PAID_AD_COLUMNS = "id, product_id, watch_id, is_own, library, network, source, ad_id, page_id, page_name, competitor, started_at, stopped_at, active, placements, media_type, is_video, body, headline, description, cta, link_url, media, thumb, snapshot_url, countries, variants, impressions_rank, creative, creative_key, metrics, decoded, decoded_at, sent_to_library_at, scan, scanned_at, creative_changed_at, first_seen_at, last_seen_at";
+export const PAID_AD_COLUMNS = "id, product_id, watch_id, is_own, library, network, source, ad_id, page_id, page_name, competitor, started_at, stopped_at, active, placements, media_type, is_video, body, headline, description, cta, link_url, media, thumb, snapshot_url, countries, variants, impressions_rank, creative, creative_key, metrics, decoded, decoded_at, decode_error, sent_to_library_at, scan, scanned_at, creative_changed_at, first_seen_at, last_seen_at";
 
 /** What an edit changed: the copy's parts, the link, or the media files. */
 export type AdChange = "body" | "headline" | "description" | "cta" | "link" | "media";
@@ -233,7 +236,8 @@ export interface WatchRow {
   id: string;
   product_id: string;
   name: string;
-  network: AdNetwork;
+  /** A competitor is followed on Meta or TikTok; its Google ads come through its Meta entry (website or advertiser id). */
+  network: "meta" | "tiktok";
   page_id: string | null;
   page_url: string | null;
   search_terms: string | null;
@@ -248,6 +252,9 @@ export interface WatchRow {
   source?: CompetitorSource;
   website?: string | null;
   handles?: Record<string, string>;
+  /** Google Ads Transparency Center advertiser id (AR…) and TikTok Ad Library business name (migration 20261119140000). */
+  google_advertiser_id?: string | null;
+  tiktok_business_name?: string | null;
 }
 
 export interface PullRow {
@@ -264,7 +271,12 @@ export interface PullRow {
 /** A competitor not on the list yet (an analysis pick or the AI profile's), offered for it. */
 export type Suggestion = CompetitorSuggestion;
 
-export interface ResearchHealth { metaApi: boolean; apify: boolean; jev: boolean; openai?: boolean; tiktok: "off" | "library" | "creative_center"; tiktokLibrary: boolean; mediaWorker?: boolean }
+export interface ResearchHealth {
+  metaApi: boolean; apify: boolean; jev: boolean; openai?: boolean; tiktok: "off" | "library" | "creative_center"; tiktokLibrary: boolean; mediaWorker?: boolean;
+  /** Which collection sources are on (Settings > Research sources); absent on an older backend. */
+  sources?: Partial<Record<"metaApify" | "google" | "metaApi" | "tiktokLibrary" | "tiktokEu" | "tiktokTopAds", boolean>>;
+  metaActor?: "community" | "official";
+}
 
 /** The brand kit, as the Recreate sheet uses it (lib/workspace-schema.ts BrandKit, screenshots counted). */
 export interface ResearchBrand {
@@ -452,14 +464,15 @@ export const MEDIA_LABEL: Record<AdMediaType, string> = {
 
 export const PLACEMENT_LABEL: Record<string, string> = {
   facebook: "Facebook", instagram: "Instagram", audience_network: "Audience Network", messenger: "Messenger", threads: "Threads", whatsapp: "WhatsApp", tiktok: "TikTok",
+  google_search: "Google Search", youtube: "YouTube", google_shopping: "Google Shopping", google_maps: "Google Maps", google_play: "Google Play",
 };
 
 export const SOURCE_LABEL: Record<AdSource, string> = {
-  meta_api: "Meta Ad Library API", meta_apify: "Automatic collection", meta_mcp: "Meta Ads import", meta_local: "Ad Library extension",
-  tiktok_library: "TikTok Ad Library", tiktok_creative_center: "TikTok Top Ads", tiktok_apify: "TikTok collection",
+  meta_api: "Meta Ad Library API", meta_apify: "Meta ads (Apify)", meta_mcp: "Meta Ads import", meta_local: "Ad Library extension",
+  tiktok_library: "TikTok Ad Library", tiktok_creative_center: "TikTok Top Ads", tiktok_apify: "TikTok Ad Library (Apify)", google_apify: "Google Ads Transparency",
 };
 
-export const NETWORK_LABEL: Record<AdNetwork, string> = { meta: "Meta", tiktok: "TikTok" };
+export const NETWORK_LABEL: Record<AdNetwork, string> = { meta: "Meta", tiktok: "TikTok", google: "Google" };
 
 /** Ad formats the reader can pick on top of the organic library (mirrors AD_FORMATS in the engine). */
 export const AD_FORMAT_LABEL: Record<string, string> = {
@@ -645,7 +658,7 @@ export interface ScrapeWarning {
  * (one import per run; a file imported twice counts once). `newestId` is the newest import behind a
  * warning, so a dismissed card comes back only when a newer run warns.
  */
-export function scrapeWarnings(runs: LocalRunRow[], now = Date.now(), formatTime: (d: Date) => string = (d) => d.toLocaleString()): { warnings: ScrapeWarning[]; newestId: string | null } {
+export function scrapeWarnings(runs: LocalRunRow[], now = Date.now(), formatTime: (d: Date) => string = (d) => d.toLocaleString(UI_LOCALE)): { warnings: ScrapeWarning[]; newestId: string | null } {
   const seen = new Set<string>();
   const list = runs
     .map((r) => ({ ...r, at: Date.parse(r.input?.scraped_at ?? r.started_at) }))

@@ -25,8 +25,11 @@ export const stagger = (i: number) => ({ "--i": i }) as CSSProperties;
 
 // MARK: Page structure
 
-/** The width and padding every page shares inside the page panel. */
-export const pageClass = "mx-auto w-full max-w-[1360px] px-4 pt-4 pb-10 sm:px-6 md:px-8 md:pt-5 md:pb-8";
+/** The width and padding every page shares inside the page panel. The page's header bar sits at the very top. */
+export const pageClass = "mx-auto w-full max-w-[1360px] px-4 pb-12 sm:px-6";
+
+/** The narrow column for detail and form pages (~700 px of content), centred in the panel: `<Page className={columnClass}>`. */
+export const columnClass = "max-w-[748px]";
 
 export function Page({ className, ...props }: ComponentProps<"div">) {
   return <div className={cx(pageClass, className)} {...props} />;
@@ -34,38 +37,57 @@ export function Page({ className, ...props }: ComponentProps<"div">) {
 
 export type Crumb = { label: string; href?: string };
 
-/** A slim header: small breadcrumbs, a compact title with an optional badge, one muted line under it, and actions on the right. */
+/** The bar at the top of the panel: 44 px, full panel width, the breadcrumb or title at left (13 px medium), small actions at right. */
+export const headerBarClass = "relative z-20 mb-5 ml-[calc(50%-50cqi)] flex h-11 w-[100cqi] items-center justify-between gap-3 border-b border-header-line bg-canvas px-4 sm:px-6 lg:sticky lg:top-0";
+
+/**
+ * The page's header bar: breadcrumbs ending in the current page (or the title alone) and a badge at left,
+ * actions at right (pills, 28 px). Under the bar, an optional intro: the title at 24 px when it says more
+ * than the last crumb (a detail or form page), and the subtitle as one muted line.
+ */
 export function PageHeader({ title, badge, subtitle, crumbs, actions, className }: {
   title: ReactNode; badge?: ReactNode; subtitle?: ReactNode; crumbs?: Crumb[]; actions?: ReactNode; className?: string;
 }) {
+  const trail = crumbs ?? [];
+  const last = trail[trail.length - 1];
+  // The bar ends in the current page: the last crumb when it has no link, else the title.
+  const current = last && !last.href ? last.label : null;
+  const items = current ? trail.slice(0, -1) : trail;
+  const titleIsCurrent = !current || (typeof title === "string" && title === current);
+  const intro = !titleIsCurrent;
   return (
-    <header className={cx("mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-3", className)}>
-      <div className="min-w-0">
-        {crumbs && crumbs.length > 0 && (
-          <nav aria-label="Breadcrumb" className="mb-0.5 flex flex-wrap items-center gap-1 text-xs text-muted">
-            {crumbs.map((crumb, i) => (
-              <span key={i} className="flex items-center gap-1">
-                {i > 0 && <IconChevronRight className="size-3 text-faint" />}
-                {crumb.href ? <Link href={crumb.href} className="transition hover:text-ink">{crumb.label}</Link> : <span className={cx(i === crumbs.length - 1 && "text-label")}>{crumb.label}</span>}
-              </span>
-            ))}
-          </nav>
-        )}
-        <h1 className="flex min-h-7 flex-wrap items-center gap-x-2.5 gap-y-1 text-lg font-medium tracking-[-0.01em] [overflow-wrap:anywhere]">{title}{badge}</h1>
-        {subtitle && <p className="mt-1 max-w-3xl text-sm text-muted">{subtitle}</p>}
-      </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-    </header>
+    <>
+      <header className={cx(headerBarClass, !intro && !subtitle && className)}>
+        <nav aria-label="Breadcrumb" className="flex min-w-0 shrink items-center gap-1 text-sm font-medium">
+          {items.map((crumb, i) => (
+            <span key={i} className="flex min-w-0 shrink items-center gap-1">
+              {crumb.href ? <Link href={crumb.href} className="truncate rounded-xs text-muted transition-colors hover:text-ink">{crumb.label}</Link> : <span className="truncate text-muted">{crumb.label}</span>}
+              <IconChevronRight className="size-3 shrink-0 text-faint" />
+            </span>
+          ))}
+          {titleIsCurrent
+            ? <h1 className="flex min-w-0 items-center gap-2 truncate text-ink"><span className="truncate">{title}</span>{badge}</h1>
+            : <span aria-current="page" className="truncate text-ink">{current}</span>}
+        </nav>
+        {actions && <div className="no-scrollbar -my-1 flex max-w-[70%] min-w-0 items-center gap-1.5 overflow-x-auto py-1 sm:max-w-none [&>*]:shrink-0 [&_a]:rounded-full [&_button]:rounded-full">{actions}</div>}
+      </header>
+      {(intro || subtitle) && (
+        <div className={cx("mb-6", className)}>
+          {intro && <h1 className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-display font-semibold [overflow-wrap:anywhere]">{title}{badge}</h1>}
+          {subtitle && <p className={cx("max-w-2xl text-sm text-muted", intro && "mt-1")}>{subtitle}</p>}
+        </div>
+      )}
+    </>
   );
 }
 
 /** A heading for a group of cards inside a page. */
 export function SectionHeader({ title, subtitle, action, className }: { title: ReactNode; subtitle?: ReactNode; action?: ReactNode; className?: string }) {
   return (
-    <div className={cx("mb-2.5 flex flex-wrap items-end justify-between gap-3", className)}>
+    <div className={cx("mb-2 flex min-h-7 flex-wrap items-center justify-between gap-3", className)}>
       <div className="min-w-0">
-        <h2 className="text-title font-medium">{title}</h2>
-        {subtitle && <p className="mt-0.5 text-caption text-muted">{subtitle}</p>}
+        <h2 className="text-sm font-medium text-ink">{title}</h2>
+        {subtitle && <p className="text-xs text-muted">{subtitle}</p>}
       </div>
       {action}
     </div>
@@ -79,21 +101,21 @@ type Size = "sm" | "md";
 type ButtonProps = ComponentProps<"button"> & { variant?: Variant; size?: Size };
 
 /**
- * Dark fill (primary: one per view), bordered (secondary and outline: everything else), text only (ghost),
- * red text (danger), and two for coloured backgrounds (white: on callouts; light: on the dark HeroCard in both themes).
+ * Accent fill (primary: one per view), bordered (secondary and outline: everything else), text only (ghost),
+ * red text (danger), and two for coloured backgrounds (white: on callouts; light: kept for older code, now bordered).
+ * Every size is 28 px tall; header actions turn into pills (PageHeader does that).
  */
 export const buttonClass = (variant: Variant = "primary", size: Size = "md") => cx(
-  // Compact: 28px (sm) and 32px (md) tall, small icons, a 6px radius, no shadow to speak of.
-  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-control font-medium whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50",
-  size === "sm" ? "h-7 px-2.5 text-xs [&_svg]:size-3.5" : "h-8 px-3 text-sm [&_svg]:size-[15px]",
-  variant === "primary" && "bg-primary text-on-ink hover:bg-primary/85",
-  variant === "secondary" && "border border-hairline bg-raised text-ink shadow-card hover:bg-hover",
+  // Compact: 28 px tall, 14 px icons, an 8 px radius, no shadow.
+  "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-control font-medium whitespace-nowrap transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-3.5",
+  size === "sm" ? "px-2.5 text-xs" : "px-3 text-sm",
+  variant === "primary" && "bg-accent-fill text-on-accent hover:bg-accent-fill/90",
+  variant === "secondary" && "border border-hairline bg-raised text-ink hover:bg-hover",
   variant === "ghost" && "text-label hover:bg-hover hover:text-ink",
   variant === "danger" && "border border-warn/35 bg-raised text-warn hover:bg-warn-soft",
   variant === "white" && "bg-raised text-ink shadow-raised hover:bg-raised/90",
-  variant === "outline" && "border border-hairline bg-raised text-ink shadow-card hover:bg-hover",
-  // Always white, for the dark HeroCard (which looks the same in both themes).
-  variant === "light" && "bg-white text-black hover:bg-white/90",
+  variant === "outline" && "border border-hairline bg-raised text-ink hover:bg-hover",
+  variant === "light" && "border border-hairline bg-raised text-ink hover:bg-hover",
 );
 
 export function Button({ variant, size, className, ...props }: ButtonProps) {
@@ -108,24 +130,24 @@ export function ButtonLink({ variant, size, className, ...props }: ComponentProp
 export function IconButton({ size = "md", className, children, label, ...props }: ComponentProps<"button"> & { size?: "sm" | "md"; label: string }) {
   return (
     <button type="button" aria-label={label} title={label} className={cx(
-      "grid shrink-0 place-items-center rounded-control text-muted transition-colors hover:bg-hover hover:text-ink",
-      size === "sm" ? "size-7 [&_svg]:size-3.5" : "size-8 [&_svg]:size-4", className)} {...props}>{children ?? <IconMore />}</button>
+      "grid shrink-0 place-items-center rounded-control text-muted transition-colors hover:bg-hover hover:text-ink [&_svg]:size-3.5",
+      size === "sm" ? "size-6" : "size-7", className)} {...props}>{children ?? <IconMore />}</button>
   );
 }
 
 // MARK: Cards
 
-/** The card: white on the page panel, 8 px corners, a hairline border and next to no shadow. Padding is the caller's (p-4 for most, p-5 for a form). */
+/** The card: one step lighter than the panel, 10 px corners, a hairline border, no shadow. Padding is the caller's (p-3 or p-4). */
 export function Card({ className, ...props }: ComponentProps<"div">) {
-  return <div className={cx("rounded-card border border-line bg-card shadow-card", className)} {...props} />;
+  return <div className={cx("rounded-card border border-line bg-card", className)} {...props} />;
 }
 
-/** A card's title row: 15 px title, 12 px grey subtitle, and a menu or link on the right. */
+/** A card's title row: 13 px medium title, 12 px grey subtitle, and a menu or link on the right. */
 export function CardHeader({ title, subtitle, action, menu, className }: { title: ReactNode; subtitle?: ReactNode; action?: ReactNode; menu?: () => void; className?: string }) {
   return (
     <div className={cx("flex items-start justify-between gap-4", className)}>
       <div className="min-w-0">
-        <h3 className="text-title font-medium">{title}</h3>
+        <h3 className="text-sm font-medium">{title}</h3>
         {subtitle && <p className="mt-0.5 text-caption text-muted">{subtitle}</p>}
       </div>
       {action}
@@ -201,13 +223,13 @@ export function PlatformBadge({ platform, showBeta = false }: { platform: Platfo
 
 // MARK: Numbers
 
-/** One figure in a KPI row: 12 px label, a 20 to 24 px figure, grey hint. Strips put these side by side with dividers. */
+/** One figure in a KPI row: 12 px label, an 18 px figure, grey hint. Strips put these side by side with dividers. */
 export function Stat({ label, value, hint, tone, delta }: { label: string; value: ReactNode; hint?: ReactNode; tone?: "dark" | "highlight" | "win" | "warn"; delta?: ReactNode }) {
   return (
-    <div className={cx("flex min-w-0 flex-col gap-1.5 px-4 py-3.5", tone === "dark" ? "bg-primary text-on-ink" : tone === "highlight" ? "bg-caution-soft" : "bg-card")}>
+    <div className={cx("flex min-w-0 flex-col gap-1 px-4 py-3", tone === "dark" ? "bg-primary text-on-ink" : tone === "highlight" ? "bg-caution-soft" : "bg-card")}>
       <span className={cx("text-caption", tone === "dark" ? "text-on-ink/60" : "text-muted")}>{label}</span>
       <span className="flex flex-wrap items-center gap-2.5">
-        <span className={cx("text-[clamp(1.25rem,2.4cqi,1.5rem)] leading-[1.1] font-medium tracking-[-0.02em] tabular-nums", tone === "win" && "text-win", tone === "warn" && "text-warn")}>{value}</span>
+        <span className={cx("text-figure font-medium tabular-nums", tone === "win" && "text-win", tone === "warn" && "text-warn")}>{value}</span>
         {delta}
       </span>
       {hint && <span className={cx("truncate text-caption", tone === "dark" ? "text-on-ink/60" : "text-label")}>{hint}</span>}
@@ -220,12 +242,12 @@ export function StatStrip({ className, children }: { className?: string; childre
   return <Card className={cx("flex flex-wrap gap-px overflow-hidden bg-line [&>*]:flex-[1_1_200px]", className)}>{children}</Card>;
 }
 
-/** The one big number on a page: 28 to 36 px, tight, with an optional delta chip and comparison underneath. */
+/** The one larger number on a page: 24 px, with an optional delta chip and comparison underneath. */
 export function Kpi({ value, delta, compare, className }: { value: ReactNode; delta?: ReactNode; compare?: ReactNode; className?: string }) {
   return (
     <div className={className}>
-      <p className="text-[clamp(1.75rem,5cqi,2.25rem)] leading-none font-medium tracking-[-0.03em] tabular-nums">{value}</p>
-      {(delta || compare) && <div className="mt-2.5 flex flex-wrap items-center gap-2">{delta}{compare && <span className="text-caption text-muted">{compare}</span>}</div>}
+      <p className="text-kpi font-medium tabular-nums">{value}</p>
+      {(delta || compare) && <div className="mt-2 flex flex-wrap items-center gap-2">{delta}{compare && <span className="text-caption text-muted">{compare}</span>}</div>}
     </div>
   );
 }
@@ -233,7 +255,7 @@ export function Kpi({ value, delta, compare, className }: { value: ReactNode; de
 /** Label on the left, value (and delta) on the right, with a hairline above: "Revenue  $482K  ▲ 6.2%". */
 export function StatRow({ label, value, delta, note, className }: { label: ReactNode; value: ReactNode; delta?: ReactNode; note?: ReactNode; className?: string }) {
   return (
-    <div className={cx("flex min-h-10 items-center justify-between gap-3 border-t border-line py-1.5", className)}>
+    <div className={cx("flex min-h-9 items-center justify-between gap-3 border-t border-line py-1.5", className)}>
       <span className="min-w-0 truncate text-sm text-label">{label}</span>
       <span className="flex shrink-0 items-center gap-2.5">
         <span className="text-sm font-medium tabular-nums">{value}</span>
@@ -265,8 +287,8 @@ export function TargetBar({ value, target, startLabel, targetLabel, className }:
 // MARK: Controls
 
 /**
- * A segmented control: a grey track, the chosen option a white segment (Cost | Hours). One tab stop;
- * the arrow keys move the choice.
+ * A choice of a few options, drawn as Linear's tab pills: 28 px pills, the chosen one filled with a hairline,
+ * the others plain muted text. One tab stop; the arrow keys move the choice.
  */
 export function Segmented<T extends string>({ options, value, onChange, label, className }: { options: { value: T; label: ReactNode }[]; value: T; onChange: (value: T) => void; label?: string; className?: string }) {
   const current = options.some((o) => o.value === value) ? value : options[0]?.value;
@@ -289,22 +311,22 @@ export function Segmented<T extends string>({ options, value, onChange, label, c
 
 /** The class for one segment, for controls that render their own buttons. */
 export const segmentClass = (active: boolean) => cx(
-  "h-6 shrink-0 rounded-sm px-2 text-xs whitespace-nowrap transition-colors",
-  active ? "bg-raised font-medium text-ink shadow-raised" : "text-muted hover:text-ink",
+  "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap transition-colors [&_svg]:size-3.5",
+  active ? "border-hairline bg-control text-ink" : "border-transparent text-muted hover:bg-hover hover:text-ink",
 );
 
-/** The track a row of segments sits in (for controls that render their own buttons). */
-export const segmentTrackClass = "inline-flex max-w-full items-center gap-0.5 rounded-control bg-control p-0.5";
+/** The row a set of tab pills sits in (for controls that render their own buttons). */
+export const segmentTrackClass = "inline-flex max-w-full items-center gap-1";
 
-/** Report-style section tabs: the same look as a segmented control. */
+/** Section tabs: the same pills. */
 export const tabClass = segmentClass;
 
 /** The header's date range: a white segment with the range, then the comparison in grey. */
 export function DateRangePill({ label, compare, onClick, className }: { label: ReactNode; compare?: ReactNode; onClick?: () => void; className?: string }) {
   return (
-    <div className={cx("inline-flex h-8 items-center rounded-control bg-control p-0.5", className)}>
-      <button type="button" onClick={onClick} className="flex h-7 items-center gap-1.5 rounded-sm bg-raised px-2 text-sm font-medium whitespace-nowrap shadow-raised">
-        <IconCalendar className="size-[15px] text-muted" />{label}<IconChevronDown className="size-3.5 text-muted" />
+    <div className={cx("inline-flex h-7 items-center", className)}>
+      <button type="button" onClick={onClick} className="flex h-7 items-center gap-1.5 rounded-full border border-hairline bg-raised px-2.5 text-xs font-medium whitespace-nowrap hover:bg-hover">
+        <IconCalendar className="size-3.5 text-muted" />{label}<IconChevronDown className="size-3.5 text-muted" />
       </button>
       {compare && <span className="hidden px-2.5 text-xs whitespace-nowrap text-faint sm:inline">{compare}</span>}
     </div>
@@ -314,7 +336,7 @@ export function DateRangePill({ label, compare, onClick, className }: { label: R
 /** A bordered picker with a leading icon and a chevron ("◎ All branches ⌄"). Wraps a native select, so the keyboard works as usual. */
 export function SelectPill({ icon, value, onChange, options, label, className }: { icon?: ReactNode; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; label: string; className?: string }) {
   return (
-    <label className={cx("relative inline-flex h-8 items-center gap-1.5 rounded-control border border-hairline bg-raised pr-7 pl-2.5 text-sm font-medium shadow-card transition-colors hover:bg-hover has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus/70 [&_svg]:size-[15px]", className)}>
+    <label className={cx("relative inline-flex h-7 items-center gap-1.5 rounded-control border border-hairline bg-raised pr-7 pl-2.5 text-sm font-medium transition-colors hover:bg-hover has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus/70 [&_svg]:size-3.5", className)}>
       {icon}
       <span className="whitespace-nowrap">{options.find((o) => o.value === value)?.label}</span>
       <IconChevronDown className="pointer-events-none absolute right-2 text-muted" />
@@ -328,8 +350,8 @@ export function SelectPill({ icon, value, onChange, options, label, className }:
 /** A search field with a magnifier and an optional key hint. */
 export function SearchField({ hint, className, ...props }: ComponentProps<"input"> & { hint?: string }) {
   return (
-    <label className={cx("flex h-8 items-center gap-2 rounded-control border border-hairline bg-raised px-2.5 text-sm transition-colors focus-within:border-focus/70 focus-within:ring-2 focus-within:ring-focus/20", className)}>
-      <IconSearch className="size-[15px] shrink-0 text-muted" />
+    <label className={cx("flex h-7 items-center gap-2 rounded-control border border-hairline bg-raised px-2.5 text-sm transition-colors focus-within:border-focus/70 focus-within:ring-2 focus-within:ring-focus/20", className)}>
+      <IconSearch className="size-3.5 shrink-0 text-muted" />
       <input type="search" className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-faint [&::-webkit-search-cancel-button]:hidden" {...props} />
       {hint && <Kbd>{hint}</Kbd>}
     </label>
@@ -356,7 +378,7 @@ export function Pagination({ page, pages, onPage, className }: { page: number; p
       {shown.map((p, i) => (
         <span key={p} className="flex items-center gap-1">
           {i > 0 && p - shown[i - 1] > 1 && <span className="px-1 text-faint">…</span>}
-          <button type="button" aria-current={p === page ? "page" : undefined} onClick={() => onPage(p)} className={cx(round, p === page ? "bg-primary text-on-ink" : "text-label hover:bg-hover")}>{p}</button>
+          <button type="button" aria-current={p === page ? "page" : undefined} onClick={() => onPage(p)} className={cx(round, p === page ? "border border-hairline bg-control font-medium text-ink" : "text-label hover:bg-hover")}>{p}</button>
         </span>
       ))}
       <button type="button" aria-label="Next page" disabled={page >= pages} onClick={() => onPage(page + 1)} className={cx(round, "border border-hairline bg-raised hover:bg-hover disabled:pointer-events-none disabled:opacity-40")}><IconChevronRight className="size-3.5" /></button>
@@ -373,10 +395,10 @@ const TINT: Record<Tone, string> = {
 
 /** A small rounded square tinted to its meaning, holding an icon ("Needs you" rows, action cards). */
 export function TintIcon({ tone = "neutral", size = "md", className, children }: { tone?: Tone; size?: "sm" | "md"; className?: string; children: ReactNode }) {
-  return <span className={cx("grid shrink-0 place-items-center rounded-md", size === "sm" ? "size-6 [&_svg]:size-3.5" : "size-8 [&_svg]:size-4", TINT[tone], className)}>{children}</span>;
+  return <span className={cx("grid shrink-0 place-items-center rounded-md [&_svg]:size-3.5", size === "sm" ? "size-5" : "size-6", TINT[tone], className)}>{children}</span>;
 }
 
-/** A row in a list card: tinted icon, title, grey subtitle, chevron. Renders a link when given href. */
+/** A list row (40-48 px, no dividers): tinted icon, 13 px title, 12 px grey subtitle, chevron. Renders a link when given href. */
 export function ListRow({ icon, tone, title, subtitle, href, onClick, trailing, className }: {
   icon?: ReactNode; tone?: Tone; title: ReactNode; subtitle?: ReactNode; href?: string; onClick?: () => void; trailing?: ReactNode; className?: string;
 }) {
@@ -387,16 +409,16 @@ export function ListRow({ icon, tone, title, subtitle, href, onClick, trailing, 
         <span className="block truncate text-sm font-medium">{title}</span>
         {subtitle && <span className="block truncate text-caption text-muted">{subtitle}</span>}
       </span>
-      {trailing ?? ((href || onClick) && <IconChevronRight className="size-4 shrink-0 text-faint transition-colors group-hover:text-ink" />)}
+      {trailing ?? ((href || onClick) && <IconChevronRight className="size-3.5 shrink-0 text-faint transition-colors group-hover:text-ink" />)}
     </>
   );
-  const rowClass = cx("group flex w-full items-center gap-3 border-t border-line py-2.5 text-left first:border-t-0", className);
+  const rowClass = cx("group -mx-2 flex min-h-11 w-[calc(100%+1rem)] items-center gap-3 rounded-control px-2 py-1.5 text-left", (href || onClick) && "transition-colors hover:bg-hover", className);
   if (href) return <Link href={href} className={rowClass}>{body}</Link>;
   if (onClick) return <button type="button" onClick={onClick} className={rowClass}>{body}</button>;
   return <div className={rowClass}>{body}</div>;
 }
 
-/** Table pieces: a horizontally scrolling wrapper, a quiet header and dense rows that tint on hover. */
+/** Table pieces: a horizontally scrolling wrapper, a quiet 12 px header and 40 px rows with no dividers that tint on hover. */
 export function Table({ className, minWidth, children }: { className?: string; minWidth?: number; children: ReactNode }) {
   return (
     <div className={cx("-mx-2 overflow-x-auto px-2", className)}>
@@ -404,9 +426,9 @@ export function Table({ className, minWidth, children }: { className?: string; m
     </div>
   );
 }
-export const thClass = "border-b border-line px-3 pb-2 text-left text-xs font-medium whitespace-nowrap text-faint first:pl-4 last:pr-4";
+export const thClass = "h-8 border-b border-line px-3 text-left text-xs font-book whitespace-nowrap text-muted first:pl-4 last:pr-4";
 export const trClass = "group/row";
-export const tdClass = "border-b border-line px-3 py-2 align-middle first:pl-4 last:pr-4 group-last/row:border-transparent group-hover/row:bg-hover";
+export const tdClass = "h-10 px-3 py-1.5 align-middle first:pl-4 last:pr-4 group-hover/row:bg-hover";
 export function Th({ className, ...props }: ComponentProps<"th">) { return <th className={cx(thClass, className)} {...props} />; }
 export function Td({ className, ...props }: ComponentProps<"td">) { return <td className={cx(tdClass, className)} {...props} />; }
 export function Tr({ className, ...props }: ComponentProps<"tr">) { return <tr className={cx(trClass, className)} {...props} />; }
@@ -423,45 +445,45 @@ export function Callout({ tone = "raised", label, title, children, action, class
   );
 }
 
-/** The one emphasised card on a page: a flat dark panel ("Pattern found", a figure, a headline, a white button). */
+/** The one emphasised card on a page ("Pattern found", a figure, a headline, a button): a plain card like any other, no gradient. */
 export function HeroCard({ label = "Pattern found", pager, value, unit, headline, body, action, className }: {
   label?: ReactNode; pager?: ReactNode; value?: ReactNode; unit?: ReactNode; headline: ReactNode; body?: ReactNode; action?: ReactNode; className?: string;
 }) {
   return (
-    <section className={cx("hero-gradient flex min-h-[420px] flex-col overflow-hidden rounded-card p-5", className)}>
+    <section className={cx("flex flex-col overflow-hidden rounded-card border border-line bg-card p-4", className)}>
       <div className="flex items-center justify-between gap-3">
-        <span className="inline-flex h-6 items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2 text-xs font-medium"><IconSparkles className="size-3.5" />{label}</span>
-        {pager && <span className="text-xs text-white/70">{pager}</span>}
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted"><IconSparkles className="size-3.5 text-accent" />{label}</span>
+        {pager && <span className="text-xs text-muted">{pager}</span>}
       </div>
       {value != null && (
-        <p className="mt-5 flex flex-wrap items-end gap-x-2.5 gap-y-1">
-          <span className="text-[40px] leading-none font-medium tracking-[-0.03em]">{value}</span>
-          {unit && <span className="mb-1 max-w-[150px] text-xs leading-tight text-white/70">{unit}</span>}
+        <p className="mt-3 flex flex-wrap items-end gap-x-2 gap-y-1">
+          <span className="text-kpi font-medium tabular-nums">{value}</span>
+          {unit && <span className="mb-0.5 max-w-[150px] text-xs leading-tight text-muted">{unit}</span>}
         </p>
       )}
-      <h3 className="mt-4 text-xl font-medium tracking-[-0.01em]">{headline}</h3>
-      {body && <p className="mt-2 text-sm text-white/70">{body}</p>}
-      {action && <div className="relative mt-auto pt-6">{action}</div>}
+      <h3 className="mt-3 text-sm font-medium">{headline}</h3>
+      {body && <p className="mt-1 text-sm text-muted">{body}</p>}
+      {action && <div className="relative mt-auto pt-4">{action}</div>}
     </section>
   );
 }
 
-/** Centered message for an empty list or a page with nothing yet. */
+/** Linear's empty state: a quiet icon, one short line (and a muted sentence), one small button. No card around it. */
 export function EmptyState({ icon, title, body, action, className }: { icon?: ReactNode; title: ReactNode; body?: ReactNode; action?: ReactNode; className?: string }) {
   return (
-    <Card className={cx("flex flex-col items-center px-6 py-10 text-center", className)}>
-      {icon && <TintIcon className="mb-3">{icon}</TintIcon>}
-      <p className="text-title font-medium">{title}</p>
-      {body && <p className="mt-1 max-w-md text-sm text-muted">{body}</p>}
-      {action && <div className="mt-4">{action}</div>}
-    </Card>
+    <div className={cx("flex flex-col items-center px-6 py-12 text-center", className)}>
+      {icon && <span className="mb-3 text-faint [&_svg]:size-6">{icon}</span>}
+      <p className="text-sm font-medium text-ink">{title}</p>
+      {body && <p className="mt-1 max-w-sm text-sm text-muted">{body}</p>}
+      {action && <div className="mt-4 [&_a]:rounded-full [&_button]:rounded-full">{action}</div>}
+    </div>
   );
 }
 
 /** Something that failed or blocks the page, in the one error style every page uses (with an optional heading). */
 export function ErrorNote({ title, children, className }: { title?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <Card role="alert" className={cx("mb-4 border-warn/35 p-3 text-sm", className)}>
+    <Card role="alert" className={cx("mb-4 rounded-small border-warn/35 px-3 py-2.5 text-sm", className)}>
       {title && <p className="font-medium text-warn">{title}</p>}
       <div className={title ? "mt-1 text-ink" : "text-warn"}>{children}</div>
     </Card>
@@ -492,15 +514,15 @@ export function Spinner({ className }: { className?: string }) {
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-label">{label}</span>
+      <span className="text-xs font-medium text-muted">{label}</span>
       {children}
       {hint && <span className="text-xs text-muted">{hint}</span>}
     </label>
   );
 }
 
-/** Text fields, selects and textareas: 32 px tall, a hairline border, and the focus colour on the border when in use. */
-export const inputClass = "w-full rounded-control border border-hairline bg-raised px-2.5 py-[5px] text-sm text-ink outline-none transition-colors placeholder:text-faint focus:border-focus/70 focus:ring-2 focus:ring-focus/20 disabled:opacity-60";
+/** Text fields, selects and textareas: 30 px tall, a hairline border, and the focus colour on the border when in use. */
+export const inputClass = "w-full rounded-control border border-hairline bg-raised px-2.5 py-1 text-sm text-ink outline-none transition-colors placeholder:text-faint focus:border-focus/70 focus:ring-2 focus:ring-focus/20 disabled:opacity-60";
 
 // MARK: Keys, settings rows and locked states
 
@@ -509,15 +531,15 @@ export function Kbd({ className, children }: { className?: string; children: Rea
   return <kbd className={cx("inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-xs border border-hairline bg-control px-1 font-sans text-[11px] leading-none font-medium text-muted", className)}>{children}</kbd>;
 }
 
-/** A titled group of settings: a small heading and one line about it, then a card whose rows are split by hairlines. */
+/** A titled group of settings (Linear's): a 15 px title 16 px above its box, then a box whose 66 px rows are split by hairlines. */
 export function SettingsGroup({ title, description, action, children, className }: { title?: ReactNode; description?: ReactNode; action?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section className={className}>
       {(title || action) && (
-        <div className="mb-2.5 flex flex-wrap items-end justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
-            {title && <h2 className="text-title font-medium">{title}</h2>}
-            {description && <p className="mt-0.5 max-w-xl text-sm text-muted">{description}</p>}
+            {title && <h2 className="text-group font-medium">{title}</h2>}
+            {description && <p className="mt-0.5 max-w-xl text-xs text-muted">{description}</p>}
           </div>
           {action}
         </div>
@@ -533,11 +555,11 @@ export function SettingsGroup({ title, description, action, children, className 
  */
 export function SettingsRow({ label, description, children, below, className }: { label: ReactNode; description?: ReactNode; children?: ReactNode; below?: ReactNode; className?: string }) {
   return (
-    <div className={cx("px-4 py-3", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+    <div className={cx("px-4 py-3.5", className)}>
+      <div className="flex min-h-[38px] flex-wrap items-center justify-between gap-x-6 gap-y-2">
         <div className="min-w-0 flex-[1_1_220px]">
           <p className="text-sm font-medium text-ink">{label}</p>
-          {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
+          {description && <p className="mt-0.5 text-caption text-muted">{description}</p>}
         </div>
         {children && <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">{children}</div>}
       </div>
@@ -549,7 +571,7 @@ export function SettingsRow({ label, description, children, below, className }: 
 /** A small inline "needs X" state, with a link to where X is set: <Locked href="/app/settings/keys">Needs an OpenAI key</Locked>. */
 export function Locked({ children, href = "/app/settings/keys", action = "Add it", className }: { children: ReactNode; href?: string; action?: ReactNode; className?: string }) {
   return (
-    <span className={cx("inline-flex min-h-7 max-w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded-control border border-dashed border-hairline px-2 py-1 text-xs text-muted", className)}>
+    <span className={cx("inline-flex min-h-7 max-w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded-control border border-hairline px-2 py-1 text-xs text-muted", className)}>
       <span className="inline-flex items-center gap-1.5"><IconLock className="size-3.5 shrink-0" />{children}</span>
       <Link href={href} className="rounded-xs font-medium text-accent hover:underline">{action}</Link>
     </span>
@@ -562,10 +584,10 @@ export function ConnectState({ title, body, href = "/app/settings/keys", action 
 }) {
   return (
     <div className={cx("mx-auto flex w-full max-w-md flex-col items-center px-6 py-16 text-center", className)}>
-      <span className="mb-4 grid size-10 place-items-center rounded-lg border border-hairline bg-card text-muted [&_svg]:size-5">{icon ?? <IconPlug />}</span>
-      <h2 className="text-title font-medium">{title}</h2>
+      <span className="mb-3 text-faint [&_svg]:size-6">{icon ?? <IconPlug />}</span>
+      <h2 className="text-sm font-medium">{title}</h2>
       {body && <p className="mt-1 text-sm text-muted">{body}</p>}
-      <ButtonLink href={href} className="mt-5">{action}</ButtonLink>
+      <ButtonLink href={href} className="mt-4 rounded-full">{action}</ButtonLink>
     </div>
   );
 }

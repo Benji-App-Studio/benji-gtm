@@ -24,6 +24,7 @@ import { FeatureLock, type Features } from "./features";
 import type { FeatureState } from "@/lib/capabilities";
 import { workspaceHref } from "@/lib/workspace-schema";
 import { PANEL, PANEL_OVERLAY, PanelPortal } from "../panel-portal";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 type Filter = "review" | "approved" | "rejected" | "all";
 const QA: Record<QaStatus, (typeof QA_BADGE)[string]> = QA_BADGE;
@@ -123,14 +124,14 @@ function CardCopy({ creative, busy, canWrite, onWrite, onPick }: { creative: Cre
   // Nothing to switch between and nothing that could write it: no row.
   if (!variants.length && !canWrite && !busy) return null;
   return (
-    <div className="flex items-center gap-1 border-t border-line px-2.5 py-1.5 text-xs">
+    <div className="flex items-center gap-1 border-t border-line px-2 py-1 text-xs">
       {busy ? <span className="flex items-center gap-1 text-muted"><Spinner className="size-3" /> Writing copy…</span>
         : variants.length ? (
           <>
             <span className="mr-1 text-muted">Copy</span>
             {variants.map((v) => (
               <button key={v.label} type="button" aria-pressed={chosen === v.label} onClick={() => onPick(v)} title={`${v.label} · ${v.voice === "creator" ? "creator voice" : "brand voice"}: ${v.primary_text}`}
-                className={cx("min-w-6 rounded-full border px-1.5 py-0.5 tabular-nums transition-colors", chosen === v.label ? "border-transparent bg-primary text-on-ink" : "border-hairline text-label hover:bg-hover")}>{v.label}</button>
+                className={cx("min-w-6 rounded-full border px-1.5 py-0.5 tabular-nums transition-colors", chosen === v.label ? "border-hairline bg-control font-medium text-ink" : "border-transparent text-muted hover:bg-hover hover:text-ink")}>{v.label}</button>
             ))}
             {canWrite && <button type="button" onClick={onWrite} className="ml-auto rounded-xs font-medium text-accent hover:underline" title="Write both versions again">Rewrite</button>}
           </>
@@ -244,28 +245,28 @@ export function CreativeGallery({ productId, features, creatives, batches = NO_B
       )}
       <AwarenessCoverage levels={shown.filter((c) => c.approval !== "rejected").map((c) => levelOf(c, batches))} />
       {fromPlayground && (
-        <div className="mb-3 flex flex-wrap items-center gap-1" role="tablist" aria-label="Filter by source">
+        <div className={cx(segmentTrackClass, "mb-3 flex-wrap")} role="tablist" aria-label="Filter by source">
           {(["all", "studio", "playground"] as OriginFilter[]).map((o) => (
-            <button key={o} type="button" role="tab" aria-selected={origin === o} onClick={() => setOrigin(o)} className={cx("h-6 rounded-full border px-2.5 text-xs transition-colors", origin === o ? "border-transparent bg-active font-medium text-ink" : "border-hairline text-muted hover:bg-hover")}>
+            <button key={o} type="button" role="tab" aria-selected={origin === o} onClick={() => setOrigin(o)} className={segmentClass(origin === o)}>
               {ORIGIN_LABEL[o]} <span className="tabular-nums opacity-70">{byOrigin(creatives, o, playgroundBatchIds).length}</span>
             </button>
           ))}
         </div>
       )}
       {list.length ? (
-        <ul className="grid grid-cols-2 gap-3 @2xl:grid-cols-3 @4xl:grid-cols-4 @6xl:grid-cols-5">
+        <ul className="grid grid-cols-2 gap-2 @xl:grid-cols-3 @3xl:grid-cols-4 @5xl:grid-cols-5 @7xl:grid-cols-6">
           {list.map((c) => (
-            <li key={c.id} className="overflow-hidden rounded-card border border-line bg-card shadow-card transition-colors hover:border-hairline">
+            <li key={c.id} className="overflow-hidden rounded-small border border-line bg-card transition-colors hover:border-hairline">
               <button type="button" onClick={() => onOpen(c.id)} className="group block w-full text-left">
                 <div className="relative aspect-[4/5] w-full overflow-hidden bg-canvas">
                   {c.kind === "video" && c.thumbnail_url
                     // eslint-disable-next-line @next/next/no-img-element
                     ? <img src={c.thumbnail_url} alt="" loading="lazy" className="h-full w-full bg-console object-contain" />
                     : <Preview creative={c} />}
-                  <span className="absolute top-2 right-2 rounded-xs bg-card/90 px-1.5 py-0.5 text-[11px] text-ink tabular-nums">{c.aspect}</span>
-                  {c.kind === "video" && <span className="absolute bottom-2 left-2 rounded-xs bg-scrim/70 px-1.5 py-0.5 text-[11px] text-white">▶ {c.duration_sec ? `${Math.round(Number(c.duration_sec))}s` : "video"}</span>}
+                  <span className="absolute top-1.5 right-1.5 rounded-xs bg-card/90 px-1 py-px text-[11px] text-ink tabular-nums">{c.aspect}</span>
+                  {c.kind === "video" && <span className="absolute bottom-1.5 left-1.5 rounded-xs bg-scrim/70 px-1 py-px text-[11px] text-white">▶ {c.duration_sec ? `${Math.round(Number(c.duration_sec))}s` : "video"}</span>}
                 </div>
-                <div className="grid gap-1.5 p-2.5">
+                <div className="grid gap-1 p-2">
                   <span className="truncate text-xs font-medium">{c.title ?? KIND_LABEL[c.style]}</span>
                   <span className="flex flex-wrap gap-1">
                     {originOf(c, playgroundBatchIds) === "playground" && <Badge tone="neutral">Playground</Badge>}
@@ -329,12 +330,12 @@ function ComposedPanel({ creative, onChanged }: { creative: CreativeView; onChan
       <div className="mt-2 grid gap-2">
         {problems.map((p) => <p key={p} className="text-caution-ink">{p}</p>)}
         {record?.warnings?.map((w) => <p key={w} className="text-muted">{w}</p>)}
-        <select className={cx(inputClass, "h-9 py-1.5")} value={layout} aria-label="Layout" onChange={(e) => setLayout(e.target.value)}>
+        <select className={inputClass} value={layout} aria-label="Layout" onChange={(e) => setLayout(e.target.value)}>
           {LAYOUTS.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
         {unplacedCopy(copy, layoutById(layout)).length > 0 && <p className="text-caution-ink">{unplacedNote(layoutById(layout), unplacedCopy(copy, layoutById(layout)))}</p>}
         {COPY_FIELDS.filter((f) => layoutRoles(layoutById(layout)).includes(f.key) || copy[f.key]?.trim()).map((f) => (
-          <input key={f.key} className={cx(inputClass, "h-9 py-1.5")} value={copy[f.key] ?? ""} maxLength={COPY_LIMITS[f.key]} placeholder={f.label} aria-label={f.label}
+          <input key={f.key} className={inputClass} value={copy[f.key] ?? ""} maxLength={COPY_LIMITS[f.key]} placeholder={f.label} aria-label={f.label}
             onChange={(e) => setCopy({ ...copy, [f.key]: e.target.value })} />
         ))}
         <div className="flex flex-wrap items-center gap-2">
@@ -367,12 +368,7 @@ function ReviewPanel({ aiLock, launchLock, creative, fromPlayground, waiting, fa
   const canApprove = qaDone && !waiting && (!noteNeeded || Boolean(note.trim()));
   const approveHint = !qaDone ? "QA must pass (or warn) first" : waiting ?? (noteNeeded && !note.trim() ? "Add a note first" : undefined);
 
-  useEffect(() => {
-    closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEffect(() => { closeRef.current?.focus(); }, []);
 
   async function save(body: Record<string, unknown>, label: string) {
     setBusy(label);
@@ -390,19 +386,19 @@ function ReviewPanel({ aiLock, launchLock, creative, fromPlayground, waiting, fa
   }
 
   return (
-    <PanelPortal>
+    <PanelPortal onClose={onClose}>
     <div className={`${PANEL_OVERLAY} z-40`} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div role="dialog" aria-modal="true" aria-labelledby="review-title" className={`${PANEL} max-w-4xl`}>
-        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-3">
+        <div className="flex items-start justify-between gap-4 border-b border-line px-4 py-2.5">
           <div className="min-w-0">
             <p className="text-xs text-muted">{fromPlayground ? "Playground · " : ""}{KIND_LABEL[creative.style]} · {creative.aspect}{creative.width ? ` · ${creative.width}×${creative.height}` : ""}{creative.duration_sec ? ` · ${Number(creative.duration_sec)}s` : ""}</p>
-            <h2 id="review-title" className="mt-0.5 truncate text-title font-medium">{creative.title ?? "Creative"}</h2>
+            <h2 id="review-title" className="mt-0.5 truncate text-sm font-medium">{creative.title ?? "Creative"}</h2>
           </div>
           <IconButton ref={closeRef} label="Close" onClick={onClose}><IconX /></IconButton>
         </div>
-        <div className="grid gap-5 p-5 @container md:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+        <div className="grid gap-4 p-4 @container md:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
           <div className="grid content-start gap-3">
-            <div className={cx("w-full overflow-hidden rounded-card border border-line", ASPECT_CLASS[creative.aspect] ?? "aspect-square")}><Preview creative={creative} controls /></div>
+            <div className={cx("w-full overflow-hidden rounded-small border border-line", ASPECT_CLASS[creative.aspect] ?? "aspect-square")}><Preview creative={creative} controls /></div>
             <a href={creative.url} target="_blank" rel="noreferrer" className="text-xs text-muted underline-offset-2 hover:underline">Open the file</a>
             {failure && (
               <div className="grid gap-2 rounded-inner border border-warn/40 p-3 text-xs">
@@ -419,7 +415,7 @@ function ReviewPanel({ aiLock, launchLock, creative, fromPlayground, waiting, fa
             )}
           </div>
 
-          <div className="grid content-start gap-5">
+          <div className="grid content-start gap-4">
             <section>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-medium">Checked</h3>
@@ -485,7 +481,7 @@ function ReviewPanel({ aiLock, launchLock, creative, fromPlayground, waiting, fa
             <section className="grid gap-3 border-t border-line pt-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-medium">Your decision</h3>
-                {creative.approval !== "pending" && <Badge tone={creative.approval === "approved" ? "win" : "warn"}>{creative.approval}{creative.reviewed_at ? ` · ${new Date(creative.reviewed_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}` : ""}</Badge>}
+                {creative.approval !== "pending" && <Badge tone={creative.approval === "approved" ? "win" : "warn"}>{creative.approval}{creative.reviewed_at ? ` · ${new Date(creative.reviewed_at).toLocaleString(UI_LOCALE, { dateStyle: "medium", timeStyle: "short" })}` : ""}</Badge>}
               </div>
               <Field label="Note" hint={creative.qa_status === "warn" ? "The check raised a warning: say why it's fine to ship (required to approve)." : "Required to reject, so the next batch can avoid it."}>
                 <textarea className={cx(inputClass, "min-h-16")} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} />

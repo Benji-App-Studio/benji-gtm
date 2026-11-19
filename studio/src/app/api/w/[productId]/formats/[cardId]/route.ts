@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import type { FormatCard } from "@/lib/formats/types";
 import { isResponse, requireUser } from "@/lib/server/auth";
+import { dbFailure } from "@/lib/server/errors";
 
 /**
  * Removes a card from the format library (it's archived, so a rebuild doesn't bring it back). For
@@ -14,7 +15,7 @@ export async function DELETE(_request: NextRequest, ctx: RouteContext<"/api/w/[p
   const { data: row } = await session.supabase.from("format_cards").select("id, card").eq("id", cardId).eq("product_id", productId).maybeSingle<{ id: string; card: FormatCard }>();
   if (!row) return Response.json({ error: "Not found" }, { status: 404 });
   const { error } = await session.supabase.from("format_cards").update({ archived: true }).eq("id", row.id);
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return dbFailure("format archive", error, "Couldn't archive the format. Try again.");
   const adIds = row.card.source === "paid" ? row.card.examples.map((e) => e.id).filter((id) => /^[0-9a-f-]{36}$/i.test(id)) : [];
   if (adIds.length) await session.supabase.from("paid_ads").update({ sent_to_library_at: null }).in("id", adIds).eq("product_id", productId);
   return Response.json({ removed: true, adsReturned: adIds.length });

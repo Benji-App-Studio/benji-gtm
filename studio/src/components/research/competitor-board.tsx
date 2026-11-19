@@ -11,6 +11,7 @@ import { IconChevronDown, IconExternal } from "../icons";
 import { Button, Card, cx, segmentClass, segmentTrackClass, Spinner, StatusPill } from "../ui";
 import { PageLogo } from "./page-logo";
 import { readStored, storageKey } from "@/lib/storage-keys";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 const FRESH_DOT: Record<Freshness, string> = { fresh: "bg-win", due: "bg-caution", stale: "bg-warn", never: "bg-faint" };
 const FRESH_HINT = `Green: collected in the last ${FRESH_DAYS} days · orange: ${FRESH_DAYS + 1}–${STALE_DAYS} days · pink: older`;
@@ -73,7 +74,7 @@ interface Row {
   untracked?: boolean;
 }
 
-export function CompetitorBoard({ productId, watchlist, ads, lastImports, ours, dropZone, onShowAds, onManage, onAdd, onFollow }: {
+export function CompetitorBoard({ productId, watchlist, ads, lastImports, ours, dropZone, onShowAds, onManage, onAdd, onFollow, sourcesOf, onCollect }: {
   productId: string;
   /** This side's list: competitors, or our own Pages. */
   watchlist: WatchRow[];
@@ -88,6 +89,10 @@ export function CompetitorBoard({ productId, watchlist, ads, lastImports, ours, 
   onAdd: (name: string, pageId: string) => Promise<void>;
   /** Starts following an entry that is on the list but isn't followed (typed in the app's profile, or paused). */
   onFollow: (w: WatchRow) => Promise<void>;
+  /** Which sources found this competitor's ads ("Meta", "Google"), shown on its row. */
+  sourcesOf?: (w: WatchRow) => string[];
+  /** Collect ads: opens the collect dialog for this competitor. */
+  onCollect?: (w: WatchRow) => void;
 }) {
   const [adding, setAdding] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
@@ -130,11 +135,11 @@ export function CompetitorBoard({ productId, watchlist, ads, lastImports, ours, 
 
   return (
     <Card className="mb-4 overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3">
-        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="-ml-1 flex min-w-0 items-center gap-2 rounded-control py-1 pr-2 pl-1 text-left transition hover:bg-hover">
-          <IconChevronDown className={cx("size-4 shrink-0 text-muted transition", !open && "-rotate-90")} />
-          <span className="text-title font-medium">{ours ? "Our Pages" : "Competitors"}</span>
-          <span className="text-sm text-muted tabular-nums">{rows.length}</span>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2">
+        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex h-7 min-w-0 items-center gap-2 rounded-control pr-2 pl-1 text-left transition-colors hover:bg-hover">
+          <IconChevronDown className={cx("size-3.5 shrink-0 text-muted transition", !open && "-rotate-90")} />
+          <span className="text-sm font-medium">{ours ? "Our Pages" : "Competitors"}</span>
+          <span className="text-xs text-muted tabular-nums">{rows.length}</span>
           {followed.length > 0 && (
             <StatusPill tone={due.length ? "caution" : "win"} className="ml-1">{due.length ? `${due.length} need${due.length === 1 ? "s" : ""} updating` : "All up to date"}</StatusPill>
           )}
@@ -151,10 +156,10 @@ export function CompetitorBoard({ productId, watchlist, ads, lastImports, ours, 
       </div>
 
       {open && (
-        <div className="grid gap-3 border-t border-line px-4 py-3">
+        <div className="grid gap-3 border-t border-line px-3 py-2">
           {rows.length > 0
             ? (
-              <ul className={cx("grid grid-cols-1 gap-2 @xl:grid-cols-2 @4xl:grid-cols-3 @7xl:grid-cols-4", list.length > 12 && "max-h-[19rem] overflow-y-auto pr-1")}>
+              <ul className={cx("grid grid-cols-1 gap-x-4 @3xl:grid-cols-2 @6xl:grid-cols-3", list.length > 12 && "max-h-[20rem] overflow-y-auto pr-1")}>
                 {list.map((r) => {
                   const openedAt = opened[r.w.id];
                   // Opened since its last update: waiting for the file to be dropped.
@@ -163,16 +168,16 @@ export function CompetitorBoard({ productId, watchlist, ads, lastImports, ours, 
                   const status = !r.w.enabled ? (r.ads || r.updatedAt ? "Paused" : null) : waiting ? "Opened · drop its file" : r.updatedAt ? ago(r.updatedAt, now) : "Never collected";
                   const pageId = r.w.page_id;
                   return (
-                    <li key={r.w.id} className={cx("flex min-w-0 items-center gap-2 rounded-inner border bg-raised py-2 pr-2 pl-3", waiting ? "border-accent/40" : "border-line")}>
+                    <li key={r.w.id} className={cx("flex min-h-11 min-w-0 items-center gap-2.5 rounded-control px-2 py-1.5 transition-colors", waiting ? "bg-accent-soft" : "hover:bg-hover")}>
                       <span className={cx("relative shrink-0", !r.w.enabled && "opacity-60")} title={FRESH_HINT}>
                         <PageLogo pageId={r.pageId} name={r.w.name} />
-                        <span className={cx("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-raised", waiting ? "bg-accent" : FRESH_DOT[r.fresh])} aria-hidden />
+                        <span className={cx("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-card", waiting ? "bg-accent" : FRESH_DOT[r.fresh])} aria-hidden />
                       </span>
                       <button type="button" disabled={!r.ads} onClick={() => onShowAds(r.filterName)} title={r.ads ? `Show ${r.w.name}'s ads` : undefined}
                         className={cx("min-w-0 flex-1 rounded-xs text-left enabled:hover:[&>p:first-child]:underline disabled:cursor-default", !r.w.enabled && "opacity-60")}>
                         <p className="truncate text-sm font-medium" title={r.w.name}>{r.w.name}</p>
                         <p className={cx("truncate text-xs", waiting ? "text-accent" : "text-muted")}>
-                          <span className="tabular-nums">{r.ads.toLocaleString()}</span> ads{r.ads > 0 && <> · <span className="tabular-nums">{r.live.toLocaleString()}</span> live</>}{status && <> · {status}</>}
+                          <span className="tabular-nums">{r.ads.toLocaleString(UI_LOCALE)}</span> ads{r.ads > 0 && <> · <span className="tabular-nums">{r.live.toLocaleString(UI_LOCALE)}</span> live</>}{r.ads > 0 && sourcesOf && sourcesOf(r.w).length > 0 && <> · {sourcesOf(r.w).join(", ")}</>}{status && <> · {status}</>}
                         </p>
                       </button>
                       {r.untracked && pageId && (
@@ -186,6 +191,9 @@ export function CompetitorBoard({ productId, watchlist, ads, lastImports, ours, 
                           onClick={async () => { setAdding(r.w.id); await onFollow(r.w); setAdding(null); }}>
                           {adding === r.w.id ? <Spinner /> : "Follow"}
                         </Button>
+                      )}
+                      {onCollect && !r.untracked && (
+                        <Button size="sm" variant="ghost" onClick={() => onCollect(r.w)} title={`Collect ${r.w.name}'s ads with the sources that are on: you see what it costs first`}>Collect</Button>
                       )}
                       <a href={r.link.url} target="_blank" rel="noopener noreferrer" onClick={() => markOpened(r.w.id)}
                         title={r.link.exact ? `Open ${r.w.name}'s ads in the Meta Ad Library` : `No Page saved: searches the Ad Library for “${r.w.search_terms || r.w.name}”. Add its Page link under Add or edit to open its own page.`}

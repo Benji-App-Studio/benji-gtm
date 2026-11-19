@@ -29,16 +29,16 @@ function Value({ s }: { s: BrandSuggestion }) {
 export function BrandSuggestions({ suggestions, onUse, busy, note }: { suggestions: BrandSuggestion[]; onUse: (s: BrandSuggestion) => void; busy?: string | null; note?: ReactNode }) {
   if (!suggestions.length) return null;
   return (
-    <div className="grid gap-2 rounded-inner border border-accent/30 bg-card p-3">
+    <div className="grid gap-2 rounded-card border border-line bg-card p-3">
       <div className="flex flex-wrap items-center gap-2">
         <TintIcon tone="accent" size="sm"><IconSparkles /></TintIcon>
         <p className="text-sm font-medium">Suggested by the AI profile</p>
         {note && <span className="text-xs text-muted">{note}</span>}
       </div>
-      <ul className="grid gap-1.5">
+      <ul className="grid">
         {suggestions.map((s) => (
-          <li key={s.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-inner bg-raised px-3 py-2">
-            <span className="w-36 shrink-0 text-xs font-medium">{s.label}</span>
+          <li key={s.key} className="-mx-1 flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1 rounded-control px-1 py-1.5 transition-colors hover:bg-hover">
+            <span className="w-36 shrink-0 text-xs text-muted">{s.label}</span>
             <span className="min-w-0 flex-1"><Value s={s} /></span>
             <Button size="sm" variant="secondary" onClick={() => onUse(s)} disabled={Boolean(busy)}>{busy === s.key && <Spinner />}Use this</Button>
           </li>

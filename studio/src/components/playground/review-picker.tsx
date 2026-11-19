@@ -8,6 +8,7 @@ import { useState } from "react";
 import { refresh } from "@/lib/client-cache";
 import { reviewFits, stars, type AppStoreReview } from "@/lib/reviews";
 import { Button, cx, Spinner } from "../ui";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 export function ReviewPicker({ reviews, maxLength, picked, onPick, productId }: {
   reviews: AppStoreReview[]; maxLength: number; picked: AppStoreReview | null; onPick: (review: AppStoreReview) => void;
@@ -34,7 +35,7 @@ export function ReviewPicker({ reviews, maxLength, picked, onPick, productId }: 
   return (
     <div className="rounded-inner border border-line p-3 text-xs">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-label">Use a real App Store review</span>
+        <span className="font-medium text-ink">Use a real App Store review</span>
         {picked && <span className="text-win">Quoting {picked.author || "a reviewer"} word for word</span>}
         <span className="ml-auto flex items-center gap-2">
           {reviews.length > 0
@@ -55,7 +56,7 @@ export function ReviewPicker({ reviews, maxLength, picked, onPick, productId }: 
                   <span className="flex items-baseline gap-2">
                     <span className="text-caution-ink" aria-label={`${r.rating} stars`}>{stars(r.rating)}</span>
                     <span className="min-w-0 truncate font-medium text-ink">{r.title}</span>
-                    <span className="ml-auto shrink-0 text-faint">{r.author}{r.date ? ` · ${new Date(r.date).toLocaleDateString()}` : ""}</span>
+                    <span className="ml-auto shrink-0 text-faint">{r.author}{r.date ? ` · ${new Date(r.date).toLocaleDateString(UI_LOCALE)}` : ""}</span>
                   </span>
                   <span className="mt-0.5 line-clamp-3 block whitespace-pre-line text-label">{r.body}</span>
                   {!fits && <span className="mt-0.5 block text-faint">Too long for this field ({r.body.trim().length}/{maxLength})</span>}

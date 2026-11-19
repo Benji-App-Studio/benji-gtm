@@ -60,6 +60,39 @@ export function afterRequestEnded(status: string, error: string | null | undefin
   return { ...failed(message, now), external_id: null, cost_credits: 0 };
 }
 
+/**
+ * How long a submitted Higgsfield job may run, counted from `started_at`, before it is cancelled at
+ * Higgsfield and failed here. Higgsfield's images take seconds to a few minutes and its videos up to
+ * about half an hour, even when its queue is long; past these limits a job is stuck, and polling it
+ * every 30 s forever would cost tens of thousands of function calls a month.
+ */
+export const HIGGSFIELD_MAX_SECONDS = { image: 2 * 3600, video: 4 * 3600 } as const;
+
+/** Whether a job makes a video (the longer limit): a video style, or Seedance. */
+export const isVideoJob = (job: { kind?: string | null; model?: string | null }) =>
+  String(job.kind ?? "").endsWith("video") || job.model === "seedance_2_5";
+
+/** The job has been running at Higgsfield longer than its limit (HIGGSFIELD_MAX_SECONDS). False without a start time. */
+export function higgsfieldOverdue(job: { kind?: string | null; model?: string | null; started_at?: string | null }, now = Date.now()): boolean {
+  const since = Date.parse(job.started_at ?? "");
+  if (!Number.isFinite(since)) return false;
+  return now - since > (isVideoJob(job) ? HIGGSFIELD_MAX_SECONDS.video : HIGGSFIELD_MAX_SECONDS.image) * 1000;
+}
+
+/**
+ * A job past its limit: it fails with a plain message, drops its request (a retry submits afresh) and is
+ * recorded as not charged. `cancelled` says whether Higgsfield confirmed the cancel.
+ */
+export function afterOverdue(job: { kind?: string | null; model?: string | null }, cancelled: boolean, now = Date.now()): JobPatch {
+  const video = isVideoJob(job);
+  const hours = (video ? HIGGSFIELD_MAX_SECONDS.video : HIGGSFIELD_MAX_SECONDS.image) / 3600;
+  const what = video ? "video" : "image";
+  const message = cancelled
+    ? `Higgsfield didn't finish this ${what} within ${hours} hours, so it was cancelled at Higgsfield and stopped here. No credits are recorded for it. Retry to make it again.`
+    : `Higgsfield didn't finish this ${what} within ${hours} hours, so it was stopped here. Higgsfield didn't confirm the cancel: check console.higgsfield.ai for a charge. Retry to make it again.`;
+  return { ...failed(message, now), external_id: null, cost_credits: 0 };
+}
+
 /** A claimed job that was already submitted is polled, never submitted again. */
 export const shouldSubmit = (job: JobState) => !job.external_id;
 

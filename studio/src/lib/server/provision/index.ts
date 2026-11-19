@@ -10,6 +10,9 @@
 //     jobs           turn on the optional scheduled jobs (they wait for an owner)
 //   8 config         write the local config file
 //
+// reset.ts sets the owner's password again from a token (no email needed); account.ts is the last setup
+// step around `provision`: create or connect, sign in, and keep the sign-in for this computer.
+//
 // Pure functions: `fetch` and file reading are passed in, every step is safe to repeat, and progress
 // is reported as events. The setup routes (app/api/setup), scripts/provision.mjs and the tests all
 // call this same code. Endpoints live in management-api.ts.
@@ -20,5 +23,7 @@ export * from "./functions";
 export * from "./install";
 export * from "./run";
 export * from "./adopt";
+export * from "./reset";
+export * from "./account";
 export * from "./guard";
 export * from "./node-files";

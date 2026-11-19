@@ -3,6 +3,7 @@ import { daysRunning, PAID_AD_COLUMNS, type PaidAdRow } from "@/lib/research";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { listCards, resolveProduct } from "@/lib/server/formats";
 import { research } from "@/lib/server/research";
+import { dbFailure } from "@/lib/server/errors";
 
 /** An OpenAI scan can take a minute or two. */
 export const maxDuration = 150;
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/researc
     return Response.json(result.data, { status: result.ok ? 200 : result.status });
   }
   if (action === "send") {
-    const { data: ad } = await session.supabase.from("paid_ads").select(`${PAID_AD_COLUMNS}, library_seed`).eq("id", adId).maybeSingle<PaidAdRow & { library_seed: unknown }>();
+    const { data: ad } = await session.supabase.from("paid_ads").select(`${PAID_AD_COLUMNS.replace(", decode_error", "")}, library_seed`).eq("id", adId).maybeSingle<PaidAdRow & { library_seed: unknown }>();
     if (!ad) return Response.json({ error: "Not found" }, { status: 404 });
     // Without a decode the seed is the ad's own facts; a decode adds the format, hook and structure.
     const seed = ad.library_seed ?? {
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/researc
     };
     const sentAt = new Date().toISOString();
     const { error } = await session.supabase.from("paid_ads").update({ library_seed: seed, sent_to_library_at: sentAt }).eq("id", adId);
-    if (error) return Response.json({ error: error.message }, { status: 400 });
+    if (error) return dbFailure("research ad send-to-library", error, "Couldn't send the ad to the library. Try again.", 400);
     // The library keeps its cards once built, so rebuild them now or the ad wouldn't appear in Formats.
     const product = await resolveProduct(session, ad.product_id);
     const rebuilt = product ? await listCards(session, product, { rebuild: true }).then(() => true, () => false) : false;
@@ -62,7 +63,7 @@ export async function DELETE(_request: NextRequest, ctx: RouteContext<"/api/rese
   if (isResponse(session)) return session;
   const { adId } = await ctx.params;
   const { data, error } = await session.supabase.from("paid_ads").update({ hidden: true }).eq("id", adId).select("id");
-  if (error) return Response.json({ error: error.message }, { status: 400 });
+  if (error) return dbFailure("research ad hide", error, "Couldn't hide the ad. Try again.", 400);
   if (!data?.length) return Response.json({ error: "Not found" }, { status: 404 });
   return Response.json({ hidden: true, deleted: true });
 }

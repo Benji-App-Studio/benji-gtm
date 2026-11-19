@@ -12,6 +12,7 @@ import { Skeleton, SkeletonForm } from "../skeleton";
 import { Button, ButtonLink, Card, cx, ErrorNote, Field, inputClass, SettingsGroup, SettingsRow, Spinner } from "../ui";
 import { ConnectionBadge, isWorkspace, useWorkspace } from "../workspace/parts";
 import { api, SettingsPage } from "./settings-ui";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 type Patch = { connections?: Partial<Record<ConnectionKey, Record<string, string>>> };
 type Save = (section: string, patch: Patch) => Promise<string | null>;
@@ -25,10 +26,10 @@ export function AppSettings({ id }: { id: string }) {
   return (
     <SettingsPage title={product?.name ?? "App settings"} description="The accounts this app's pages work from, and deleting the app.">
       <section>
-        <div className="mb-2.5 flex items-end justify-between gap-4">
+        <div className="mb-4 flex items-end justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <h2 className="text-title font-medium">Connections</h2>
-            <p className="mt-0.5 max-w-xl text-sm text-muted">Only IDs go here. The keys and tokens that use them are set once for the whole workspace, under <Link href="/app/settings/keys" className="font-medium text-accent hover:underline">API keys</Link>.</p>
+            <h2 className="text-group font-medium">Connections</h2>
+            <p className="mt-0.5 max-w-xl text-xs text-muted">Only IDs go here. The keys and tokens that use them are set once for the whole workspace, under <Link href="/app/settings/keys" className="font-medium text-accent hover:underline">API keys</Link>.</p>
           </div>
           <ButtonLink href={workspaceHref(id)} variant="secondary" size="sm">Open app</ButtonLink>
         </div>
@@ -63,7 +64,7 @@ export function AppConnections({ id }: { id: string }) {
 
   const props = { id, workspace, save, saved };
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-3">
       {CONNECTION_KEYS.map((key) => <ConnectionCard key={`${key}-${JSON.stringify(workspace.connections[key] ?? {})}`} connection={key} {...props} />)}
     </div>
   );
@@ -97,8 +98,8 @@ function Section({ title, blurb, badge, children }: { title: string; blurb: Reac
         <h3 className="text-sm font-medium">{title}</h3>
         {badge}
       </div>
-      <p className="mt-0.5 text-sm text-muted">{blurb}</p>
-      <div className="mt-4">{children}</div>
+      <p className="mt-0.5 text-caption text-muted">{blurb}</p>
+      <div className="mt-3">{children}</div>
     </Card>
   );
 }
@@ -133,7 +134,7 @@ function ConnectionCard({ id, workspace, save, saved, connection }: CardProps & 
     setChecking(false);
   }
 
-  const message = note ?? (status.message ? `${status.message}${status.checkedAt ? ` Checked ${new Date(status.checkedAt).toLocaleString()}.` : ""}` : null);
+  const message = note ?? (status.message ? `${status.message}${status.checkedAt ? ` Checked ${new Date(status.checkedAt).toLocaleString(UI_LOCALE)}.` : ""}` : null);
   return (
     <Section title={spec.label} blurb={spec.blurb} badge={<ConnectionBadge status={status} />}>
       <div className="grid gap-4 @xl:grid-cols-2">
@@ -181,7 +182,7 @@ function DangerZone({ id, product, products }: { id: string; product: ProductRow
           <ButtonLink href={workspaceHref(id, "brand")} variant="secondary" size="sm">Open Brand</ButtonLink>
         </SettingsRow>
       ) : (
-        <SettingsRow label="Delete app" description="Deletes the app with its brand, research, creatives and connections. This can't be undone."
+        <SettingsRow label="Delete app" description="Deletes the app with its brand, research, creatives and connections, and removes its files from storage (creatives, saved ad media, uploads), which frees their space. This can't be undone."
           below={product ? (
             <form onSubmit={(event) => { event.preventDefault(); void remove(); }} className="mt-3 flex flex-wrap items-end gap-2">
               <label className="flex min-w-0 flex-[1_1_240px] flex-col gap-1.5">

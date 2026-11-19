@@ -4,7 +4,8 @@ import { Suspense } from "react";
 import { CompetitorForm } from "@/components/competitor-form";
 import { AccountForm, CampaignForm } from "@/components/direct-forms";
 import { ConnectFor, FreeRoute, useGate } from "@/components/research/gates";
-import { Card, Page, PageHeader, Spinner } from "@/components/ui";
+import { Card, columnClass, Page, PageHeader, Spinner } from "@/components/ui";
+import { IconChevronRight } from "@/components/icons";
 import { useCached } from "@/lib/client-cache";
 import type { ProductRow } from "@/lib/db";
 import { TYPE_COPY, type ProjectType } from "@/lib/types";
@@ -26,7 +27,7 @@ function NewAnalysis() {
   // Until the install has answered, neither the form nor the locked state: one never flashes before the other.
   if (checking || locked) {
     return (
-      <Page className="max-w-3xl">
+      <Page className={columnClass}>
         <PageHeader crumbs={crumbs} title="New analysis" subtitle="An analysis collects accounts' recent posts and reads what works in them." />
         <Card>{locked && !checking
           ? <ConnectFor state={locked} also={also} otherwise={<FreeRoute productId={app?.id} />} />
@@ -37,26 +38,27 @@ function NewAnalysis() {
 
   if (type) {
     return (
-      <Page className="max-w-3xl">
+      <Page className={columnClass}>
         <PageHeader crumbs={crumbs} title={TITLE[type]} subtitle={TYPE_COPY[type].blurb} />
         {type === "competitors" ? <CompetitorForm onBack={back} /> : type === "account" ? <AccountForm onBack={back} /> : <CampaignForm onBack={back} />}
       </Page>
     );
   }
   return (
-    <Page className="max-w-4xl">
+    <Page className={columnClass}>
       <PageHeader crumbs={crumbs} title="What do you want to analyze?" subtitle="Each analysis collects recent posts, reads what works in them and keeps every run." />
-      <div className="grid gap-3 @2xl:grid-cols-3">
+      <Card className="divide-y divide-line overflow-hidden">
         {(Object.keys(TYPE_COPY) as ProjectType[]).map((key) => (
-          <button key={key} type="button" onClick={() => router.push(`/app/new?type=${key}`)} className="group rounded-card text-left">
-            <Card className="flex h-full flex-col gap-2 p-4 transition group-hover:border-hairline group-hover:bg-hover">
-              <h2 className="text-title font-medium">{TYPE_COPY[key].label}</h2>
-              <p className="text-sm text-muted">{TYPE_COPY[key].blurb}</p>
-              <span className="mt-auto pt-2 text-sm font-medium text-accent">{key === "competitors" ? "Starts from your app's profile" : "You enter the handles"}</span>
-            </Card>
+          <button key={key} type="button" onClick={() => router.push(`/app/new?type=${key}`)} className="group flex w-full items-center gap-4 px-4 py-3.5 text-left transition-colors hover:bg-hover">
+            <span className="min-w-0 flex-1">
+              <h2 className="text-sm font-medium">{TYPE_COPY[key].label}</h2>
+              <p className="mt-0.5 text-caption text-muted">{TYPE_COPY[key].blurb}</p>
+              <span className="mt-1 block text-xs font-medium text-accent">{key === "competitors" ? "Starts from your app's profile" : "You enter the handles"}</span>
+            </span>
+            <IconChevronRight className="size-3.5 shrink-0 text-faint transition-colors group-hover:text-ink" />
           </button>
         ))}
-      </div>
+      </Card>
     </Page>
   );
 }

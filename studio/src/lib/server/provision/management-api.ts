@@ -65,7 +65,7 @@ function failure(what: string, status: number, body: string, secrets: string[]):
   const detail = redact(`${what}: HTTP ${status} ${body.slice(0, 600)}`.trim(), secrets);
   const message =
     status === 401 ? "Supabase didn't accept the access token. Create a new token and paste it again."
-    : status === 403 ? "This access token isn't allowed to do that. Use a token from the account that owns the project."
+    : status === 403 ? "This access token isn't allowed to do that. Create it again with the Full access preset (a Read-only token doesn't work), from the Supabase account that owns the project."
     : status === 402 ? "Your Supabase plan has reached a limit. Open your Supabase dashboard to see which one."
     : status === 404 ? "Supabase couldn't find that project. Check that you picked the right one."
     : status === 429 ? "Supabase asked us to slow down. Wait one minute, then press Retry."
@@ -243,6 +243,23 @@ export function projectApi(fetch: FetchLike, ref: string, secretKey: string, bas
       if (code === "weak_password" || said.includes("password")) throw new ProvisionError("weak_password", "Supabase didn't accept that password. Use at least 8 characters, with letters and numbers.", { detail: redact(text.slice(0, 300), [secretKey, input.password]) });
       if (code === "validation_failed" || said.includes("email")) throw new ProvisionError("bad_email", "Supabase didn't accept that email address. Check it for typos.", { detail: redact(text.slice(0, 300), [secretKey, input.password]) });
       throw failure("create the owner account", status, text, [secretKey, input.password]);
+    },
+
+    /**
+     * PUT /auth/v1/admin/users/{id}: sets a user's password, with no email sent. Answers false when
+     * the account no longer exists.
+     */
+    async setUserPassword(id: string, password: string): Promise<boolean> {
+      if (!/^[0-9a-f-]{36}$/i.test(id)) throw new ProvisionError("bad_user", "That account doesn't look right. Press Retry.");
+      const { status, data, text } = await call<{ error_code?: string; msg?: string }>(
+        "set the owner's password", `/auth/v1/admin/users/${id}`,
+        { method: "PUT", json: { password }, accept: [400, 404, 422] },
+      );
+      if (status < 300) return true;
+      if (status === 404 || data?.error_code === "user_not_found") return false;
+      const said = `${data?.error_code ?? ""} ${data?.msg ?? ""}`.toLowerCase();
+      if (said.includes("password")) throw new ProvisionError("weak_password", "Supabase didn't accept that password. Use at least 8 characters, with letters and numbers.", { detail: redact(text.slice(0, 300), [secretKey, password]) });
+      throw failure("set the owner's password", status, text, [secretKey, password]);
     },
 
     /** POST /storage/v1/object/{bucket}/{path} with `x-upsert: true`: writes the file, replacing an older copy. */

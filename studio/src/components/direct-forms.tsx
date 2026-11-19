@@ -9,12 +9,12 @@ const blank = (): Account => ({ name: "", handles: {} });
 const TIMEFRAMES = [30, 60, 90, 180];
 
 /** One account's handles on each channel. */
-function HandlesRow({ value, onChange, onRemove, namePlaceholder }: { value: Account; onChange: (a: Account) => void; onRemove?: () => void; namePlaceholder: string }) {
+function HandlesRow({ value, onChange, onRemove, namePlaceholder, nameLabel }: { value: Account; onChange: (a: Account) => void; onRemove?: () => void; namePlaceholder: string; nameLabel: string }) {
   return (
     <div className="grid gap-2 rounded-inner border border-line bg-raised p-3">
       <div className="flex items-center gap-2">
-        <input className={inputClass} placeholder={namePlaceholder} value={value.name} onChange={(e) => onChange({ ...value, name: e.target.value })} />
-        {onRemove && <Button variant="ghost" size="sm" onClick={onRemove} aria-label="Remove">×</Button>}
+        <input className={inputClass} aria-label={nameLabel} placeholder={namePlaceholder} value={value.name} onChange={(e) => onChange({ ...value, name: e.target.value })} />
+        {onRemove && <Button variant="ghost" size="sm" onClick={onRemove} aria-label={`Remove ${value.name.trim() || nameLabel.replace(/ name$/, "").toLowerCase()}`}>×</Button>}
       </div>
       <div className="grid gap-2 @xl:grid-cols-2">
         {PLATFORMS.map((p) => (
@@ -31,7 +31,7 @@ function HandlesRow({ value, onChange, onRemove, namePlaceholder }: { value: Acc
 
 function Settings({ sinceDays, setSinceDays, depth, setDepth }: { sinceDays: number; setSinceDays: (d: number) => void; depth: number; setDepth: (d: number) => void }) {
   return (
-    <div className="grid gap-6 @xl:grid-cols-2">
+    <div className="grid gap-4 @xl:grid-cols-2">
       <div>
         <p className="mb-2 text-sm font-medium">Time frame</p>
         <Segmented label="Time frame" value={String(sinceDays)} onChange={(v) => setSinceDays(Number(v))} options={TIMEFRAMES.map((d) => ({ value: String(d), label: `${d} days` }))} />
@@ -71,14 +71,14 @@ export function AccountForm({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <Card className="p-5">
+    <Card className="p-4">
       <p className="text-sm text-muted">Every post from one brand or creator across the channels it uses: which formats and hooks work for it, and how that changes over time. Add others to compare side by side.</p>
       <div className="mt-5 grid gap-4">
-        <Field label="The account"><HandlesRow value={main} onChange={setMain} namePlaceholder="Name, e.g. Acme" /></Field>
+        <Field label="The account"><HandlesRow value={main} onChange={setMain} nameLabel="Account name" namePlaceholder="Name, e.g. Acme" /></Field>
         <div>
           <p className="mb-2 text-sm font-medium">Compare with (optional)</p>
           <div className="grid gap-2">
-            {others.map((o, i) => <HandlesRow key={i} value={o} namePlaceholder="Name" onChange={(a) => setOthers(others.map((x, j) => (j === i ? a : x)))} onRemove={() => setOthers(others.filter((_, j) => j !== i))} />)}
+            {others.map((o, i) => <HandlesRow key={i} value={o} nameLabel={`Account ${i + 2} name`} namePlaceholder="Name" onChange={(a) => setOthers(others.map((x, j) => (j === i ? a : x)))} onRemove={() => setOthers(others.filter((_, j) => j !== i))} />)}
             {others.length < 5 && <button type="button" onClick={() => setOthers([...others, blank()])} className="rounded-inner border border-dashed border-line p-3 text-left text-sm text-muted hover:text-ink">+ Add an account to compare</button>}
           </div>
         </div>
@@ -115,10 +115,10 @@ export function CampaignForm({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <Card className="p-5">
+    <Card className="p-4">
       <p className="text-sm text-muted">Creators posting for one brand: the best UGC videos, the creators worth rebooking, and how the brand is shown in the scripts that work. Only posts that mention the brand (or are marked as paid partnerships) count.</p>
-      <div className="mt-5 grid gap-5">
-        <div className="grid gap-5 @xl:grid-cols-2">
+      <div className="mt-4 grid gap-4">
+        <div className="grid gap-4 @xl:grid-cols-2">
           <Field label="Brand"><input className={inputClass} value={brand} onChange={(e) => setBrand(e.target.value)} placeholder="Acme" /></Field>
           <Field label="Words that mark a campaign post" hint="Comma separated; defaults to the brand name"><input className={inputClass} value={mentions} onChange={(e) => setMentions(e.target.value)} placeholder="acme, @acme, acme app" /></Field>
           <Field label="Brand's Instagram" hint="Its tagged posts and collabs reveal its creators"><input className={inputClass} value={brandInstagram} onChange={(e) => setBrandInstagram(e.target.value)} placeholder="@acme" /></Field>
@@ -129,7 +129,7 @@ export function CampaignForm({ onBack }: { onBack: () => void }) {
         <div>
           <p className="mb-2 text-sm font-medium">Creators {findCreators && brandInstagram.trim() && <span className="font-normal text-muted">(optional: the rest are found for you)</span>}</p>
           <div className="grid gap-2">
-            {creators.map((c, i) => <HandlesRow key={i} value={c} namePlaceholder={`Creator ${i + 1}`} onChange={(a) => setCreators(creators.map((x, j) => (j === i ? a : x)))} onRemove={creators.length > 1 ? () => setCreators(creators.filter((_, j) => j !== i)) : undefined} />)}
+            {creators.map((c, i) => <HandlesRow key={i} value={c} nameLabel={`Creator ${i + 1} name`} namePlaceholder={`Creator ${i + 1}`} onChange={(a) => setCreators(creators.map((x, j) => (j === i ? a : x)))} onRemove={creators.length > 1 ? () => setCreators(creators.filter((_, j) => j !== i)) : undefined} />)}
             {creators.length < 50 && <button type="button" onClick={() => setCreators([...creators, blank()])} className="rounded-inner border border-dashed border-line p-3 text-left text-sm text-muted hover:text-ink">+ Add a creator</button>}
           </div>
         </div>

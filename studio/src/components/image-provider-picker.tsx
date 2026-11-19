@@ -47,7 +47,7 @@ export function ImageProviderPicker({ value, onChange, productId, openaiReady, p
     onChange(next);
     if (productId) rememberImageProvider(productId, next);
   };
-  const label = <span className="text-xs font-medium text-label">{compact ? "Made via" : "GPT Image 2.5 via"}</span>;
+  const label = <span className="text-xs font-medium text-muted">{compact ? "Made via" : "GPT Image 2.5 via"}</span>;
   // Only an OpenAI job is run inside the project's own time limit; Higgsfield's are collected either way.
   const slow = fallback === "openai" && quality && resolution ? openAiQualityNote(plan, resolution, quality) : null;
   const slowNote = slow ? <p role="status" className={cx("text-xs", slow.mode === "refuse" ? "text-warn" : "text-caution-ink", !compact && "text-right")}>{slow.text}</p> : null;
@@ -83,5 +83,5 @@ export function ImageProviderPicker({ value, onChange, productId, openaiReady, p
 
 /** The cost line for a confirm dialog: credits or dollars, as the provider charges. */
 export const providerCostRow = (provider: ImageProvider, cost: { credits: number; usd?: number }): [string, React.ReactNode] => (provider === "openai"
-  ? ["Estimated OpenAI cost", <span key="c" className="text-base text-ink">≈ {fmtUsd(cost.usd ?? 0)}</span>]
-  : ["Estimated Higgsfield cost", <span key="c" className="text-base text-ink">{cost.credits % 1 === 0 ? cost.credits : cost.credits.toFixed(2)} credits</span>]);
+  ? ["Estimated OpenAI cost", <span key="c" className="text-sm font-medium text-ink">≈ {fmtUsd(cost.usd ?? 0)}</span>]
+  : ["Estimated Higgsfield cost", <span key="c" className="text-sm font-medium text-ink">{cost.credits % 1 === 0 ? cost.credits : cost.credits.toFixed(2)} credits</span>]);

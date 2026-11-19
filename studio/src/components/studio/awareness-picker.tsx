@@ -5,6 +5,7 @@
 import { AWARENESS, AWARENESS_LEVELS, awarenessCoverage, awarenessInfo, awarenessLabel, cleanAwareness, type AwarenessLevel, type ExistingBatch } from "@/lib/awareness";
 import { batchTitle } from "@/lib/creative-plan";
 import { cx, Segmented } from "../ui";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 export function AwarenessPicker({ value, onChange, duplicate }: { value: number | null | undefined; onChange: (level: AwarenessLevel | null) => void; duplicate?: (ExistingBatch & { hook: string }) | null }) {
   const level = cleanAwareness(value);
@@ -12,7 +13,7 @@ export function AwarenessPicker({ value, onChange, duplicate }: { value: number 
   const options = [{ value: "0", label: "Not set" }, ...AWARENESS.map((a) => ({ value: String(a.level), label: <span title={a.label}>L{a.level}</span> }))];
   return (
     <div className="grid gap-2">
-      <span className="text-sm font-medium">Awareness level <span className="font-normal text-muted">· optional</span></span>
+      <span className="text-xs font-medium text-muted">Awareness level <span className="font-book text-faint">· optional</span></span>
       <Segmented label="Awareness level" options={options} value={String(level ?? 0)} onChange={(v) => onChange(cleanAwareness(Number(v)))} className="w-fit" />
       <p className="text-xs text-muted">
         {info
@@ -21,7 +22,7 @@ export function AwarenessPicker({ value, onChange, duplicate }: { value: number 
       </p>
       {duplicate && (
         <p className="text-xs text-caution-ink" role="note">
-          Looks like a near-duplicate of &ldquo;{batchTitle(duplicate.brief)}&rdquo; ({new Date(duplicate.created_at).toLocaleDateString()}): same level, format and hook (&ldquo;{duplicate.hook}&rdquo;). Meta treats near-duplicates as one ad; a new hook or another level tests something new.
+          Looks like a near-duplicate of &ldquo;{batchTitle(duplicate.brief)}&rdquo; ({new Date(duplicate.created_at).toLocaleDateString(UI_LOCALE)}): same level, format and hook (&ldquo;{duplicate.hook}&rdquo;). Meta treats near-duplicates as one ad; a new hook or another level tests something new.
         </p>
       )}
     </div>
@@ -38,7 +39,7 @@ export function AwarenessCoverage({ levels }: { levels: (number | null | undefin
         <span className="mr-1 text-muted">Awareness</span>
         {AWARENESS_LEVELS.map((l) => (
           <span key={l} title={`${awarenessLabel(l)}: sells ${awarenessInfo(l).sells}`}
-            className={cx("rounded-full border px-2 py-0.5 tabular-nums", c.counts[l] ? "border-line text-label" : "border-dashed border-caution/50 text-caution-ink")}>
+            className={cx("inline-flex h-6 items-center gap-1 rounded-full border px-2 tabular-nums", c.counts[l] ? "border-line text-label" : "border-dashed border-caution/50 text-caution-ink")}>
             L{l} {awarenessInfo(l).label} <span className="opacity-70">{c.counts[l]}</span>
           </span>
         ))}

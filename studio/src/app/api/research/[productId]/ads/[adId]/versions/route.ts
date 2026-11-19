@@ -3,6 +3,7 @@ import { withStoredMedia } from "@/lib/ad-media";
 import { AD_VERSION_COLUMNS, type AdVersion } from "@/lib/research";
 import { storedMediaFor } from "@/lib/server/ad-media";
 import { isResponse, requireUser } from "@/lib/server/auth";
+import { dbFailure } from "@/lib/server/errors";
 
 /**
  * An edited ad's earlier versions (`paid_ad_versions`), newest first: the copy, link and media it had
@@ -17,7 +18,8 @@ export async function GET(_request: NextRequest, ctx: RouteContext<"/api/researc
     .eq("product_id", productId).eq("paid_ad_id", adId).order("replaced_at", { ascending: false }).limit(50).returns<AdVersion[]>();
   if (error) {
     const missing = /paid_ad_versions|relation/.test(error.message);
-    return Response.json({ error: missing ? "Ad versions aren't set up in the database yet (migration 20261003700000_paid_ad_versions)." : error.message }, { status: missing ? 503 : 400 });
+    if (missing) return Response.json({ error: "Ad versions aren't set up in the database yet. Open /setup and press Apply the update." }, { status: 503 });
+    return dbFailure("research ad versions", error, "Couldn't load the ad's earlier versions. Try again.", 400);
   }
   const rows = data ?? [];
   const stored = await storedMediaFor(session, productId, rows.flatMap((v) => [v.thumb, ...(v.media ?? []).flatMap((m) => [m.url, m.thumb])]));

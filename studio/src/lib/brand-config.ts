@@ -6,5 +6,9 @@ export const APP_SLUG = "benji-gtm";
 export const APP_TAGLINE = "See what's working for your competitors";
 export const APP_DESCRIPTION =
   "Track your competitors, see which ads and posts are working for them, and turn what you learn into your own creatives.";
+/** The public repository people copy; guides link to files in it. */
+export const REPO_URL = "https://github.com/Benji-App-Studio/benji-gtm";
+/** A file in the public repository, for "full guide" links. */
+export const repoFileUrl = (path: string) => `${REPO_URL}/blob/main/${path.replace(/^\/+/, "")}`;
 /** Prefix for cookies and localStorage keys (kept short and stable across renames of APP_NAME). */
 export const STORAGE_PREFIX = "gtm";

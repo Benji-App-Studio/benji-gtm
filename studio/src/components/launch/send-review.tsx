@@ -20,7 +20,7 @@ export function Review({ plan, creatives }: { plan: SendPlan; creatives: Approve
       <p className="rounded-inner bg-caution-soft px-3 py-2.5 text-sm text-caution-ink">{plan.note}</p>
       <div className="grid gap-2 rounded-inner border border-line bg-raised p-3">
         <p className="text-xs text-muted">Money</p>
-        <p className="text-title font-medium">{plan.money.text}</p>
+        <p className="text-sm font-medium">{plan.money.text}</p>
         <p className="text-xs text-muted">In the ad account’s currency ({plan.currency}). Budgets only start once you publish in Ads Manager.</p>
       </div>
       <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -73,7 +73,7 @@ export function Results({ productId, result, drafts, adAccountId }: { productId:
   }, [productId, working, mine.length]);
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4">
       <Group title="On Meta">
         <ul className="grid gap-1.5 text-sm">
           {result.created.campaign && <li>New campaign <a className="font-medium underline-offset-2 hover:underline" href={result.created.campaign.url} target="_blank" rel="noreferrer">{result.created.campaign.name} ↗</a></li>}

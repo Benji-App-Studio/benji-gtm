@@ -59,7 +59,7 @@ export function AuthForm({ mode, signupOpen = false }: { mode: "login" | "signup
   if (sent) {
     return (
       <div className="text-center">
-        <h1 className="text-display font-medium">Check your inbox</h1>
+        <h1 className="text-display font-semibold">Check your inbox</h1>
         <p className="mt-2 text-sm text-muted">We sent a confirmation link to <b className="font-medium text-ink">{email}</b>. Open it to finish signing up.</p>
       </div>
     );
@@ -67,9 +67,9 @@ export function AuthForm({ mode, signupOpen = false }: { mode: "login" | "signup
 
   return (
     <div>
-      <h1 className="text-center text-display font-medium">{mode === "signup" ? "Create your account" : `Log in to ${APP_NAME}`}</h1>
-      {mode === "signup" && <p className="mt-1.5 text-center text-sm text-muted">Next you describe your product, which takes about two minutes.</p>}
-      <form onSubmit={submit} className="mt-7 grid gap-4">
+      <h1 className="text-center text-display font-semibold">{mode === "signup" ? "Create your account" : `Log in to ${APP_NAME}`}</h1>
+      {mode === "signup" && <p className="mt-1 text-center text-sm text-muted">Next you describe your product, which takes about two minutes.</p>}
+      <form onSubmit={submit} className="mt-8 grid gap-3.5">
         {mode === "signup" && <Field label="Your name"><input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required /></Field>}
         <Field label="Email"><input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required /></Field>
         <Field label="Password" hint={mode === "signup" ? "At least 8 characters." : undefined}>
@@ -77,11 +77,11 @@ export function AuthForm({ mode, signupOpen = false }: { mode: "login" | "signup
             autoComplete={mode === "signup" ? "new-password" : "current-password"} required />
         </Field>
         {error && <p role="alert" className="text-sm text-warn">{error}</p>}
-        <Button type="submit" disabled={busy} className="mt-1 w-full">{busy && <Spinner className="size-3.5" />}{mode === "signup" ? "Sign up" : "Log in"}</Button>
+        <Button type="submit" disabled={busy} className="mt-2 h-8 w-full">{busy && <Spinner className="size-3.5" />}{mode === "signup" ? "Sign up" : "Log in"}</Button>
       </form>
       {mode === "signup"
-        ? <p className="mt-6 text-center text-sm text-muted">Already have an account? <Link href="/login" className="rounded-xs font-medium text-accent hover:underline">Log in</Link></p>
-        : signupOpen && <p className="mt-6 text-center text-sm text-muted">No account yet? <Link href="/signup" className="rounded-xs font-medium text-accent hover:underline">Sign up</Link></p>}
+        ? <p className="mt-8 text-center text-sm text-muted">Already have an account? <Link href="/login" className="rounded-xs font-medium text-accent hover:underline">Log in</Link></p>
+        : signupOpen && <p className="mt-8 text-center text-sm text-muted">No account yet? <Link href="/signup" className="rounded-xs font-medium text-accent hover:underline">Sign up</Link></p>}
     </div>
   );
 }
@@ -142,7 +142,7 @@ function InviteFields({ hash }: { hash: string | null }) {
   if (expired || (hash !== null && !token)) {
     return (
       <div className="text-center">
-        <h1 className="text-display font-medium">{expired ? "This link no longer works" : "This link is incomplete"}</h1>
+        <h1 className="text-display font-semibold">{expired ? "This link no longer works" : "This link is incomplete"}</h1>
         <p className="mt-2 text-sm text-muted">{expired
           ? "It has expired or was already used. Ask the person who invited you to add you again: that makes a new link."
           : "Copy the whole link you were sent and open it again, or ask the person who invited you for a new one."}</p>
@@ -153,14 +153,14 @@ function InviteFields({ hash }: { hash: string | null }) {
 
   return (
     <div>
-      <h1 className="text-center text-display font-medium">Choose your password</h1>
-      <p className="mt-1.5 text-center text-sm text-muted">You were invited to {APP_NAME}. From now on you log in with your email and this password.</p>
-      <form onSubmit={submit} className="mt-7 grid gap-4">
+      <h1 className="text-center text-display font-semibold">Choose your password</h1>
+      <p className="mt-1 text-center text-sm text-muted">You were invited to {APP_NAME}. From now on you log in with your email and this password.</p>
+      <form onSubmit={submit} className="mt-8 grid gap-3.5">
         <Field label="Password" hint="At least 8 characters.">
           <input className={inputClass} type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError(""); }} minLength={8} autoComplete="new-password" required disabled={busy} />
         </Field>
         {error && <p role="alert" className="text-sm text-warn">{error}</p>}
-        <Button type="submit" disabled={busy || hash === null} className="mt-1 w-full">{busy && <Spinner className="size-3.5" />}Save and open {APP_NAME}</Button>
+        <Button type="submit" disabled={busy || hash === null} className="mt-2 h-8 w-full">{busy && <Spinner className="size-3.5" />}Save and open {APP_NAME}</Button>
       </form>
     </div>
   );

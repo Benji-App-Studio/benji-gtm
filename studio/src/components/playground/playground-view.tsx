@@ -100,20 +100,20 @@ export function PlaygroundView({ productId, openTemplate = null, library = false
         actions={<CapabilityPills features={features} backend={backend} />}
       />
       {overview.error && <ErrorNote>{overview.error}</ErrorNote>}
-      <div role="tablist" aria-label="Mode" className={cx(segmentTrackClass, "mb-4 flex w-full max-w-[320px]")}>
+      <div role="tablist" aria-label="Mode" className={cx(segmentTrackClass, "mb-4")}>
         {(["playground", "library"] as Tab[]).map((t) => (
-          <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={cx(segmentClass(tab === t), "flex-1")}>{t === "playground" ? "Playground" : "Library"}</button>
+          <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={segmentClass(tab === t)}>{t === "playground" ? "Playground" : "Library"}</button>
         ))}
       </div>
       {/* The Library is a marketplace: it takes the whole width, as many templates a row as fit. */}
       {tab === "library" ? (
-        <Card className="p-4 @2xl:p-5">
+        <div>
           <TemplateLibrary productId={productId} initialOpenId={openTemplate} productImages={overview.productImages.map((a) => ({ url: a.url, label: a.label, kind: a.kind }))} onUse={(next) => load(next)}
             imageProvider={overview.imageProvider} openaiReady={backend ? backend.openaiImages : null} openaiPlan={backend?.openaiImagePlan} />
-        </Card>
+        </div>
       ) : (
       <div className="grid items-start gap-3 @4xl:grid-cols-[minmax(340px,400px)_minmax(0,1fr)]">
-        <div ref={formRef} className="min-w-0 scroll-mt-4 @4xl:sticky @4xl:top-4">
+        <div ref={formRef} className="min-w-0 scroll-mt-14 @4xl:sticky @4xl:top-14">
           <Card className="grid gap-4 p-4">
             <PlaygroundForm
               productId={productId} overview={overview} features={features} request={request} options={options} onRequest={setRequest} onOptions={setOptions} sources={sources}

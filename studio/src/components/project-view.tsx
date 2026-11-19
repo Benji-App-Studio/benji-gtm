@@ -11,9 +11,10 @@ import { ProjectSkeleton } from "./page-skeletons";
 import { ReportView } from "./report";
 import { Review } from "./review";
 import { LockedNote, useFirstLocked } from "./research/gates";
-import { Badge, Button, ButtonLink, Card, cx, EmptyState, fmt, Gear, Page, PageHeader } from "./ui";
+import { Badge, Button, ButtonLink, Card, columnClass, cx, EmptyState, fmt, Gear, Page, PageHeader } from "./ui";
 import { createClient } from "@/lib/supabase/client";
 import { TYPE_COPY, type Estimate, type Project, type ProjectStatus } from "@/lib/types";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 type Details = { project: Project & { includeNiche?: boolean }; runs: RunSummary[]; estimate: Estimate; error?: string };
 
@@ -127,8 +128,8 @@ export function ProjectView({ id }: { id: string }) {
     setUrl("/app", true);
   }
 
-  if (missing) return <Page className="max-w-3xl"><EmptyState title="This analysis doesn't exist" body="It may have been deleted, or the link is wrong." action={<ButtonLink href="/app" variant="secondary">Back to Home</ButtonLink>} /></Page>;
-  if ((!project || !estimate) && unreachable) return <Page className="max-w-3xl"><EmptyState title="Couldn't load this analysis" body="The server didn't answer. Check your connection and try again." action={<Button variant="secondary" onClick={() => { setUnreachable(false); void load(); }}>Try again</Button>} /></Page>;
+  if (missing) return <Page className={`${columnClass} pt-16`}><EmptyState title="This analysis doesn't exist" body="It may have been deleted, or the link is wrong." action={<ButtonLink href="/app" variant="secondary">Back to Home</ButtonLink>} /></Page>;
+  if ((!project || !estimate) && unreachable) return <Page className={`${columnClass} pt-16`}><EmptyState title="Couldn't load this analysis" body="The server didn't answer. Check your connection and try again." action={<Button variant="secondary" onClick={() => { setUnreachable(false); void load(); }}>Try again</Button>} /></Page>;
   if (!project || !estimate) return <ProjectSkeleton />;
 
   const type = project.type ?? "competitors";
@@ -160,8 +161,8 @@ export function ProjectView({ id }: { id: string }) {
       {working && <LiveProgress project={project} run={project.status === "analyzing" ? liveRun : null} activity={activity} onStop={stop} />}
 
       {project.status === "error" && (
-        <Card className="mb-4 border-warn/35 p-4">
-          <h2 className="text-title font-medium text-warn">The last run stopped</h2>
+        <Card className="mb-4 border-warn/35 p-3">
+          <h2 className="text-sm font-medium text-warn">The last run stopped</h2>
           <p className="mt-1 text-sm text-muted">{project.message || "It didn't finish. Nothing was lost: earlier runs are still in the history."}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {locked && <LockedNote state={locked} />}
@@ -179,21 +180,21 @@ export function ProjectView({ id }: { id: string }) {
       )}
 
       {!editing && runs.length > 0 && (
-        <div className={cx("mt-3 grid gap-3", viewing && "@6xl:grid-cols-[minmax(0,1fr)_260px]")}>
+        <div className={cx("mt-3 grid gap-4", viewing && "@6xl:grid-cols-[minmax(0,1fr)_260px]")}>
           <div className="min-w-0">
-            {viewing ? <ReportView key={viewing.id} runId={viewing.id} project={project} /> : <Card className="p-4 text-sm text-muted">No finished run yet. A report shows here when one finishes.</Card>}
+            {viewing ? <ReportView key={viewing.id} runId={viewing.id} project={project} /> : <Card className="p-3 text-sm text-muted">No finished run yet. A report shows here when one finishes.</Card>}
           </div>
           {/* Beside the report when there's room for both; above it, compact, when there isn't. */}
           <aside className="order-first @6xl:order-none">
-            <Card className="p-4 @6xl:sticky @6xl:top-4">
-              <p className="eyebrow mb-3">Run history · {runs.length}</p>
-              <ol className="grid gap-1.5 @xl:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-1">
+            <Card className="p-3 @6xl:sticky @6xl:top-14">
+              <p className="mb-2 text-sm font-medium">Run history <span className="font-book text-muted">· {runs.length}</span></p>
+              <ol className="grid gap-0.5 @xl:grid-cols-2 @4xl:grid-cols-3 @6xl:grid-cols-1">
                 {runs.map((run, i) => (
                   <li key={run.id}>
-                    <div className={cx("group flex items-start justify-between gap-2 rounded-control border px-3 py-2 text-sm transition", viewing?.id === run.id ? "border-hairline bg-active" : "border-line hover:bg-hover")}>
+                    <div className={cx("group flex items-start justify-between gap-2 rounded-control px-2 py-1.5 text-sm transition-colors", viewing?.id === run.id ? "bg-active" : "hover:bg-hover")}>
                       <button type="button" className="min-w-0 flex-1 rounded-xs text-left disabled:cursor-default" disabled={run.status !== "done"} onClick={() => setUrl(`/app/p/${id}?run=${run.id}`)}>
-                        <span className="block font-medium">Run {runs.length - i}{i === 0 && run.status === "done" ? " · latest" : ""}</span>
-                        <span className="block text-xs text-muted">{new Date(run.started_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span>
+                        <span className="block text-sm font-medium">Run {runs.length - i}{i === 0 && run.status === "done" ? " · latest" : ""}</span>
+                        <span className="block text-xs text-muted">{new Date(run.started_at).toLocaleString(UI_LOCALE, { dateStyle: "medium", timeStyle: "short" })}</span>
                         <span className="mt-1 flex flex-wrap gap-1">
                           <Badge tone={run.status === "done" ? "win" : run.status === "running" ? "accent" : "warn"}>{run.status === "running" && <Gear className="size-3" />}{run.status === "done" ? `${run.posts ?? 0} posts` : run.status === "running" ? "running" : "failed"}</Badge>
                           {run.status === "done" && <Badge>{run.settings.sinceDays}d</Badge>}

@@ -71,7 +71,7 @@ function ModelsForm({ install, manage, note, setNote }: { install: InstallState;
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-8">
+    <form onSubmit={submit} className="grid gap-10">
       <SettingsGroup title="Provider">
         <SettingsRow label="AI provider" description="The service that reads ads and posts, writes analyses and checks creatives."
           below={needsKey ? <Locked className="mt-2.5" href="/app/settings/keys" action="Add the key">{chosen.label} needs its API key before it can be used</Locked> : null}>
@@ -93,7 +93,7 @@ function ModelsForm({ install, manage, note, setNote }: { install: InstallState;
       </SettingsGroup>
 
       {manage && (
-        <div className="-mt-4 flex flex-wrap items-center gap-2">
+        <div className="-mt-6 flex flex-wrap items-center gap-2">
           <Button type="submit" size="sm" disabled={!dirty || busy !== null}>{busy === "save" && <Spinner className="size-3.5" />}Save</Button>
           <Button type="button" variant="secondary" size="sm" disabled={busy !== null} onClick={() => { void send("reset", { models: null }, "The models are back to the defaults."); }}>{busy === "reset" && <Spinner className="size-3.5" />}Reset models to defaults</Button>
           <Status error={note.error} ok={note.ok} className="ml-1" />

@@ -10,7 +10,7 @@
 // dropped connections) are retried with backoff; token use is summed. An answer that is missing,
 // partial or out of range is an error, never a silent zero: the caller retries or reports it.
 // Plain TypeScript with fetch injected: Deno tests run it with no network.
-import { type AnswerFor, type Entry, type Judge, JudgeError, type JudgeRequest, type JudgeResult, type JsonValue, type Question, type Questions } from "./judge.ts";
+import { type AnswerFor, type Entry, type Judge, JudgeError, type JudgeRequest, type JudgeResult, type JsonValue, keyRefusal, type Question, type Questions } from "./judge.ts";
 import { MODEL_DEFAULTS } from "./models.ts";
 import { validateQuestions } from "./questions.ts";
 
@@ -291,7 +291,9 @@ export function openaiJudge(options: OpenAiJudgeOptions): Judge {
       // Out of credit is also a 429, and waiting doesn't fix it.
       const retryable = (response.status === 429 && data?.error?.code !== "insufficient_quota") || response.status >= 500;
       if (retryable && attempt < maxRetries) { await sleep(waitFor(response, attempt)); continue; }
-      if (response.status === 401) throw new JudgeError("http", "openai", "OpenAI didn't accept your key. Check your OpenAI key in Settings > API keys.", 401);
+      // A refused key (401/403, out of credit, billing) is the key's problem, not this request's.
+      const refused = keyRefusal("openai", response.status, data);
+      if (refused) throw refused;
       throw new JudgeError("http", "openai", `OpenAI: ${String(data?.error?.message ?? `error ${response.status}`).slice(0, 200)}`, response.status);
     }
   }

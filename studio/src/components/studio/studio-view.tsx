@@ -144,7 +144,7 @@ export function StudioView({ productId }: { productId: string }) {
         actions={<CapabilityPills features={features} backend={backend} />} />
       {overview.error && <ErrorNote>{overview.error}</ErrorNote>}
 
-      <section className="mb-8">
+      <section className="mb-10">
         <SectionHeader title="New batch" action={<button type="button" className="rounded-xs text-xs text-muted transition-colors hover:text-ink" onClick={() => setShowForm(!showForm)} aria-expanded={showForm}>{showForm ? "Hide" : "Show"}</button>} />
         {showForm && (
           <details className="group mb-3 text-xs">
@@ -159,7 +159,7 @@ export function StudioView({ productId }: { productId: string }) {
         )}
       </section>
 
-      <section className="mb-8">
+      <section className="mb-10">
         <SectionHeader title="Jobs" />
         <JobList batches={overview.batches} jobs={jobs} features={features} onChanged={() => { reload().catch(() => {}); }} launchableByBatch={launchableByBatch} onSendToMeta={setSendIds} />
       </section>

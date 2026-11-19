@@ -18,6 +18,7 @@ import { brandFor } from "./brand";
 import { renderPost } from "./creative-render";
 import { creativesBackend } from "./creatives-backend";
 import { fmtUsd } from "@/lib/image-provider";
+import { refuseWhenFull } from "./storage";
 
 export interface BatchStarted { batchId: string; jobIds: string[]; credits: number; usd?: number; rendered: number; warnings: string[] }
 
@@ -63,6 +64,9 @@ export async function createBatch(session: Session, productId: string, requestIn
   const { supabase } = session;
   const { data: product } = await supabase.from("products").select("id, name, description, category_label").eq("id", productId).maybeSingle<{ id: string; name: string; description: string; category_label: string | null }>();
   if (!product) throw new BatchError("This workspace doesn't exist.", 404);
+  // Storage full: nothing is queued or paid for, since the results couldn't be saved.
+  const full = await refuseWhenFull(session, "generate");
+  if (full) throw new BatchError(((await full.json()) as { error: string }).error, 507);
   const [found, merged] = await Promise.all([getWorkspace(productId), brandFor(session, productId)]);
   // The merged brand (lib/server/brand.ts): the kit's basics, colours, tone and every forbidden claim.
   const workspace: Workspace = { ...found, brandKit: merged.kit };

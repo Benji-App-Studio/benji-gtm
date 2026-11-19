@@ -94,7 +94,7 @@ export function DestinationStep({ productId, mode, onMode, stage, onStage, campa
   };
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4">
       <Group title="Where should the ads go?" hint="Everything is created paused. Nothing spends until you publish it in Ads Manager.">
         <Choice name="mode" value={mode} onChange={onMode} options={[
           { value: "existing", label: "An existing ad set", hint: "Add the ads next to the ones already there." },
@@ -164,10 +164,10 @@ export function DestinationStep({ productId, mode, onMode, stage, onStage, campa
 
 function Row({ selected, disabled, onSelect, onEdit, title, badges, detail }: { selected: boolean; disabled?: boolean; onSelect: () => void; onEdit: () => void; title: string; badges: React.ReactNode; detail: string }) {
   return (
-    <div className={cx("flex items-start gap-2 rounded-inner border p-2.5 transition", selected ? "border-ink/50 bg-raised ring-1 ring-ink/20" : "border-line hover:border-ink/25", disabled && "opacity-60")}>
+    <div className={cx("flex items-start gap-2 rounded-inner border p-2.5 transition", selected ? "border-accent/60 bg-raised ring-1 ring-accent/30" : "border-line hover:border-hairline hover:bg-hover", disabled && "opacity-60")}>
       <button type="button" disabled={disabled} onClick={onSelect} aria-pressed={selected} className="min-w-0 flex-1 text-left disabled:cursor-not-allowed">
         <span className="flex items-start gap-2">
-          <span className={cx("mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border text-[10px]", selected ? "border-transparent bg-primary text-on-ink" : "border-line")}>{selected ? "✓" : ""}</span>
+          <span className={cx("mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border text-[10px]", selected ? "border-transparent bg-accent-fill text-on-accent" : "border-hairline")}>{selected ? "✓" : ""}</span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-medium">{title}</span>
             <span className="mt-1 flex flex-wrap gap-1">{badges}</span>

@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { approvalProblem } from "@/lib/creative-review";
 import { isResponse, requireUser } from "@/lib/server/auth";
+import { dbFailure } from "@/lib/server/errors";
 
 interface Row { id: string; job_id: string | null; qa_status: string; qa: { needsHuman?: string[] } | null; kind: string; thumbnail_url: string | null; copy: Record<string, unknown> | null }
 
@@ -40,6 +41,6 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/studio
   }
   if (!Object.keys(update).length) return Response.json({ error: "Nothing to change." }, { status: 400 });
   const { data, error } = await session.supabase.from("creatives").update(update).eq("id", id).select("id, approval, approval_note, reviewed_at, notes, title, headline, primary_text, description, cta, qa_status").single();
-  if (error) return Response.json({ error: error.message }, { status: 400 });
+  if (error) return dbFailure("creative update", error, "Couldn't save the change. Try again.", 400);
   return Response.json(data);
 }

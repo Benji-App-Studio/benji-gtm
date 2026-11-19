@@ -86,15 +86,15 @@ export function Queue({ productId, creatives, launched, settings, status, onQueu
           : <EmptyState className="py-8" title="No approved creatives yet" body="Only approved creatives can launch. Review and approve them in the Studio and they show here."
               action={<ButtonLink href={workspaceHref(productId, "studio")} variant="secondary" size="sm">Approve creatives in the Studio</ButtonLink>} />
       ) : (
-        <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-4 @4xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 @lg:grid-cols-3 @2xl:grid-cols-5 @4xl:grid-cols-6">
           {visible.map((c, i) => {
             const on = Boolean(picked[c.id]);
             return (
               <button key={c.id} type="button" onClick={() => toggle(c)} aria-pressed={on} style={{ "--i": i } as React.CSSProperties}
-                className={cx("rise group relative flex min-w-0 flex-col overflow-hidden rounded-card border bg-card text-left shadow-card transition", on ? "border-accent ring-2 ring-accent/40" : "border-line hover:border-ink/40")}>
+                className={cx("rise group relative flex min-w-0 flex-col overflow-hidden rounded-small border bg-card text-left transition-colors", on ? "border-accent ring-1 ring-accent/50" : "border-line hover:border-hairline hover:bg-hover")}>
                 <Media creative={c} className="aspect-[4/5] w-full" />
-                <span className="flex min-w-0 flex-col gap-1 p-2.5">
-                  <span className="truncate text-sm font-medium">{c.title ?? c.headline ?? c.id}</span>
+                <span className="flex min-w-0 flex-col gap-1 p-2">
+                  <span className="truncate text-xs font-medium">{c.title ?? c.headline ?? c.id}</span>
                   <span className="flex flex-wrap gap-1">
                     <Badge>{c.kind === "video" ? `Video${c.durationSec ? ` · ${Math.round(c.durationSec)}s` : ""}` : "Image"}</Badge>
                     <Badge>{c.aspect}</Badge>
@@ -102,7 +102,7 @@ export function Queue({ productId, creatives, launched, settings, status, onQueu
                   </span>
                   {(c.formatCardId || c.hookType) && <span className="truncate font-mono text-[10px] text-muted">{[c.formatSlug ?? c.formatCardId, c.hookType].filter(Boolean).join(" · ")}</span>}
                 </span>
-                <span aria-hidden className={cx("absolute top-2 left-2 grid size-5 place-items-center rounded-full border text-[11px]", on ? "border-transparent bg-accent text-on-ink" : "border-hairline bg-card/90 text-transparent")}>✓</span>
+                <span aria-hidden className={cx("absolute top-2 left-2 grid size-5 place-items-center rounded-full border text-[11px]", on ? "border-transparent bg-accent-fill text-on-accent" : "border-hairline bg-card/90 text-transparent")}>✓</span>
               </button>
             );
           })}
@@ -110,32 +110,32 @@ export function Queue({ productId, creatives, launched, settings, status, onQueu
       )}
 
       {ids.length > 0 && (
-        <div className="mt-6 grid gap-4">
+        <div className="mt-4 grid gap-3">
           {ids.map((id) => {
             const c = creatives.find((x) => x.id === id)!;
             const copy = picked[id];
             return (
               <Card key={id} className="grid min-w-0 gap-4 p-4 @3xl:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="grid min-w-0 content-start gap-3">
-                  <p className="text-xs font-medium text-faint">{c.title ?? c.id}</p>
+                  <p className="text-xs font-medium text-muted">{c.title ?? c.id}</p>
                   <label className="grid gap-1.5">
-                    <span className="text-sm font-medium">Primary text <span className="font-normal text-muted">({copy.primaryText.length}/125 shown before “more”)</span></span>
+                    <span className="text-xs font-medium text-label">Primary text <span className="font-book text-muted">({copy.primaryText.length}/125 shown before “more”)</span></span>
                     <textarea rows={4} value={copy.primaryText} onChange={(e) => edit(id, { primaryText: e.target.value })} className={inputClass} maxLength={2000} />
                   </label>
                   <div className="grid gap-3 @lg:grid-cols-[minmax(0,1fr)_200px]">
                     <label className="grid gap-1.5">
-                      <span className="text-sm font-medium">Headline <span className="font-normal text-muted">({copy.headline.length}/40)</span></span>
+                      <span className="text-xs font-medium text-label">Headline <span className="font-book text-muted">({copy.headline.length}/40)</span></span>
                       <input value={copy.headline} onChange={(e) => edit(id, { headline: e.target.value })} className={inputClass} maxLength={255} />
                     </label>
                     <label className="grid gap-1.5">
-                      <span className="text-sm font-medium">Call to action</span>
+                      <span className="text-xs font-medium text-label">Call to action</span>
                       <select value={copy.cta} onChange={(e) => edit(id, { cta: e.target.value })} className={inputClass}>
                         {CTA_OPTIONS[objective].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                     </label>
                   </div>
                   <label className="grid gap-1.5">
-                    <span className="text-sm font-medium">Description <span className="font-normal text-muted">(disclaimers; not shown on Instagram)</span></span>
+                    <span className="text-xs font-medium text-label">Description <span className="font-book text-muted">(disclaimers; not shown on Instagram)</span></span>
                     <input value={copy.description} onChange={(e) => edit(id, { description: e.target.value })} className={inputClass} maxLength={255} />
                   </label>
                   <label className="flex items-center gap-2 text-sm">
@@ -148,7 +148,7 @@ export function Queue({ productId, creatives, launched, settings, status, onQueu
               </Card>
             );
           })}
-          <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-card/95 p-3 shadow-pop backdrop-blur">
+          <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-card border border-hairline bg-raised/95 px-3 py-2 shadow-pop backdrop-blur">
             <span className="text-sm">{ids.length} selected · {ready ? "goes to the testing ad set, paused" : "finish the setup in Settings first"}</span>
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" onClick={() => setPicked({})}>Clear</Button>
@@ -174,9 +174,9 @@ function AdPreview({ creative, copy, pageName, ctaText, link }: { creative: Appr
   let host = "";
   try { host = link ? new URL(link).host.replace(/^www\./, "") : ""; } catch { /* no link yet */ }
   return (
-    <div className="min-w-0 overflow-hidden rounded-card border border-line bg-canvas">
+    <div className="min-w-0 overflow-hidden rounded-small border border-line bg-canvas">
       <div className="flex items-center gap-2 p-3">
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary text-xs font-medium text-on-ink">{pageName.slice(0, 1)}</span>
+        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-control text-xs font-medium text-label">{pageName.slice(0, 1)}</span>
         <span className="min-w-0"><span className="block truncate text-sm font-medium">{pageName}</span><span className="block text-xs text-muted">Sponsored</span></span>
       </div>
       <p className="line-clamp-3 px-3 pb-3 text-sm whitespace-pre-line">{copy.primaryText || <span className="text-faint">Primary text</span>}</p>

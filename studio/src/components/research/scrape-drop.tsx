@@ -7,6 +7,7 @@ import { useEffect, useEffectEvent, useId, useRef, useState, type DragEvent as R
 import { IconUpload } from "../icons";
 import { PanelPortal } from "../panel-portal";
 import { cx, Spinner } from "../ui";
+import { StorageNotice } from "../storage-notice";
 
 const isJson = (file: File) => /\.json$/i.test(file.name) || file.type === "application/json";
 
@@ -62,8 +63,8 @@ export function ScrapeDropZone({ onFiles, onChoose, busy, busyText = "Importingâ
           over ? "border-accent bg-accent-soft" : "border-hairline bg-raised hover:bg-hover",
         )}
       >
-        <span className={cx("grid size-8 shrink-0 place-items-center rounded-control text-accent transition", over ? "bg-raised" : "bg-accent-soft")} aria-hidden>
-          {busy ? <Spinner /> : <IconUpload className="size-4" />}
+        <span className={cx("grid size-6 shrink-0 place-items-center rounded-md text-accent transition", over ? "bg-raised" : "bg-accent-soft")} aria-hidden>
+          {busy ? <Spinner className="size-3.5" /> : <IconUpload className="size-3.5" />}
         </span>
         <span className="min-w-0">
           <span id={`${id}-title`} className="block text-ink">
@@ -72,6 +73,8 @@ export function ScrapeDropZone({ onFiles, onChoose, busy, busyText = "Importingâ
           <span id={`${id}-hint`} className="block text-xs text-muted">The .json files the Ad Library extension saves: one per {ours ? "Page" : "competitor"}, as many as you like at once.</span>
         </span>
       </button>
+      {/* Importing saves the ads' images and videos: at 95% of storage, say so first (the import's own check leaves out what won't fit). */}
+      <StorageNotice action="save_media" />
       {message && (
         <p id={`${id}-message`} role={message.tone === "error" ? "alert" : "status"} className={cx("text-xs", message.tone === "error" ? "text-warn" : "text-muted")}>
           {message.text}
@@ -152,11 +155,11 @@ export function usePageFileDrop({ enabled, onFiles }: { enabled: boolean; onFile
 export function PageDropOverlay({ shown }: { shown: boolean }) {
   if (!shown) return null;
   return (
-    <PanelPortal>
+    <PanelPortal modal={false}>
       <div className="pointer-events-none fixed inset-0 z-[90] bg-canvas/60 p-3 backdrop-blur-xs" aria-hidden>
         <div className="grid size-full place-items-center rounded-dialog border-2 border-dashed border-accent bg-accent-soft/50">
           <div className="flex items-center gap-3 rounded-card border border-line bg-raised px-4 py-3 shadow-pop">
-            <span className="grid size-8 place-items-center rounded-control bg-accent-soft text-accent"><IconUpload className="size-4" /></span>
+            <span className="grid size-6 place-items-center rounded-md bg-accent-soft text-accent"><IconUpload className="size-3.5" /></span>
             <span>
               <span className="block text-sm font-medium text-ink">Drop to import ads</span>
               <span className="block text-xs text-muted">One or many .json files the Ad Library extension saved</span>

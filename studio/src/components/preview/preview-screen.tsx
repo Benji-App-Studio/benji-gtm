@@ -8,6 +8,7 @@ import { AuthForm } from "../auth-form";
 import { EntryFrame } from "../entry-frame";
 import { IconChart, IconCompass, IconFilters, IconMore, IconPlus, IconRocket, IconSparkles, IconTrash } from "../icons";
 import { PathOverride } from "../nav/path";
+import { AccountSettings } from "../settings/account";
 import { AppSettings } from "../settings/app-settings";
 import { AppearanceSettings } from "../settings/appearance-settings";
 import { GeneralSettings } from "../settings/general";
@@ -41,6 +42,7 @@ const VIEWS: { view: string; label: string }[] = [
   { view: "locked", label: "A page that needs a key" },
   { view: "components", label: "Shared components" },
   { view: "settings", label: "Settings: General" },
+  { view: "settings/account", label: "Settings: Account (local copy)" },
   { view: "settings/keys", label: "Settings: API keys" },
   { view: "settings/models", label: "Settings: AI models" },
   { view: "settings/members", label: "Settings: Members" },
@@ -106,7 +108,8 @@ export function PreviewScreen({ view, role, fail }: { view: string; role: string
   const page: ReactNode = view === "home" ? <SamplePage />
     : view === "locked" ? <Page><PageHeader crumbs={[{ label: "Trailmix", href: "/preview/home" }, { label: "Launch" }]} title="Launch" subtitle="Send approved creatives to Meta as paused drafts." /><ConnectState title="Connect Meta to use Launch" body="Launch needs a Meta system user token and app secret to create paused drafts in your ad account." action="Add the Meta keys" /></Page>
     : view === "components" ? <Gallery />
-    : view === "settings" ? <GeneralSettings account={{ name: "Sam Rivera", email: "sam@northfield.example", since: "2026-09-12T10:00:00Z" }} />
+    : view === "settings" ? <GeneralSettings />
+    : view === "settings/account" ? <AccountSettings local account={{ name: "Sam Rivera", email: "sam@northfield.example", since: "2026-09-12T10:00:00Z" }} />
     : view === "settings/keys" ? <KeysSettings />
     : view === "settings/models" ? <ModelsSettings />
     : view === "settings/members" ? <MembersSettings />
@@ -198,7 +201,7 @@ function Gallery() {
   return (
     <Page>
       <PageHeader crumbs={[{ label: "Pocket Garden", href: "/preview/home" }, { label: "Research" }]} title="Shared components" badge={<Badge tone="accent">Preview</Badge>} subtitle="Everything pages are built from, in the current theme."
-        actions={<><SearchField placeholder="Search" hint="⌘K" className="w-48" /><Button variant="secondary" size="sm">Export</Button><Button size="sm">Save</Button></>} />
+        actions={<><SearchField aria-label="Search" placeholder="Search" hint="⌘K" className="w-48" /><Button variant="secondary" size="sm">Export</Button><Button size="sm">Save</Button></>} />
       <div className="grid gap-6">
         {block("Buttons", <>
           <Button>Primary</Button><Button variant="secondary">Secondary</Button><Button variant="ghost">Ghost</Button><Button variant="danger"><IconTrash />Delete</Button><Button disabled>Disabled</Button>

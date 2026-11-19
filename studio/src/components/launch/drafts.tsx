@@ -29,11 +29,11 @@ export function Drafts({ drafts, adAccountId }: { drafts: LaunchDraft[]; adAccou
       {drafts.length === 0 ? (
         <EmptyState className="py-8" title="Nothing launched yet" body="Pick approved creatives above and launch them: they arrive here as paused drafts." />
       ) : (
-        <Card className="divide-y divide-line">
+        <Card className="overflow-hidden py-1">
           {shown.map((d) => {
             const s = STATUS[d.status];
             return (
-              <div key={d.id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-3">
+              <div key={d.id} className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1.5 px-3 py-2 transition-colors hover:bg-hover">
                 <div className="min-w-0 flex-1 basis-64">
                   <p className="font-mono text-xs break-all">{d.ad_name}</p>
                   <p className="mt-0.5 truncate text-xs text-muted">{d.headline || d.primary_text}</p>
@@ -48,7 +48,7 @@ export function Drafts({ drafts, adAccountId }: { drafts: LaunchDraft[]; adAccou
               </div>
             );
           })}
-          {drafts.length > shown.length && <button type="button" onClick={() => setAll(true)} className="w-full px-4 py-2.5 text-left text-xs text-muted hover:text-ink">Show all {drafts.length}</button>}
+          {drafts.length > shown.length && <button type="button" onClick={() => setAll(true)} className="h-9 w-full px-3 text-left text-xs text-muted hover:text-ink">Show all {drafts.length}</button>}
         </Card>
       )}
     </Section>

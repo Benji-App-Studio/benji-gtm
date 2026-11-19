@@ -299,7 +299,7 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
   if (open) {
     const style = open.kind === "starter" && open.starterId ? adStyleById(open.starterId) : undefined;
     return (
-      <div className="@container mx-auto w-full max-w-3xl">
+      <div className="@container mx-auto w-full max-w-[700px]">
         {style
           ? <StyleDetail key={open.id} style={style} title={open.name} ctx={ctx} loading={loading} productKind={productKind} productImages={productImages} onUse={onUse} onBack={() => setOpenId(null)} productId={productId} />
           : open.analysis
@@ -328,7 +328,7 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
     return (
       <>
       <div {...dropHandlers} className={cx("grid justify-items-center rounded-inner border border-dashed px-5 py-9 text-center transition", over ? "border-accent bg-accent-soft ring-2 ring-accent/30" : "border-ink/20")}>
-        <span className="grid size-8 place-items-center rounded-full bg-control text-muted"><IconImage className="size-4" /></span>
+        <span className="text-faint"><IconImage className="size-6" /></span>
         <p className="mt-3 text-sm font-medium text-ink">This product&apos;s Library is empty</p>
         <p className="mt-1 max-w-[300px] text-caption text-muted">Upload an ad you like: it&apos;s read and turned into a clean, reusable template for this product. Or start from {AD_STYLES.length} proven formats. Templates stay with this product.</p>
         <div className="mt-4 flex flex-wrap justify-center gap-1.5">
@@ -348,10 +348,10 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
   return (
     <>
     <div {...dropHandlers} className={cx("@container relative rounded-inner transition", over && "ring-2 ring-accent/40 ring-offset-4 ring-offset-card")}>
-      <div className="mb-4 grid gap-3">
+      <div className="mb-3 grid gap-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-title font-medium text-ink">Template library</h2>
+            <h2 className="text-sm font-medium text-ink">Template library</h2>
             <p className="text-xs text-muted">{templates.length} template{templates.length === 1 ? "" : "s"} for this product. Open one, fill in your words and images, and the Playground makes it.</p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -362,7 +362,7 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search templates" aria-label="Search templates"
-            className={cx(inputClass, "h-8 w-full max-w-[260px] py-1")} />
+            className={cx(inputClass, "w-full max-w-[240px]")} />
           {aiLock && <FeatureLock state={aiLock}>An uploaded ad is read by the AI before it becomes a template</FeatureLock>}
           <Segmented label="Show" value={filter} onChange={setFilter} options={[
             { value: "all" as const, label: <>All <span className="text-faint tabular-nums">{templates.length}</span></> },
@@ -376,7 +376,7 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
         </div>
       </div>
 
-      <ul className="grid grid-flow-row-dense grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 @4xl:grid-cols-[repeat(auto-fill,minmax(230px,1fr))]">
+      <ul className="grid grid-flow-row-dense grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2 @4xl:grid-cols-[repeat(auto-fill,minmax(176px,1fr))]">
         {canUpload && pending.map((p) => (
           <li key={p.key} className="min-w-0">
             <TileFrame name={p.name} aspect={null} status={null} image={p.preview} dim overlay={<Working label="Uploading…" shimmer />} />
@@ -440,31 +440,31 @@ function TileFrame({ name, aspect, status, image, dim, overlay, onOpen, menu, ed
   const picture = (
     <>
       {image
-        ? <StyleThumb src={thumbUrl(image, 640)} alt={name} fallback="No image" className={cx("size-full !object-contain p-3 drop-shadow-raised transition duration-300", dim && "opacity-35 blur-[1px]", onOpen && "group-hover:scale-[1.03]")} />
-        : <span className="block size-full bg-gradient-to-br from-line to-canvas" />}
+        ? <StyleThumb src={thumbUrl(image, 640)} alt={name} fallback="No image" className={cx("size-full !object-contain p-2 transition duration-300", dim && "opacity-35 blur-[1px]", onOpen && "group-hover:scale-[1.03]")} />
+          : <span className="block size-full bg-control" />}
       {overlay && <span className="absolute inset-0 grid place-items-center">{overlay}</span>}
       {aspect && <Pill className="absolute top-2 left-2">{aspect}</Pill>}
       {status && <Pill dot={status.dot} className="absolute top-2 right-2">{status.label}</Pill>}
       {note && <Pill className="absolute bottom-2 left-2 max-w-[calc(100%-1rem)]"><span className="truncate" title={note}>{note}</span></Pill>}
       {onOpen && !overlay && (
         <span className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-3 opacity-0 transition group-hover:opacity-100">
-          <span className="rounded-full bg-ink px-3 py-1 text-xs font-medium text-canvas shadow-pop">Use template</span>
+          <span className="rounded-full border border-hairline bg-raised px-2.5 py-1 text-xs font-medium text-ink shadow-raised">Use template</span>
         </span>
       )}
     </>
   );
-  const box = "relative block aspect-[4/5] w-full overflow-hidden border-b border-line bg-gradient-to-b from-control to-canvas";
+  const box = "relative block aspect-[4/5] w-full overflow-hidden border-b border-line bg-control";
   return (
-    <div className="group flex h-full min-w-0 flex-col overflow-hidden rounded-card border border-line bg-card shadow-card transition hover:border-ink/20">
+    <div className="group flex h-full min-w-0 flex-col overflow-hidden rounded-small border border-line bg-card transition hover:border-ink/20">
       {onOpen
-        ? <button type="button" onClick={onOpen} aria-label={`Open ${name}`} className={cx(box, "focus-visible:ring-4 focus-visible:ring-ink/5 focus-visible:outline-none")}>{picture}</button>
+        ? <button type="button" onClick={onOpen} aria-label={`Open ${name}`} className={cx(box, "focus-visible:outline-2 focus-visible:-outline-offset-2")}>{picture}</button>
         : <div className={box}>{picture}</div>}
-      <div className="flex min-h-12 items-center gap-1 py-1.5 pr-1 pl-3">
+      <div className="flex min-h-11 items-center gap-1 py-1 pr-1 pl-2.5">
         {editing && onRenamed
           ? <RenameInput name={name} onDone={onRenamed} />
           : (
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13.5px] font-medium text-ink" title={name}>{name}</span>
+              <span className="block truncate text-sm font-medium text-ink" title={name}>{name}</span>
               {caption && <span className="block truncate text-xs text-muted" title={caption}>{caption}</span>}
             </span>
           )}
@@ -518,11 +518,11 @@ function AnalyzedCard({ template: t, acting, onMake, onRename, onRemove, provide
   const shownFields = fields.slice(0, 4);
   const estimate = remakeEstimate(t, provider);
   return (
-    <div className="flex h-full min-w-0 gap-3 rounded-card border border-line bg-card p-2.5 shadow-card">
+    <div className="flex h-full min-w-0 gap-3 rounded-small border border-line bg-card p-2.5">
       <div className="relative w-[92px] shrink-0 self-start overflow-hidden rounded-inner border border-line bg-control">
         {t.sourceUrl
           ? <StyleThumb src={thumbUrl(t.sourceUrl, 200)} alt={`${t.name}, the uploaded ad`} fallback="No image" className="aspect-[4/5] w-full object-top" />
-          : <span className="block aspect-[4/5] w-full bg-gradient-to-br from-line to-canvas" />}
+            : <span className="block aspect-[4/5] w-full bg-control" />}
         <Pill dot={STATUS.analyzed.dot} className="absolute bottom-1.5 left-1.5">{STATUS.analyzed.label}</Pill>
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -536,7 +536,7 @@ function AnalyzedCard({ template: t, acting, onMake, onRename, onRemove, provide
         </div>
         {guidanceCaption(a) && <p className="-mt-1.5 truncate text-xs text-muted" title={a?.bestFor}>{guidanceCaption(a)}</p>}
         <div className="grid gap-0.5">
-          <span className="text-xs font-medium text-label">{fields.length ? `${fields.length} text slot${fields.length === 1 ? "" : "s"}` : "No text on the image"}</span>
+          <span className="text-xs font-medium text-muted">{fields.length ? `${fields.length} text slot${fields.length === 1 ? "" : "s"}` : "No text on the image"}</span>
           {shownFields.map((f) => (
             <span key={f.key} className="flex min-w-0 gap-1.5 text-xs leading-4">
               <span className="shrink-0 text-label">{f.label}</span>
@@ -581,12 +581,12 @@ function CardMenu({ disabled, onRename, onRemove }: { disabled?: boolean; onRena
     document.addEventListener("keydown", key);
     return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", key); };
   }, [open]);
-  const item = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-control focus-visible:bg-control focus-visible:outline-none [&_svg]:size-3.5";
+  const item = "flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-sm transition hover:bg-active focus-visible:bg-active focus-visible:outline-none [&_svg]:size-3.5";
   return (
     <div ref={box} className="relative shrink-0">
       <IconButton size="sm" label="More" disabled={disabled} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} />
       {open && (
-        <div role="menu" className="page-in absolute right-0 bottom-full z-20 mb-1 w-36 rounded-inner border border-line bg-raised p-1 shadow-pop">
+        <div role="menu" className="page-in absolute right-0 bottom-full z-20 mb-1 w-36 rounded-card border border-hairline bg-raised p-1 shadow-pop">
           <button type="button" role="menuitem" onClick={() => { setOpen(false); onRename(); }} className={cx(item, "text-ink")}><IconPencil />Rename</button>
           <button type="button" role="menuitem" onClick={() => { setOpen(false); onRemove(); }} className={cx(item, "text-warn")}><IconTrash />Remove</button>
         </div>
@@ -599,10 +599,10 @@ function LibrarySkeleton() {
   return (
     <div aria-busy="true">
       <span className="sr-only">Loading the Library</span>
-      <div className="mb-3 flex items-center justify-between"><Bone className="h-8 w-52 rounded-control" /><Bone className="h-7 w-20 rounded-control" /></div>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="mb-3 flex items-center justify-between"><Bone className="h-7 w-52 rounded-control" /><Bone className="h-7 w-20 rounded-control" /></div>
+      <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="overflow-hidden rounded-card border border-line bg-card">
+          <div key={i} className="overflow-hidden rounded-small border border-line bg-card">
             <Bone className="aspect-[4/5] w-full !rounded-none" />
             <div className="flex h-10 items-center px-2.5"><Bone className="h-3 w-24" /></div>
           </div>
@@ -617,38 +617,33 @@ function LibrarySkeleton() {
 /** The 15 built-in formats, grouped as before, each added to this product's Library with one click. */
 function StarterSheet({ added, acting, onAdd, onClose }: { added: Set<string>; acting: string | null; onAdd: (style: AdStyle) => void; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEffect(() => { closeRef.current?.focus(); }, []);
   return (
-    <PanelPortal>
+    <PanelPortal onClose={onClose}>
       <div className={cx(PANEL_OVERLAY, "z-[70]")} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
         <div role="dialog" aria-modal="true" aria-label="Starter templates" className={cx(PANEL, "page-in @container max-w-[600px]")}>
           <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-line bg-card px-4 py-3">
             <div className="min-w-0">
-              <h2 className="text-title font-medium">Starter templates</h2>
+              <h2 className="text-sm font-medium">Starter templates</h2>
               <p className="mt-0.5 text-xs text-muted">{AD_STYLES.length} proven Meta ad formats. Free to add; they stay in this product&apos;s Library. <span className="tabular-nums">{added.size} added</span></p>
             </div>
             <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="grid size-7 shrink-0 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink"><IconX className="size-4" /></button>
           </header>
-          <div className="grid gap-5 p-4">
+          <div className="grid gap-4 p-4">
             {STYLE_GROUPS.map((g) => (
               <section key={g.id} aria-label={g.label}>
-                <h3 className="mb-2 text-xs font-medium text-label">{g.label}</h3>
+                <h3 className="mb-2 text-xs font-medium text-muted">{g.label}</h3>
                 <ul className="grid grid-cols-2 gap-2.5 @lg:grid-cols-3">
                   {AD_STYLES.filter((s) => s.group === g.id).map((s) => {
                     const isAdded = added.has(s.id);
                     return (
-                      <li key={s.id} className="flex min-w-0 flex-col overflow-hidden rounded-card border border-line bg-card shadow-card">
+                      <li key={s.id} className="flex min-w-0 flex-col overflow-hidden rounded-small border border-line bg-card">
                         <div className="relative aspect-[4/5] w-full overflow-hidden border-b border-line bg-control">
                           <StyleThumb src={s.thumbImage} alt={`${s.name} example`} className="size-full object-top" />
                           <Pill className="absolute top-2 left-2">{s.aspects.join(" · ")}</Pill>
                         </div>
                         <div className="flex flex-1 flex-col gap-1 p-2.5">
-                          <span className="truncate text-sm font-medium text-ink" title={s.name}>{s.name}</span>
+                          <span className="truncate text-xs font-medium text-ink" title={s.name}>{s.name}</span>
                           {guidanceCaption(s) && <span className="-mt-1 truncate text-xs text-faint">{guidanceCaption(s)}</span>}
                           <p className="line-clamp-2 min-h-8 text-xs leading-4 text-muted">{s.tagline}</p>
                           <Button size="sm" variant={isAdded ? "ghost" : "secondary"} disabled={isAdded || acting === s.id} onClick={() => onAdd(s)} className="mt-1.5 w-full">
@@ -680,12 +675,7 @@ function ImportSheet({ url, acting, onImport, onClose }: { url: string; acting: 
   const [loadFailed, setLoadFailed] = useState(false);
   const [done, setDone] = useState<Set<string>>(() => new Set());
   const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEffect(() => { closeRef.current?.focus(); }, []);
   // Always fresh when it opens (another tab may have made templates meanwhile); a failure shows a retry.
   const load = useCallback(() => { reload().then(() => setLoadFailed(false), () => setLoadFailed(true)); }, [reload]);
   useEffect(() => { load(); }, [load]);
@@ -694,21 +684,21 @@ function ImportSheet({ url, acting, onImport, onClose }: { url: string; acting: 
   const take = async (t: ImportableTemplate) => { if (await onImport(t)) setDone((d) => new Set(d).add(t.id)); };
 
   return (
-    <PanelPortal>
+    <PanelPortal onClose={onClose}>
       <div className={cx(MODAL_OVERLAY, "z-[70]")} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
         <div role="dialog" aria-modal="true" aria-label="Import from another product" className={cx(MODAL, "page-in @container max-w-[640px]")}>
           <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-line bg-card px-4 py-3">
             <div className="min-w-0">
-              <h2 className="text-title font-medium">Import from another product</h2>
+              <h2 className="text-sm font-medium">Import from another product</h2>
               <p className="mt-0.5 text-xs text-muted">Ready templates from your other products. Free: the template image is reused, nothing new is made. You fill it in for this product as usual.</p>
             </div>
             <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="grid size-7 shrink-0 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink"><IconX className="size-4" /></button>
           </header>
-          <div className="grid gap-5 p-4">
+          <div className="grid gap-4 p-4">
             {!listing && !loadFailed ? (
               <div aria-busy="true" className="grid grid-cols-2 gap-2.5 @lg:grid-cols-3">
                 <span className="sr-only">Loading your other products</span>
-                {[0, 1, 2].map((i) => <Bone key={i} className="aspect-[4/5] w-full rounded-card" />)}
+                {[0, 1, 2].map((i) => <Bone key={i} className="aspect-[4/5] w-full rounded-small" />)}
               </div>
             ) : loadFailed || listing?.error ? (
               <div className="grid justify-items-center gap-2 py-6 text-center">
@@ -719,7 +709,7 @@ function ImportSheet({ url, acting, onImport, onClose }: { url: string; acting: 
               <p className="py-8 text-center text-xs text-muted">No templates in your other products yet.</p>
             ) : groups.map((g) => (
               <section key={g.productId} aria-label={g.productName}>
-                <h3 className="mb-2 flex items-baseline gap-1.5 text-xs font-medium text-label">
+                <h3 className="mb-2 flex items-baseline gap-1.5 text-xs font-medium text-muted">
                   <span className="truncate">{g.productName}</span><span className="text-faint tabular-nums">{g.templates.length}</span>
                 </h3>
                 <ul className="grid grid-cols-2 gap-2.5 @lg:grid-cols-3">
@@ -727,11 +717,11 @@ function ImportSheet({ url, acting, onImport, onClose }: { url: string; acting: 
                     const isAdded = t.added || done.has(t.id);
                     const image = imageOf(t);
                     return (
-                      <li key={t.id} className="flex min-w-0 flex-col overflow-hidden rounded-card border border-line bg-card shadow-card">
+                      <li key={t.id} className="flex min-w-0 flex-col overflow-hidden rounded-small border border-line bg-card">
                         <div className="relative aspect-[4/5] w-full overflow-hidden border-b border-line bg-control">
                           {image
                             ? <StyleThumb src={thumbUrl(image, 480)} alt={t.name} fallback="No image" className="size-full object-top" />
-                            : <span className="block size-full bg-gradient-to-br from-line to-canvas" />}
+                              : <span className="block size-full bg-control" />}
                           {aspectOf(t) && <Pill className="absolute top-2 left-2">{aspectOf(t)}</Pill>}
                         </div>
                         <div className="flex flex-1 flex-col gap-1 p-2.5">

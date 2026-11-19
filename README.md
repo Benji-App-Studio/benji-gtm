@@ -102,22 +102,28 @@ The full walk-through of every step is in [docs/SETUP.md](docs/SETUP.md).
 | Service | What it is for | Cost |
 | --- | --- | --- |
 | GitHub | Holds your copy of the code | Free. |
-| Supabase | Your database, files and background jobs | Free plan works. A paid plan lifts the limits on video size and storage. |
-| OpenAI | Reads ads and posts, writes the analysis, checks creatives | Pay for what you use. A typical analysis costs cents. |
-| Apify (optional) | Collects competitors' posts and ads automatically | Free monthly credit, then pay for what you use. |
-| Higgsfield (optional) | Generates images and videos | Pay for what you use. |
-| Meta, RevenueCat, AppStack (optional) | Send ads to Meta and measure revenue | Your existing accounts. |
+| [Supabase](docs/keys/supabase.md) | Your database, files and background jobs | Free plan works. A paid plan lifts the limits on video size and storage. |
+| [OpenAI](docs/keys/openai.md) | Reads ads and posts, writes the analysis, checks creatives | Pay for what you use. A typical analysis costs cents. |
+| [Apify](docs/keys/apify.md) (optional) | Collects competitors' posts and ads automatically | Free monthly credit, then pay for what you use. |
+| [Higgsfield](docs/keys/higgsfield.md) (optional) | Generates images and videos | Pay for what you use. |
+| [Meta](docs/keys/meta-ads.md) ([Ad Library](docs/keys/meta-ad-library.md)), [RevenueCat](docs/keys/revenuecat.md), [AppStack](docs/keys/appstack.md) (optional) | Send ads to Meta and measure revenue | Your existing accounts. |
 | Vercel (optional) | Puts the app online | Free plan works for personal use. |
 
 You only need Supabase and OpenAI to begin. Everything else can be added later in **Settings > API keys**.
+Each key has a step-by-step guide, including
+[Typesafe](docs/keys/typesafe.md), [Google Drive](docs/keys/google-drive.md) and [TikTok](docs/keys/tiktok.md).
 
 ## Every day
 
 - **Start:** in Terminal, `cd ~/Documents/benji-gtm`, then `bash start.command`. It takes a few
-  seconds. Keep the Terminal window open while you use the app.
+  seconds and opens your dashboard, already signed in: there is no login page on your own Mac. Keep
+  the Terminal window open while you use the app.
 - **Stop:** click the Terminal window and press Control-C.
 - **Update:** when a new version is out, follow [docs/UPDATING.md](docs/UPDATING.md).
 - **Settings:** in the app, click the name at the top of the sidebar, then **Settings**.
+- **Your account:** **Settings > Account** shows your email and lets you change your password. You
+  need the password only for a copy you put online ([docs/DEPLOY-VERCEL.md](docs/DEPLOY-VERCEL.md)),
+  which shows a login page.
 - **Your data** is in your Supabase project, not in this folder. Deleting the folder does not delete your data.
 
 ## More guides
@@ -126,6 +132,9 @@ You only need Supabase and OpenAI to begin. Everything else can be added later i
 - [Updating to a new version](docs/UPDATING.md)
 - [Putting it online with Vercel](docs/DEPLOY-VERCEL.md) (optional)
 - [The Chrome extension that collects competitors' ads](docs/CHROME-EXTENSION.md) (free, optional)
+- [Collecting competitors' ads: the three ways, what each covers and costs](docs/COLLECTING-ADS.md)
+- [Make a competitor's winning ad for your own app: a ready-made prompt, one image, or a batch](docs/RECREATE-ADS.md)
+- [Market: competitors' apps, top charts and review gaps](docs/MARKET.md) (free; AI parts use your OpenAI key)
 - [The desktop runner for creator-style videos](docs/DESKTOP-RUNNER.md) (optional)
 - [If something goes wrong](docs/TROUBLESHOOTING.md)
 - [For coding agents (Claude Code, Codex)](AGENTS.md)

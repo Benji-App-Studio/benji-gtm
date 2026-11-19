@@ -15,10 +15,25 @@ export interface MigrationFile {
 }
 
 const FILE_NAME = /^(\d{14})_([a-z0-9_]+)\.sql$/;
+/** Files that may sit in the folder without being migrations: notes and placeholders. */
+const NOT_MIGRATIONS = /^(readme(\.[a-z]+)?|\.gitkeep|\.ds_store|\.keep)$/i;
 
-/** The migration files, oldest first. Anything that isn't `<14 digits>_<name>.sql` is ignored. */
+/**
+ * Files in supabase/migrations that look meant as migrations but would never be applied: a `.sql` file
+ * whose name isn't `<14 digits>_<lower_case_name>.sql`, or anything else that isn't a known note
+ * (README, .gitkeep). Setup stops on these instead of skipping them without a word.
+ */
+export function misnamedMigrations(names: string[]): string[] {
+  return names.filter((file) => !FILE_NAME.test(file) && !NOT_MIGRATIONS.test(file) && !file.startsWith("."));
+}
+
+/** The migration files, oldest first. A misnamed file stops with what to rename (misnamedMigrations). */
 export async function listMigrations(files: RepoFiles): Promise<MigrationFile[]> {
   const names = await files.list(MIGRATIONS_DIR);
+  const bad = misnamedMigrations(names);
+  if (bad.length) {
+    throw new ProvisionError("migration_name", `${bad.length === 1 ? "A file" : `${bad.length} files`} in supabase/migrations ${bad.length === 1 ? "doesn't" : "don't"} have a migration's name, so ${bad.length === 1 ? "it" : "they"} would never be applied: ${bad.join(", ")}. Rename each to <14-digit date and time>_<name>.sql, like 20261120093000_my_change.sql (lower-case letters, digits and _ only), or move it out of the folder. Then press Retry.`, { detail: `expected ${FILE_NAME.source}` });
+  }
   const found = names.flatMap((file) => {
     const match = FILE_NAME.exec(file);
     return match ? [{ version: match[1], name: match[2], file, path: `${MIGRATIONS_DIR}/${file}` }] : [];
@@ -32,6 +47,22 @@ export async function listMigrations(files: RepoFiles): Promise<MigrationFile[]>
 export async function sha256Hex(text: string): Promise<string> {
   const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Whether a file still holds what was applied (its checksum in the ledger). Only line endings may
+ * differ: a copy checked out on Windows turns LF into CRLF (or back) without anyone editing it.
+ */
+export async function sameMigration(text: string, appliedSha256: string): Promise<boolean> {
+  const lf = text.replace(/\r\n/g, "\n");
+  for (const variant of new Set([text, lf, lf.replace(/\n/g, "\r\n")])) if (await sha256Hex(variant) === appliedSha256) return true;
+  return false;
+}
+
+/** The sentence for edited migrations: what changed, that edits are never applied, and what to do instead. */
+export function editedMigrationsMessage(files: string[]): string {
+  const these = files.length === 1 ? `${files[0]} was` : `${files.length} database files were`;
+  return `${these} changed after ${files.length === 1 ? "it was" : "they were"} applied to your project${files.length === 1 ? "" : ` (${files.join(", ")})`}. Changes to a migration that has already run are never applied, so your database and this copy of the app no longer match. Put ${files.length === 1 ? "that file" : "those files"} back as ${files.length === 1 ? "it was" : "they were"} (git checkout -- supabase/migrations, or Sync fork again), and make any change as a new migration with a later date in its name. Then press Retry.`;
 }
 
 const PROJECT_HOST = /https:\/\/[a-z0-9]{15,30}\.supabase\.co/g;
@@ -123,10 +154,12 @@ export async function applyMigrations(api: ManagementApi, files: RepoFiles, ref:
   const changed: string[] = [];
   for (const migration of all) {
     const row = done.get(migration.version);
-    if (row && row.sha256 !== await sha256Hex(await files.readText(migration.path))) changed.push(migration.file);
+    if (row && !(await sameMigration(await files.readText(migration.path), row.sha256))) changed.push(migration.file);
   }
+  // An edited migration that already ran stops the update (the step shows it as failed, with the files):
+  // its edit will never run, and new migrations may depend on it.
   if (changed.length) {
-    emit({ step: "migrations", status: "running", message: "Some database files changed after they were applied. They were left as they are.", detail: changed.join(", ") });
+    throw new ProvisionError("migration_edited", editedMigrationsMessage(changed), { detail: `checksum differs from the ledger (public.install_migrations) for: ${changed.join(", ")}` });
   }
   if (!pending.length) {
     emit({ step: "migrations", status: "skipped", message: "The database is already up to date.", progress: { done: all.length, total: all.length } });

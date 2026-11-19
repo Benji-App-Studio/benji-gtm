@@ -11,6 +11,8 @@
 //   GET  health              what's connected
 //   qa                       { creativeIds }  signed-in owner: (re)run QA
 //   copy                     { creativeId, instructions, input }  signed-in owner: A/B ad copy from OpenAI (core/copy.ts)
+//   prompt/improve           { productId, instructions, prompt, blocked }  signed-in owner: a generation prompt rewritten
+//                            more precisely (core/prompt_improve.ts); an answer that breaks the rules is refused
 //   runner/claim             { runnerId, limit, models? }            x-creatives-runner: <secret>
 //   runner/heartbeat         { runnerId, jobIds }
 //   runner/submitted         { runnerId, jobId, externalId, costCredits? }  the Higgsfield job, saved as soon as it exists
@@ -22,10 +24,12 @@
 //   tick                     x-radar-worker: <RADAR_WORKER_SECRET> (pg_cron, every 30 s)
 import { createClient } from "@supabase/supabase-js";
 import { COPY_INPUT_MAX, writeCopy } from "./core/copy.ts";
+import { IMPROVE_MAX, improvePrompt } from "./core/prompt_improve.ts";
 import { cutoutAssetId, cutoutPatch } from "./core/cutout.ts";
 import { driveClient } from "./core/drive.ts";
-import { API_MODELS, apiRequestFor, HiggsfieldApiError, higgsfieldApi, isTerminal, outputUrls, referenceUrls } from "./core/hf_api.ts";
-import { afterOpenAiFailure, afterPollError, afterRequestEnded, afterRunnerFailure, afterSubmitError, busyBackoff, FINALIZE_SECONDS, jobProvider, priceLimit, shouldSubmit } from "./core/jobs.ts";
+import { API_MODELS, apiRequestFor, HiggsfieldApiError, higgsfieldApi, referenceUrls } from "./core/hf_api.ts";
+import { pollHiggsfieldJob } from "./core/hf_poll.ts";
+import { afterOpenAiFailure, afterPollError, afterRunnerFailure, afterSubmitError, busyBackoff, FINALIZE_SECONDS, jobProvider, priceLimit, shouldSubmit } from "./core/jobs.ts";
 import { extensionFor, imageSize, mimeFromUrl, storagePath } from "./core/media.ts";
 import { needsLogoRead, needsServerOcr, readImageText, readLogo } from "./core/ocr.ts";
 import { awarenessColumns, cleanDrivePath } from "./core/organize.ts";
@@ -38,7 +42,8 @@ import { modelOverrides, resolveModels } from "../_shared/ai/models.ts";
 import { createJudge, judgeAvailability } from "../_shared/ai/provider.ts";
 import { createAuth, HttpError } from "../_shared/auth.ts";
 import { addKeyMessage, createKeys, sameSecret } from "../_shared/keys.ts";
-import { resolveLimits } from "../_shared/limits.ts";
+import { resolveLimits, uploadMaxBytes } from "../_shared/limits.ts";
+import { resultTooBigNote, STORAGE_FULL_NOTE, storageErrorText, storageRoom } from "../_shared/storage.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -148,6 +153,7 @@ Deno.serve(async (req) => {
       case "health": return json(await health());
       case "qa": return json(await qaRoute(await signedInUser(req), await body(req)));
       case "copy": return json(await copyRoute(await signedInUser(req), await body(req)));
+      case "prompt/improve": return json(await improveRoute(await signedInUser(req), await body(req)));
       case "templates": return json(await templatesDone(await signedInUser(req), await body(req)));
       case "drive/export": return json(await driveExport(await signedInUser(req), await body(req)));
       case "runner/claim": await requireRunner(req); return json(await claim(await body(req)));
@@ -196,6 +202,8 @@ interface JobRow {
   id: string; user_id: string; product_id: string; batch_id: string | null; format_card_id: string | null;
   kind: CreativeStyle; model: string; prompt: string; params: Record<string, unknown>; aspect: string; variant: number;
   backend: string; status: string; cost_estimate: number; cost_credits: number | null; attempts: number; retries: number; runner_id: string | null; external_id: string | null; created_at: string;
+  /** When the job was first taken (creatives_claim_jobs); a submitted Higgsfield job's age counts from it. */
+  started_at?: string | null;
 }
 interface BatchRow { id: string; settings: Record<string, any>; context: QaContext }
 
@@ -222,7 +230,11 @@ async function claim(input: Record<string, any>) {
   const models = Array.isArray(input.models) ? input.models.map(String) : null;
   const { data, error } = await db.rpc("creatives_claim_jobs", { p_runner: runnerId, p_backend: "local", p_models: models, p_limit: limit, p_seconds: LOCAL_LEASE_SECONDS });
   if (error) throw new Error(error.message);
-  const jobs = (data ?? []) as JobRow[];
+  const claimed = (data ?? []) as JobRow[];
+  // Storage is full: nothing new can be saved, so nothing is made (and paid for). Each claimed job fails with what to do.
+  const full = claimed.length ? !(await roomToSave()) : false;
+  if (full) for (const job of claimed) await requeueOrFail(job, STORAGE_FULL_NOTE, false, 0);
+  const jobs = full ? [] : claimed;
   const batches = new Map<string, BatchRow | null>();
   for (const job of jobs) if (job.batch_id && !batches.has(job.batch_id)) batches.set(job.batch_id, await batchOf(job.batch_id));
   return {
@@ -500,6 +512,21 @@ async function copyRoute(user: string, input: Record<string, any>) {
   }
 }
 
+async function improveRoute(user: string, input: Record<string, any>) {
+  const productId = uuid(input.productId, "app");
+  const { data } = await db.from("products").select("id").eq("id", productId).eq("user_id", user).maybeSingle();
+  if (!data) throw new HttpError(404, "This app doesn't exist.");
+  const instructions = typeof input.instructions === "string" ? input.instructions : "";
+  const prompt = typeof input.prompt === "string" ? input.prompt : "";
+  if (instructions.length > IMPROVE_MAX || prompt.length > IMPROVE_MAX) throw new HttpError(400, "The prompt is too long to improve.");
+  const blocked = (Array.isArray(input.blocked) ? input.blocked : []).filter((w: unknown): w is string => typeof w === "string").map((w: string) => w.slice(0, 80)).slice(0, 60);
+  try {
+    return await improvePrompt({ apiKey: await openAiKey(), model: (await models()).copy, instructions, prompt, blocked });
+  } catch (error) {
+    throw new HttpError(/isn't connected/.test(errorText(error)) ? 400 : 502, errorText(error));
+  }
+}
+
 async function qaMany(ids: string[]) {
   const queue = [...ids];
   await Promise.all(Array.from({ length: 4 }, async () => {
@@ -625,34 +652,30 @@ async function higgsfieldTick() {
   const { data: running } = await db.from("creative_jobs").select("*").eq("status", "running").eq("backend", "api");
   // OpenAI's jobs are running too, but there's nothing of theirs to poll at Higgsfield.
   const active = ((running ?? []) as JobRow[]).filter((j) => jobProvider(j.params) === "higgsfield");
+  // Each submitted job is looked at once (core/hf_poll.ts): a stuck one past its limit is cancelled at
+  // Higgsfield and failed, so it never keeps the tick calling this function.
   for (const job of active) {
-    if (!job.external_id) continue;
-    let result: Awaited<ReturnType<typeof api.status>>;
-    try {
-      result = await api.status(job.external_id);
-    } catch (error) {
-      await pollLater(job, errorText(error));
-      continue;
-    }
-    if (!isTerminal(result.status)) {
-      await db.from("creative_jobs").update({ lease_until: new Date(Date.now() + API_LEASE_SECONDS * 1000).toISOString() }).eq("id", job.id).eq("status", "running");
-      continue;
-    }
-    if (result.status !== "completed") {
-      await db.from("creative_jobs").update(afterRequestEnded(result.status, result.error)).eq("id", job.id);
-      continue;
-    }
-    // A second tick that sees the same finished job gets null here and leaves it alone.
-    await finalize(job, () => collectOutputs(job, outputUrls(result))).catch((error) => pollLater(job, errorText(error)));
+    await pollHiggsfieldJob(job, {
+      status: (id) => api.status(id),
+      cancel: (id, url) => api.cancel(id, url),
+      update: async (patch) => { await db.from("creative_jobs").update(patch).eq("id", job.id).eq("status", "running"); },
+      // A second tick that sees the same finished job gets null from finalize and leaves it alone.
+      collect: async (urls) => { await finalize(job, () => collectOutputs(job, urls)); },
+      pollLater: (message) => pollLater(job, message),
+      leaseSeconds: API_LEASE_SECONDS,
+    });
   }
 
   const free = Math.max(0, limit - active.filter((j) => j.external_id).length);
   if (!free) return { api: true, polled: active.length, submitted: 0 };
   const claimed = await claimHiggsfieldJobs(free);
   let submitted = 0;
+  // Checked once per tick, before anything is paid for: with storage full the result couldn't be saved.
+  const room = claimed.some(shouldSubmit) ? await roomToSave() : true;
   for (const job of claimed) {
     // Already submitted (its lease ran out while ticks stopped): poll it on the next tick, never pay twice.
     if (!shouldSubmit(job)) continue;
+    if (!room) { await requeueOrFail(job, STORAGE_FULL_NOTE, false, 0); continue; }
     const batch = await batchOf(job.batch_id);
     // In the order the prompt describes: the competitor's image (Recreate), our logo, our own picked images, then our screens.
     // `image_refs` (the Playground) is that list already, exact and in order: the reference, then the person's images.
@@ -711,6 +734,11 @@ async function openAiTick(startedAt = Date.now()) {
   if (!key) {
     for (const job of jobs) await settleOpenAi(job, afterOpenAiFailure(job, { retryable: false, message: `OpenAI isn't connected. ${addKeyMessage("OPENAI_API_KEY")} Then retry, or try with Higgsfield instead.` }));
     return { claimed: jobs.length, failed: jobs.length };
+  }
+  // Storage is full: nothing is sent to OpenAI (and paid for), each job fails with what to do.
+  if (jobs.length && !(await roomToSave())) {
+    for (const job of jobs) await settleOpenAi(job, afterOpenAiFailure(job, { retryable: false, message: STORAGE_FULL_NOTE }));
+    return { claimed: jobs.length, failed: jobs.length, storageFull: true };
   }
   steps.push(...await Promise.all(jobs.map(async (job) => advanceOpenAiJob(job, await openAiJobDeps(job, key, startedAt)))));
   const count_ = (step: JobStep) => steps.filter((s) => s === step).length;
@@ -789,7 +817,7 @@ async function storeOpenAiImages(job: JobRow, images: Uint8Array[]): Promise<Out
   for (const [i, bytes] of images.entries()) {
     const path = storagePath(job.product_id, job.created_at, job.id, `${job.kind}-${job.aspect.replace(":", "x")}-v${job.variant}${i ? `-${i}` : ""}.png`);
     const { error } = await db.storage.from(BUCKET).upload(path, bytes, { contentType: "image/png", upsert: true });
-    if (error) throw new Error(`Couldn't store the result: ${error.message}`);
+    if (error) throw new Error(`Couldn't store the result. ${storageErrorText(error.message)}`);
     outputs.push({ path, kind: "image", mime: "image/png", sizeBytes: bytes.length, ...(imageSize(bytes) ?? {}) });
   }
   return outputs;
@@ -798,14 +826,27 @@ async function storeOpenAiImages(job: JobRow, images: Uint8Array[]): Promise<Out
 /** Downloads a finished API job's files into the creatives bucket. */
 async function collectOutputs(job: JobRow, urls: string[]): Promise<Output[]> {
   const outputs: Output[] = [];
+  const maxBytes = uploadMaxBytes(await planLimits(), RESULT_BUCKET_BYTES);
   for (const [i, url] of urls.entries()) {
     const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     if (!response.ok) throw new Error(`Couldn't download the result (${response.status}).`);
+    // Bigger than the plan takes: fail once with a clear note and keep the provider's links on the job,
+    // instead of downloading it and failing every retry on storage's refusal (the credits are spent already).
+    const length = Number(response.headers.get("content-length") ?? NaN);
+    if (Number.isFinite(length) && length > maxBytes) {
+      await response.body?.cancel().catch(() => {});
+      await failTooBig(job, urls, length, maxBytes);
+      throw new Error(resultTooBigNote(length, maxBytes));
+    }
     const bytes = new Uint8Array(await response.arrayBuffer());
     const mime = response.headers.get("content-type")?.split(";")[0] || mimeFromUrl(url);
     const path = storagePath(job.product_id, job.created_at, job.id, `${job.kind}-${job.aspect.replace(":", "x")}-v${job.variant}${i ? `-${i}` : ""}.${extensionFor(mime)}`);
+    if (bytes.length > maxBytes) { await failTooBig(job, urls, bytes.length, maxBytes); throw new Error(resultTooBigNote(bytes.length, maxBytes)); }
     const { error } = await db.storage.from(BUCKET).upload(path, bytes, { contentType: mime, upsert: true });
-    if (error) throw new Error(`Couldn't store the result: ${error.message}`);
+    if (error) {
+      if (/413|payload too large|maximum allowed size|exceeded the maximum/i.test(error.message)) { await failTooBig(job, urls, bytes.length, maxBytes); throw new Error(resultTooBigNote(bytes.length, maxBytes)); }
+      throw new Error(`Couldn't store the result. ${storageErrorText(error.message, maxBytes)}`);
+    }
     const size = mime.startsWith("image/") ? imageSize(bytes) : null;
     const durationSec = mime.startsWith("video/") && Number(job.params.duration) ? Number(job.params.duration) : undefined;
     // Images: QA reads their text first (serverOcr). Videos: the server has no frames to read (the
@@ -815,6 +856,27 @@ async function collectOutputs(job: JobRow, urls: string[]): Promise<Output[]> {
     outputs.push({ path, kind: video ? "video" : "image", mime, sizeBytes: bytes.length, sourceUrl: url, durationSec, ...(size ?? {}), ocr });
   }
   return outputs;
+}
+
+/** The creatives bucket's own limit (50 MB, migration 20261002500000); the plan's upload limit can be lower. */
+const RESULT_BUCKET_BYTES = 52_428_800;
+
+/**
+ * A finished result too big to store: the job fails once (not retried: it would fail the same way), with the
+ * note saying how big and what to do, and the provider's links kept in its params so it can still be fetched.
+ * The later pollLater only touches a running or finalizing job, so it leaves this one alone.
+ */
+async function failTooBig(job: JobRow, urls: string[], bytes: number | null, maxBytes: number) {
+  await db.from("creative_jobs").update({
+    status: "failed", error: resultTooBigNote(bytes, maxBytes), finished_at: new Date().toISOString(), lease_until: null,
+    params: { ...job.params, result_urls: urls.slice(0, 4), result_too_big: true },
+  }).eq("id", job.id);
+}
+
+/** Whether there is room to save a new result (a database that can't say counts as room: never fail closed). */
+async function roomToSave(): Promise<boolean> {
+  const room = await storageRoom(db, await planLimits()).catch(() => null);
+  return !room || room.level !== "full";
 }
 
 /**

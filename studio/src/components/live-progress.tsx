@@ -4,13 +4,14 @@ import type { ActivityRow, RunSummary } from "@/lib/db";
 import type { Project } from "@/lib/types";
 import { ask } from "./dialog";
 import { Button, Card, cx, Gear, Spinner } from "./ui";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 const elapsed = (from: string, now: number) => {
   const s = Math.max(0, Math.round((now - Date.parse(from)) / 1000));
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 };
 
-const time = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const time = (iso: string) => new Date(iso).toLocaleTimeString(UI_LOCALE, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 /** The activity feed, on the console surface (dark in both themes): the level is a coloured mark, the message stays light. */
 export function ActivityLog({ rows, empty, className }: { rows: ActivityRow[]; empty: string; className?: string }) {
@@ -54,7 +55,7 @@ export function LiveProgress({ project, run, activity, onStop }: { project: Proj
     <Card className="mb-3 overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-3 p-4">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-accent-soft text-accent"><Gear className="size-4" /></span>
+          <span className="grid size-6 shrink-0 place-items-center rounded-md bg-accent-soft text-accent"><Gear className="size-3.5" /></span>
           <div className="min-w-0">
             <h2 className="text-title font-medium">{discovering ? "Finding your competitors" : "Analyzing the content"}</h2>
             <p className="mt-0.5 text-sm text-muted" aria-live="polite">{project.message ?? "Starting…"}</p>

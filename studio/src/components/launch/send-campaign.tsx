@@ -16,7 +16,7 @@ export function CampaignStep({ value: c, onChange, currency, stage }: { value: C
   const set = (patch: Partial<CampaignSpec>) => onChange({ ...c, ...patch });
   const lifetime = c.lifetimeBudget != null;
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4">
       <Group title="Campaign">
         <Labeled label="Name" hint="Follows the naming convention so Measure can group results; change it if you like.">
           <input className={inputClass} value={c.name} maxLength={400} onChange={(e) => set({ name: e.target.value })} />

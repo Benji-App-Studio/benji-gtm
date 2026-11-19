@@ -11,9 +11,10 @@ import { HOOK_LABEL } from "@/lib/types";
 import { IconArrowRight, IconChevronDown } from "../icons";
 import { Card, cx } from "../ui";
 import { readStored, storageKey } from "@/lib/storage-keys";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 const pct = (n: number | null) => (n == null ? "–" : `${Math.round(n * 100)}%`);
-const num = (n: number | null) => (n == null ? "–" : Math.round(n).toLocaleString());
+const num = (n: number | null) => (n == null ? "–" : Math.round(n).toLocaleString(UI_LOCALE));
 
 function useOpen(key: string) {
   const [open, setOpen] = useState(true);
@@ -40,7 +41,7 @@ function Gap({ label, rate, theirLive, ours, onOpen }: { label: string; rate: nu
       <button type="button" onClick={onOpen} className="group flex w-full items-center gap-3 rounded-control px-3 py-2 text-left transition hover:bg-raised">
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{label}</span>
-          <span className="block text-xs text-muted">{pct(rate)} of theirs kept · {theirLive.toLocaleString()} live · we run {ours}</span>
+          <span className="block text-xs text-muted">{pct(rate)} of theirs kept · {theirLive.toLocaleString(UI_LOCALE)} live · we run {ours}</span>
         </span>
         <span className="flex shrink-0 items-center gap-1 text-xs text-accent opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">Their examples<IconArrowRight className="size-3.5" /></span>
       </button>
@@ -78,22 +79,22 @@ export function HowWeCompare({ ours, theirs, onTheirExamples, onRefresh }: {
 
   return (
     <Card className="mb-4 overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3">
-        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="-ml-1 flex min-w-0 items-center gap-2 rounded-control py-1 pr-2 pl-1 text-left transition hover:bg-hover">
-          <IconChevronDown className={cx("size-4 shrink-0 text-muted transition", !open && "-rotate-90")} />
-          <span className="text-title font-medium">How we compare</span>
-          <span className="truncate text-sm text-muted">Our ads against the typical competitor{formats.length ? ` · ${formats.length} format${formats.length === 1 ? "" : "s"} they keep that we barely use` : ""}</span>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2">
+        <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex min-h-7 min-w-0 items-center gap-2 rounded-control pr-2 pl-1 text-left transition-colors hover:bg-hover">
+          <IconChevronDown className={cx("size-3.5 shrink-0 text-muted transition", !open && "-rotate-90")} />
+          <span className="shrink-0 text-sm font-medium">How we compare</span>
+          <span className="truncate text-xs text-muted">Our ads against the typical competitor{formats.length ? ` · ${formats.length} format${formats.length === 1 ? "" : "s"} they keep that we barely use` : ""}</span>
         </button>
         {due > 0 && (
-          <button type="button" onClick={onRefresh} className="inline-flex items-center gap-1.5 rounded-full bg-caution-soft px-3 py-1 text-xs font-medium text-caution-ink transition hover:opacity-80"
+          <button type="button" onClick={onRefresh} className="inline-flex h-7 items-center gap-1.5 rounded-full bg-caution-soft px-2.5 text-xs font-medium text-caution-ink transition hover:opacity-80"
             title={`Our ads live ${REFRESH_DAYS}+ days: likely wearing out, so make the next version before they stop`}>
-            {due.toLocaleString()} of ours due for a refresh<IconArrowRight className="size-3.5" />
+            {due.toLocaleString(UI_LOCALE)} of ours due for a refresh<IconArrowRight className="size-3.5" />
           </button>
         )}
       </div>
 
       {open && (
-        <div className="grid gap-5 border-t border-line px-1 pt-3 pb-3 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+        <div className="grid gap-4 border-t border-line px-1 pt-2 pb-3 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
           <div className="min-w-0 px-3">
             <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-5 text-sm">
               <span className="pb-2 text-xs text-muted" />
@@ -108,7 +109,7 @@ export function HowWeCompare({ ours, theirs, onTheirExamples, onRefresh }: {
               ))}
             </div>
           </div>
-          <div className="grid min-w-0 gap-4 @2xl:grid-cols-2">
+          <div className="grid min-w-0 gap-3 @2xl:grid-cols-2">
             <Column title="Formats they keep, we barely use" empty="We already use every format they keep running.">
               {formats.map((g) => <Gap key={g.key} label={AD_FORMAT_LABEL[g.key] ?? g.key} rate={g.rate} theirLive={g.theirLive} ours={g.ours} onOpen={() => onTheirExamples({ format: g.key })} />)}
             </Column>

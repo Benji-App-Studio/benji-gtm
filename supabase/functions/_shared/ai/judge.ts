@@ -84,8 +84,12 @@ export interface Judge {
   readonly provider?: AiProvider;
 }
 
-/** Why a judge couldn't answer. `config`: a key or setting is missing (the message says what to do). */
-export type JudgeErrorKind = "config" | "http" | "timeout" | "output";
+/**
+ * Why a judge couldn't answer. `config`: a key or setting is missing (the message says what to do).
+ * `account`: the provider refused the key itself (revoked, wrong, out of credit, billing): nothing
+ * else will work until the person fixes it, so callers stop and say so instead of skipping items.
+ */
+export type JudgeErrorKind = "config" | "account" | "http" | "timeout" | "output";
 
 export class JudgeError extends Error {
   readonly kind: JudgeErrorKind;
@@ -99,4 +103,58 @@ export class JudgeError extends Error {
     this.provider = provider;
     if (status !== undefined) this.status = status;
   }
+}
+
+// MARK: Refused keys
+
+const PROVIDER_NAME: Record<AiProvider, string> = { openai: "OpenAI", typesafe: "TypeSafe" };
+
+/** The sentence for a refused key: "OpenAI refused the key: <reason> Check Settings > API keys." */
+export function refusedKeyMessage(provider: AiProvider, detail: string): string {
+  const reason = detail.replace(/\s+/g, " ").trim().slice(0, 200) || "no reason given";
+  return `${PROVIDER_NAME[provider]} refused the key: ${/[.!?]$/.test(reason) ? reason : `${reason}.`} Check Settings > API keys.`;
+}
+
+const ACCOUNT_CODES = /^(insufficient_quota|invalid_api_key|account_deactivated|billing_hard_limit_reached|billing_not_active|access_terminated|unauthorized)$/i;
+const ACCOUNT_TEXT = /insufficient[_ ]quota|exceeded your current quota|billing|incorrect api key|invalid api key|api key (is )?(invalid|revoked|expired|disabled)|account (is )?(deactivated|disabled|suspended)|out of credit/i;
+
+/**
+ * A provider's error answer that means the key itself is refused: 401, 402 or 403, or a quota or
+ * billing error (OpenAI's out-of-credit answer is a 429 with code `insufficient_quota`). Null for
+ * anything else (a busy 429, a bad request, a server error), which is about one request, not the key.
+ */
+export function keyRefusal(provider: AiProvider, status: number, body: unknown): JudgeError | null {
+  const error = (body && typeof body === "object" ? (body as { error?: unknown }).error : undefined) as { code?: unknown; type?: unknown; message?: unknown } | string | undefined;
+  const code = typeof error === "object" && error ? String(error.code ?? error.type ?? "") : "";
+  const message = typeof error === "string" ? error : typeof error === "object" && error ? String(error.message ?? "") : "";
+  const refused = status === 401 || status === 402 || status === 403 || ACCOUNT_CODES.test(code) || (status === 429 && ACCOUNT_TEXT.test(message));
+  if (!refused) return null;
+  return new JudgeError("account", provider, refusedKeyMessage(provider, message || code || `error ${status}`), status);
+}
+
+/**
+ * Whether a thrown error means the AI key is refused (an `account` JudgeError, or any error carrying
+ * such a status or message, e.g. from the TypeSafe SDK). Answers that error as an `account` JudgeError,
+ * or null. Callers that skip a failed item use it so a dead key never reads as "nothing found".
+ */
+export function accountError(error: unknown, provider: AiProvider = "openai"): JudgeError | null {
+  if (error instanceof JudgeError) {
+    if (error.kind === "account") return error;
+    if (error.kind === "config") return null;
+    if (error.status !== undefined) {
+      const refused = keyRefusal(error.provider, error.status, { error: { message: error.message.replace(/^(OpenAI|TypeSafe): /, "") } });
+      if (refused) return refused;
+    }
+    return null;
+  }
+  if (!error || typeof error !== "object") return null;
+  const e = error as { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown };
+  const status = Number(e.status ?? e.statusCode);
+  const message = String(e.message ?? "");
+  const refused = Number.isFinite(status) ? keyRefusal(provider, status, { error: { code: e.code, message } }) : null;
+  if (refused) return refused;
+  if (ACCOUNT_TEXT.test(message) || (typeof e.code === "string" && ACCOUNT_CODES.test(e.code))) {
+    return new JudgeError("account", provider, refusedKeyMessage(provider, message || String(e.code)));
+  }
+  return null;
 }

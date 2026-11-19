@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BarChart, RankBars } from "./charts";
 import { IconAlert, IconCheckCircle, IconChevronRight, IconClock, IconCompass, IconGrid, IconPlus, IconSparkles } from "./icons";
 import { OverviewSkeleton } from "./page-skeletons";
-import { CardSkeletons, ProjectCard, useProjects, type ProjectSummary } from "./project-list";
+import { CardSkeletons, ProjectRows, useProjects, type ProjectSummary } from "./project-list";
 import { ConnectFor, FreeRoute, useGate } from "./research/gates";
 import { Badge, Button, ButtonLink, Card, CardHeader, ChevronLink, DeltaChip, EmptyState, ErrorNote, HeroCard, Kpi, ListRow, Page, PageHeader, SectionHeader, SelectPill, StatRow, TargetBar, fmt, stagger } from "./ui";
 import { WorkspaceIcon } from "./workspace/parts";
@@ -17,6 +17,7 @@ import type { FeatureState } from "@/lib/capabilities";
 import type { ProductRow, RunSummary } from "@/lib/db";
 import { HOOK_LABEL, PLATFORM_LABEL, TYPE_COPY, type Platform, type Report } from "@/lib/types";
 import { workspaceHref, type WorkspaceSummary } from "@/lib/workspace-schema";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 const median = (values: number[]) => {
   if (!values.length) return 0;
@@ -80,7 +81,7 @@ export function Dashboard() {
           {report && project ? (
             <ReportOverview report={report} project={project} aside={<NeedsYou projects={projects ?? []} />} />
           ) : (
-            <div className="grid grid-cols-1 items-start gap-3 @4xl:grid-cols-[1.6fr_1fr]">
+            <div className="grid grid-cols-1 items-start gap-3 @4xl:grid-cols-2">
               <FirstSteps app={main} locked={locked} hasAnalyses={(projects ?? []).length > 0} />
               <NeedsYou projects={projects ?? []} />
             </div>
@@ -89,7 +90,7 @@ export function Dashboard() {
       )}
 
       {!none && !appsFailed && (
-        <section className="mt-8">
+        <section className="mt-10">
           <SectionHeader title="Analyses" subtitle={projects === null ? undefined : `${shown.length} ${shown.length === 1 ? "analysis" : "analyses"}${filter !== "all" ? ` · ${TYPE_COPY[filter as keyof typeof TYPE_COPY].label}` : ""}`}
             action={(projects ?? []).length > 0 ? (
               <SelectPill label="Kind of analysis" icon={<IconGrid />} value={filter} onChange={setFilter}
@@ -103,35 +104,35 @@ export function Dashboard() {
                   ? <Card><ConnectFor state={locked} also={also} otherwise={<FreeRoute productId={main?.id} />} /></Card>
                   : <EmptyState title="No analyses yet" body="An analysis collects accounts' recent posts and reads what works in them: formats, hooks and what the audience asks for." action={<ButtonLink href="/app/new" variant="secondary">New analysis</ButtonLink>} />
             )
-            : <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @5xl:grid-cols-3">{shown.slice(0, 9).map((p, i) => <ProjectCard key={p.id} p={p} index={i + 4} />)}</div>}
+            : <ProjectRows projects={shown.slice(0, 9)} offset={4} />}
         </section>
       )}
     </Page>
   );
 }
 
-/** Every app, each a way in to its Home and its main pages. */
+/** Every app, each a way in to its Home and its main pages: one list row per app. */
 function Apps({ apps, icons }: { apps: ProductRow[]; icons: WorkspaceSummary[] }) {
   return (
-    <section className="mb-6">
-      <SectionHeader title="Your apps" action={<ChevronLink href="/app/product/new">New app</ChevronLink>} />
-      <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @5xl:grid-cols-3">
+    <section className="mb-8">
+      <SectionHeader title="Your apps" action={<ChevronLink href="/app/product/new" className="text-xs text-muted hover:text-ink">New app</ChevronLink>} />
+      <div className="-mx-2">
         {apps.map((app, i) => {
           const summary = icons.find((w) => w.id === app.id);
           return (
-            <Card key={app.id} className="rise flex min-w-0 flex-col gap-3 p-4" style={stagger(i)}>
-              <Link href={workspaceHref(app.id)} className="group flex min-w-0 items-center gap-3 rounded-xs">
-                <WorkspaceIcon name={summary?.appName || app.name} url={summary?.iconUrl} className="size-8 text-sm" />
+            <div key={app.id} className="rise group/app flex min-h-12 min-w-0 items-center gap-3 rounded-control px-2 py-1.5 transition-colors hover:bg-hover" style={stagger(i)}>
+              <Link href={workspaceHref(app.id)} className="group flex min-w-0 flex-1 items-center gap-3 rounded-xs">
+                <WorkspaceIcon name={summary?.appName || app.name} url={summary?.iconUrl} className="size-6 text-xs" />
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2"><span className="truncate text-sm font-medium group-hover:underline">{summary?.appName || app.name}</span>{app.is_primary && apps.length > 1 && <Badge>main</Badge>}</span>
-                  <span className="block truncate text-caption text-muted">{app.description?.trim() || "No description yet"}</span>
+                  <span className="flex items-center gap-2"><span className="truncate text-sm font-medium">{summary?.appName || app.name}</span>{app.is_primary && apps.length > 1 && <Badge>main</Badge>}</span>
+                  <span className="block truncate text-xs text-muted">{app.description?.trim() || "No description yet"}</span>
                 </span>
-                <IconChevronRight className="size-4 shrink-0 text-faint transition-colors group-hover:text-ink" />
               </Link>
-              <nav aria-label={`${app.name} pages`} className="mt-auto flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-3 text-sm">
+              <nav aria-label={`${app.name} pages`} className="hidden shrink-0 items-center gap-3 text-xs @xl:flex">
                 {(["research", "studio", "brand"] as const).map((page) => <Link key={page} href={workspaceHref(app.id, page)} className="rounded-xs text-muted hover:text-ink">{page === "research" ? "Research" : page === "studio" ? "Studio" : "Brand"}</Link>)}
               </nav>
-            </Card>
+              <IconChevronRight className="size-3.5 shrink-0 text-faint" />
+            </div>
           );
         })}
       </div>
@@ -179,7 +180,7 @@ function ReportOverview({ report, project, aside }: { report: Report; project: P
       byWeek.set(key, (byWeek.get(key) ?? 0) + 1);
     }
     return [...byWeek.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-12)
-      .map(([key, count]) => ({ label: new Date(`${key}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" }), value: count }));
+      .map(([key, count]) => ({ label: new Date(`${key}T00:00:00Z`).toLocaleDateString(UI_LOCALE, { month: "short", day: "numeric", timeZone: "UTC" }), value: count }));
   }, [posts]);
   const perWeek = weeks.reduce((n, w) => n + w.value, 0) / Math.max(weeks.length, 1);
 
@@ -201,12 +202,12 @@ function ReportOverview({ report, project, aside }: { report: Report; project: P
   const best = [...posts].sort((a, b) => b.score - a.score)[0];
 
   return (
-    <div className="grid grid-cols-1 gap-3 @4xl:grid-cols-2 @6xl:grid-cols-[1.07fr_1.11fr_1fr]">
+    <div className="grid grid-cols-1 gap-3 @4xl:grid-cols-2">
       <div className="grid min-w-0 grid-cols-1 content-start gap-3">
         <Card className="rise p-4" style={stagger(0)}>
           <CardHeader title="Typical views" subtitle={`${project.name} · last ${report.sinceDays ?? project.sinceDays} days`} />
-          <Kpi className="mt-4" value={fmt(typical)} delta={best ? <DeltaChip direction="up" value={`${fmt(best.views)} best`} /> : undefined} compare="median views per post" />
-          <p className="mt-4 text-sm text-label">{Math.round((hits.length / Math.max(posts.length, 1)) * 100)}% of posts are hits: {hits.length} of {posts.length} got {report.hitMultiple}× the typical views.{best ? ` The best came from ${best.account}.` : ""}</p>
+          <Kpi className="mt-3" value={fmt(typical)} delta={best ? <DeltaChip direction="up" value={`${fmt(best.views)} best`} /> : undefined} compare="median views per post" />
+          <p className="mt-3 text-xs text-muted">{Math.round((hits.length / Math.max(posts.length, 1)) * 100)}% of posts are hits: {hits.length} of {posts.length} got {report.hitMultiple}× the typical views.{best ? ` The best came from ${best.account}.` : ""}</p>
           <TargetBar className="mt-4" value={hits.length / Math.max(posts.length, 1)} target={0.25} startLabel="0%" targetLabel="Healthy 25%" />
           <div className="mt-4">
             <StatRow label="Posts read" value={posts.length} note={`of ${report.kpis.videos}`} />
@@ -217,18 +218,18 @@ function ReportOverview({ report, project, aside }: { report: Report; project: P
         {weeks.length > 1 && (
           <Card className="rise p-4" style={stagger(1)}>
             <CardHeader title={`Last ${weeks.length} weeks`} action={<span className="pt-1 text-caption text-muted">Posts by week</span>} />
-            <BarChart className="mt-8" data={weeks} target={perWeek} targetLabel={`Average ${Math.round(perWeek * 10) / 10}`} />
+            <BarChart className="mt-6" data={weeks} target={perWeek} targetLabel={`Average ${Math.round(perWeek * 10) / 10}`} />
           </Card>
         )}
       </div>
 
       <Card className="rise flex flex-col p-4" style={stagger(2)}>
         <CardHeader title="What wins" subtitle="Formats ranked by typical views" action={<ChevronLink href={`/app/p/${project.id}`} onMouseEnter={() => preloadProject(project.id)}>Report</ChevronLink>} />
-        <RankBars className="-mx-2 mt-4" rows={formats} format={fmt} tone="accent" selected={formats[0]?.key} />
+        <RankBars className="-mx-2 mt-3" rows={formats} format={fmt} tone="accent" selected={formats[0]?.key} />
         {formats.length === 0 && <p className="mt-4 text-sm text-muted">Not enough posts per format yet.</p>}
         <div className="mt-auto pt-4">
           {report.playbook[0]?.examples[0]?.hook && (
-            <div className="rounded-inner border border-line bg-raised p-3">
+            <div className="rounded-inner border border-line bg-raised px-3 py-2.5">
               <p className="text-sm font-medium">“{report.playbook[0].examples[0].hook}”</p>
               <p className="mt-1 text-caption text-muted">The top hook on {PLATFORM_LABEL[report.playbook[0].platform]}, from {report.playbook[0].examples[0].account} · {fmt(report.playbook[0].examples[0].views)} views.</p>
             </div>
@@ -236,11 +237,11 @@ function ReportOverview({ report, project, aside }: { report: Report; project: P
         </div>
       </Card>
 
-      <div className="grid min-w-0 grid-cols-1 content-start gap-3 @4xl:col-span-2 @6xl:col-span-1">
+      <div className="grid min-w-0 grid-cols-1 content-start gap-3">
         {shownPattern && (
-          <HeroCard className="rise" pager={patterns.length > 1 ? <button type="button" onClick={() => setPattern(pattern + 1)} className="rounded-xs hover:text-white">{(pattern % patterns.length) + 1} of {patterns.length}</button> : undefined}
+          <HeroCard className="rise" pager={patterns.length > 1 ? <button type="button" onClick={() => setPattern(pattern + 1)} className="rounded-xs hover:text-ink">{(pattern % patterns.length) + 1} of {patterns.length}</button> : undefined}
             value={shownPattern.value} unit={shownPattern.unit} headline={shownPattern.headline} body={shownPattern.body}
-            action={<ButtonLink href={`/app/p/${project.id}`} variant="light" onMouseEnter={() => preloadProject(project.id)}>Open the playbook<IconChevronRight /></ButtonLink>} />
+            action={<ButtonLink href={`/app/p/${project.id}`} variant="secondary" size="sm" onMouseEnter={() => preloadProject(project.id)}>Open the playbook<IconChevronRight /></ButtonLink>} />
         )}
         {aside}
       </div>

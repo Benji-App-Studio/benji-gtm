@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { BatchError, queueCreativeJobOnServer } from "@/lib/server/creative-batches";
+import { caughtFailure } from "@/lib/server/errors";
 
 /** queueCreativeJob from the browser: one format-card job becomes one batch. */
 export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/[productId]/jobs">) {
@@ -18,6 +19,6 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/
     return Response.json(started);
   } catch (error) {
     if (error instanceof BatchError) return Response.json({ error: error.message, plan: error.plan }, { status: error.status });
-    return Response.json({ error: `Couldn't queue the job: ${error instanceof Error ? error.message : String(error)}` }, { status: 500 });
+    return caughtFailure("queue job", error, "Couldn't queue the job. Try again.");
   }
 }

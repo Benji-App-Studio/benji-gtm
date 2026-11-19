@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { ASSET_COLUMNS, CONSENT_OPTIONS, type AssetKind } from "@/lib/product-assets";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { WORKSPACE_BUCKET } from "@/lib/workspace";
+import { dbFailure } from "@/lib/server/errors";
 
 const KINDS: AssetKind[] = ["app_screen", "product", "packaging", "lifestyle", "person", "logo", "other"];
 const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) || null : null);
@@ -21,7 +22,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/produc
   if (typeof body.possible_minor === "boolean") patch.possible_minor = body.possible_minor;
   if (!Object.keys(patch).length) return Response.json({ error: "Nothing to change." }, { status: 400 });
   const { data, error } = await session.supabase.from("product_assets").update(patch).eq("id", assetId).eq("product_id", id).select(ASSET_COLUMNS).maybeSingle();
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return dbFailure("asset update", error, "Couldn't save the change. Try again.");
   return data ? Response.json({ asset: data }) : Response.json({ error: "Not found" }, { status: 404 });
 }
 

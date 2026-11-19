@@ -4,16 +4,17 @@
 // the public `workspace` bucket under <user>/<product>/playground/inputs/; the public https link is what
 // Higgsfield fetches.
 import { createClient } from "@/lib/supabase/client";
+import { uploadErrorText } from "@/lib/storage-usage";
 import { ASSET_IMAGE_TYPES, ASSET_MAX_BYTES } from "../product/upload-asset";
 
 export async function uploadPlaygroundImage(productId: string, file: File): Promise<string> {
   if (!ASSET_IMAGE_TYPES.includes(file.type)) throw new Error(`${file.name} isn't a PNG, JPEG or WebP image.`);
   if (file.size > ASSET_MAX_BYTES) throw new Error(`${file.name} is over 15 MB.`);
-  const response = await fetch(`/api/playground/${productId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "ticket", contentType: file.type }) });
+  const response = await fetch(`/api/playground/${productId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "ticket", contentType: file.type, size: file.size }) });
   const ticket = await response.json().catch(() => ({ error: "The server didn't answer. Try again." }));
   if (!response.ok) throw new Error(ticket.error ?? "Couldn't start the upload.");
   const { error } = await createClient().storage.from(ticket.bucket).uploadToSignedUrl(ticket.path, ticket.token, file, { contentType: file.type });
-  if (error) throw new Error(`${file.name}: ${error.message}`);
+  if (error) throw new Error(`${file.name}: ${uploadErrorText(error)}`);
   return ticket.url as string;
 }
 

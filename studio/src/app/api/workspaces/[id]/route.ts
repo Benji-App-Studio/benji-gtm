@@ -3,6 +3,7 @@ import { isResponse, requireUser } from "@/lib/server/auth";
 import { loadRow } from "@/lib/server/workspaces";
 import { toWorkspaceView, WORKSPACE_BUCKET, WORKSPACE_COLUMNS, type WorkspaceRow } from "@/lib/workspace";
 import { cleanConnections, readConnections } from "@/lib/workspace-schema";
+import { dbFailure } from "@/lib/server/errors";
 
 export async function GET(_request: NextRequest, ctx: RouteContext<"/api/workspaces/[id]">) {
   const session = await requireUser();
@@ -34,7 +35,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/worksp
   for (const [key, section] of Object.entries(nextConnections)) if (!Object.keys(section as object).length) delete nextConnections[key];
   const { data, error } = await session.supabase.from("products").update({ connections: nextConnections })
     .eq("id", row.id).select(WORKSPACE_COLUMNS).single<WorkspaceRow>();
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return dbFailure("workspace connections save", error, "Couldn't save the connection. Try again.");
 
   return Response.json(toWorkspaceView(data));
 }

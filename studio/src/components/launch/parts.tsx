@@ -8,10 +8,10 @@ export const IN_PROGRESS = new Set(["queued", "processing", "creating"]);
 export function Section({ id, title, hint, action, children }: { id?: string; title: string; hint?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
     <section id={id} className="min-w-0 scroll-mt-6">
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-2 flex min-h-7 flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-title font-medium">{title}</h2>
-          {hint && <p className="text-sm text-muted">{hint}</p>}
+          <h2 className="text-sm font-medium text-ink">{title}</h2>
+          {hint && <p className="text-xs text-muted">{hint}</p>}
         </div>
         {action}
       </div>

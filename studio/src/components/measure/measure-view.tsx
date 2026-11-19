@@ -179,9 +179,9 @@ export function MeasureView({ productId, name }: { productId: string; name: stri
   return (
     <Page>
       <Header productId={productId} name={name} data={ready} gates={gates} days={days} setDays={setDays} syncing={syncing} onSync={sync} model={model} level={level} />
-      {data?.error && <ErrorNote title="Measure can't load" className="mt-5">{data.error}</ErrorNote>}
+      {data?.error && <ErrorNote title="Measure can't load" className="mt-4">{data.error}</ErrorNote>}
       {!data && <MeasureBodySkeleton />}
-      {ready && <PlaybookTips ids={["variance", "diagnose-by-layer", "cheap-installs", "headroom"]} className="mt-5" />}
+      {ready && <PlaybookTips ids={["variance", "diagnose-by-layer", "cheap-installs", "headroom"]} className="mt-4" />}
       {ready && model && (
         <Body data={ready} model={model} gates={gates} save={save} sync={sync} syncing={syncing} level={level} setLevel={(l) => { setLevel(l); setFocus(null); }} focus={focus} show={show}
           conversion={conversion} setConversion={setConversion} />
@@ -198,7 +198,7 @@ function MeasureLocked({ locks }: { locks: Record<Source, FeatureState> }) {
     <ConnectState icon={<IconChart />} title="Connect a source to see your numbers" href={first.href} action={first.missingKeys.length ? "Open API keys" : first.action}
       body={<>
         Measure puts what your ads cost next to what they earn. Any one of these is enough to start, and each adds its own numbers.
-        <span className="mt-4 grid gap-px overflow-hidden rounded-card border border-line bg-line text-left">
+        <span className="mt-4 grid gap-px overflow-hidden rounded-small border border-line bg-line text-left">
           {SOURCES.map((s) => (
             <span key={s} className="flex items-center justify-between gap-4 bg-card px-3 py-2.5">
               <span className="min-w-0">
@@ -244,9 +244,9 @@ function Header({ productId, name, data, gates, days, setDays, syncing, onSync, 
         <SelectPill icon={<IconCalendar />} label="Date range" value={String(days)} onChange={(value) => setDays(Number(value))} options={RANGES.map((r) => ({ value: String(r), label: `Last ${r} days` }))} />
         {data && <span className="hidden px-1 text-xs text-faint @3xl:inline">vs {shortDay(data.range.prevSince)} to {shortDay(addDays(data.range.since, -1))}</span>}
         <Button variant="secondary" onClick={onSync} disabled={syncing || !data}>
-          {syncing ? <Spinner className="size-3.5" /> : <IconRefresh />}{syncing ? "Syncing…" : "Sync now"}
+          {syncing ? <Spinner className="size-3.5" /> : <IconRefresh />}<span className="max-sm:sr-only">{syncing ? "Syncing…" : "Sync now"}</span>
         </Button>
-        <Button variant="secondary" onClick={() => model && data && exportCsv(model, data, level)} disabled={!model || !data?.meta.length}><IconDownload />Export</Button>
+        <Button variant="secondary" onClick={() => model && data && exportCsv(model, data, level)} disabled={!model || !data?.meta.length}><IconDownload /><span className="max-sm:sr-only">Export</span></Button>
       </>} />
   );
 }
@@ -271,7 +271,7 @@ function Body(props: BodyProps) {
   return (
     <>
       {/* Whose customers CAC counts only matters once there is spend to set them against. */}
-      {hasAds && <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2">
+      {hasAds && <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
         <HowLabel label={<span className="text-sm text-muted">Count paying customers from</span>} how="AppStack and Meta each attribute customers to the ads (AppStack can over-count, Meta under-counts on iOS); RevenueCat counts every new payer, organic included (blended). Per-ad numbers always use AppStack, or Meta when AppStack isn't connected." />
         <Segmented<Headline | "auto"> label="Source of truth for CAC" value={choice === "auto" ? model.headline : choice}
           onChange={(value) => save({ settings: { cac_source: value } })}
@@ -336,7 +336,7 @@ function NoAds({ data, gate, sync, syncing }: { data: MeasureData; gate: Gate | 
   return (
     <Panel className="mt-3 flex flex-wrap items-center justify-between gap-4 p-4">
       <div className="min-w-0">
-        <h2 className="text-title font-medium">{connected ? "Ads haven't started yet" : meta?.status === "error" ? "Meta didn't sync" : "Meta is connected"}</h2>
+        <h2 className="text-sm font-medium">{connected ? "Ads haven't started yet" : meta?.status === "error" ? "Meta didn't sync" : "Meta is connected"}</h2>
         <p className="mt-1 max-w-xl text-sm text-muted">
           {connected
             ? `${meta?.message ?? "The ad account has no delivery yet."} Once the first campaign spends, its spend, installs and cost per customer appear here, split into testing and scaling.`
@@ -378,8 +378,8 @@ function CacCard({ data, model, $, save }: { data: MeasureData; model: Model; $:
   return (
     <Panel className="flex flex-col p-4">
       <PanelHead title="Cost per paying customer" sub={`${SOURCE_LABEL[model.headline]} customers · last ${data.range.days} days`} />
-      <div className="mt-4 text-kpi font-medium text-ink tabular-nums">{cac == null ? "–" : $(cac)}</div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+      <div className="mt-3 text-figure font-medium text-ink tabular-nums">{cac == null ? "–" : $(cac)}</div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         <DeltaChip value={change(cac, cacPrev)} goodWhenUp={false} />
         <span className="text-caption text-muted">vs previous {data.range.days} days</span>
       </div>
@@ -439,7 +439,7 @@ function WaterfallCard({ model, $ }: { model: Model; $: (n: number) => string })
     <Panel className="flex flex-col p-4">
       <PanelHead title={margin >= 0 ? "What each customer leaves" : "Why each customer loses money"} sub={`${$(Math.abs(margin))} ${margin >= 0 ? "kept" : "lost"} per paying customer after ad spend`} />
       <div className="mt-4"><Waterfall start={{ label: "LTV", value: ltv }} steps={steps} end={{ label: "Margin per customer", value: margin }} format={$} /></div>
-      <p className="mt-4 rounded-inner border border-line bg-raised px-3 py-2.5 text-caption text-muted">
+      <p className="mt-4 rounded-inner border border-line bg-raised px-3 py-2 text-caption text-muted">
         {roleSpend.testing > 0 && roleSpend.scaling === 0 ? "All spend is still in testing: expect CAC to fall once winners move to scaling." : HOW.margin}
       </p>
     </Panel>
@@ -491,7 +491,7 @@ function ConversionsCard({ data, model, $, conversion, setConversion }: { data: 
       <PanelHead title={`${CONVERSION_LABEL[conversion]} per day`} sub={bothSources ? `${SOURCE_LABEL[split]} solid, ${SOURCE_LABEL[other]} dashed; hover a day for its spend` : `Attributed by ${SOURCE_LABEL[split]}${model.metaCur.length ? "; hover a day for its spend" : ""}`}
         right={<Segmented label="Conversion" value={conversion} onChange={setConversion} options={(Object.keys(CONVERSION_LABEL) as Conversion[]).map((c) => ({ value: c, label: CONVERSION_LABEL[c] }))} />} />
       <div className="mt-3"><BandLegend solid={SOURCE_LABEL[split]} dashed={bothSources ? SOURCE_LABEL[other] : undefined} /></div>
-      <div className="mt-6"><BandLine points={points} name={`${CONVERSION_LABEL[conversion]} per day`} format={(n) => fmt(n)} /></div>
+      <div className="mt-4"><BandLine points={points} name={`${CONVERSION_LABEL[conversion]} per day`} format={(n) => fmt(n)} /></div>
     </Panel>
   );
 }
@@ -536,24 +536,24 @@ function TableCard({ data, model, $, level, setLevel, focus, save }: { data: Mea
       <div className="-mx-4 mt-3 overflow-x-auto px-4">
         <table className="w-full min-w-[980px] text-sm">
           <thead>
-            <tr className="text-left text-xs text-faint">
-              <th className="py-2 pr-4 pl-2 font-medium">{LEVELS.find((l) => l.value === level)!.label.replace(/s$/, "")}</th>
-              {["Spend", "CTR", "CPM", "CPC", "Installs", "CPI", "Customers", "CAC", "", "ROAS"].map((h, i) => <th key={i} className="px-2 py-2 text-right font-medium">{h}</th>)}
-              <th className="py-2 pr-2 pl-4 font-medium">Status</th>
+            <tr className="text-left text-xs text-muted">
+              <th className="h-8 border-b border-line pr-4 pl-2 font-book">{LEVELS.find((l) => l.value === level)!.label.replace(/s$/, "")}</th>
+              {["Spend", "CTR", "CPM", "CPC", "Installs", "CPI", "Customers", "CAC", "", "ROAS"].map((h, i) => <th key={i} className="h-8 border-b border-line px-2 text-right font-book">{h}</th>)}
+              <th className="h-8 border-b border-line pr-2 pl-4 font-book">Status</th>
             </tr>
           </thead>
           {sections.map((section) => (
             <tbody key={section.key}>
               {section.label && (
-                <tr><td colSpan={12} className="pt-4 pb-1.5 pl-2 text-xs font-medium text-faint">{section.label} · {section.rows.length}</td></tr>
+                <tr><td colSpan={12} className="pt-4 pb-1.5 pl-2 text-xs font-medium text-muted">{section.label} · {section.rows.length}</td></tr>
               )}
               {section.rows.map((g) => {
                 const v = verdict(g.m, ltv, g.role);
                 return (
-                  <tr key={g.key} className={cx("border-t border-line align-middle transition-colors hover:bg-hover", focus === g.key && "bg-caution-soft")}>
+                  <tr key={g.key} className={cx("h-11 align-middle transition-colors hover:bg-hover", focus === g.key && "bg-caution-soft")}>
                     <td className="max-w-[300px] py-2 pr-4 pl-2">
                       <div className="flex items-center gap-3">
-                        {g.thumbnail && <Thumb src={g.thumbnail} alt="" className="size-8 shrink-0 rounded-md" />}
+                        {g.thumbnail && <Thumb src={g.thumbnail} alt="" className="size-7 shrink-0 rounded-md" />}
                         <div className="min-w-0">
                           <p className="truncate font-medium text-ink" title={g.name}>{g.name}</p>
                           {g.sub && <p className="truncate text-xs text-muted">{g.sub}</p>}
@@ -575,7 +575,7 @@ function TableCard({ data, model, $, level, setLevel, focus, save }: { data: Mea
                         <StatusChip label={v.label} tone={v.tone} />
                         {level === "campaign" && g.campaignId && (
                           <select aria-label={`Role of ${g.name}`} value={g.role ?? ""} onChange={(e) => save({ campaign: { id: g.campaignId, role: e.target.value || null } })}
-                            className="h-6 cursor-pointer rounded-control border border-hairline bg-raised px-1.5 text-xs text-ink">
+                            className="h-6 cursor-pointer rounded-control border border-hairline bg-raised pl-2 text-xs text-ink">
                             <option value="">No role</option><option value="testing">Testing</option><option value="scaling">Scaling</option>
                           </select>
                         )}
@@ -631,7 +631,7 @@ function RevenueCatCard({ data, model, usd, gate }: { data: MeasureData; model: 
         </div>
       </div>
       <div className="mt-3 border-t border-line pt-3">
-        <p className="mb-2.5 text-sm text-label">Annual vs monthly, by proceeds</p>
+        <p className="mb-2 text-xs text-muted">Annual vs monthly, by proceeds</p>
         {split.length ? <SplitBar parts={split.map((s) => ({ label: s.segment, value: s.proceeds || s.newPaid }))} format={(n) => (split.some((s) => s.proceeds) ? usd(n) : count(n))} />
           : <p className="text-sm text-muted">{quiet ? "No paid subscriptions in this period yet." : "No split by plan yet."}</p>}
       </div>

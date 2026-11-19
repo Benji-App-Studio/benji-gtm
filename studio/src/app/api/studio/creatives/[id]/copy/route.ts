@@ -4,6 +4,7 @@ import { CREATIVE_COLUMNS } from "@/lib/creative-types";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { brandFor } from "@/lib/server/brand";
 import { creativesBackend } from "@/lib/server/creatives-backend";
+import { dbFailure } from "@/lib/server/errors";
 
 /** OpenAI writes in the creatives edge function; give it its minute. */
 export const maxDuration = 60;
@@ -62,6 +63,6 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/
   const { data, error } = await session.supabase.from("creatives")
     .update({ copy_variants: variants, headline: chosen.headline || null, primary_text: chosen.primary_text, description: chosen.description || null })
     .eq("id", id).select(CREATIVE_COLUMNS).single();
-  if (error) return Response.json({ error: error.message }, { status: 400 });
+  if (error) return dbFailure("creative copy save", error, "The copy was written but couldn't be saved. Try again.", 400);
   return Response.json({ creative: data });
 }

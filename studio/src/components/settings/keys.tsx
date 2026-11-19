@@ -11,8 +11,10 @@ import { ask } from "../dialog";
 import { IconExternal, IconMore } from "../icons";
 import { Badge, Button, cx, inputClass, Menu, MenuItem, SettingsGroup, SettingsRow, Spinner } from "../ui";
 import { api, ReadOnlyNote, SettingsPage, WithInstall } from "./settings-ui";
+import { repoFileUrl } from "@/lib/brand-config";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
-const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+const day = (iso: string) => new Date(iso).toLocaleDateString(UI_LOCALE, { day: "numeric", month: "short" });
 const keyUrl = (name: string) => `/api/install/keys/${encodeURIComponent(name)}`;
 const labelOf = (name: string) => KEY_CATALOG.find((key) => key.name === name)?.label ?? name;
 /** The key in a sentence: "OpenAI key", but "Meta app secret" and "TikTok research client key" as they are. */
@@ -144,7 +146,10 @@ function KeyForm({ spec, replacing, onCancel, onSaved }: { spec: KeySpec; replac
       <ol className="mt-1.5 grid list-decimal gap-1 pl-4 text-sm text-label marker:text-faint">
         {spec.steps.map((step) => <li key={step}>{step}</li>)}
       </ol>
-      <a href={spec.getUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 rounded-xs text-sm font-medium text-accent hover:underline">Open {site}<IconExternal className="size-3.5" /></a>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+        <a href={spec.getUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xs text-sm font-medium text-accent hover:underline">Open {site}<IconExternal className="size-3.5" /></a>
+        <a href={repoFileUrl(spec.guide)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xs text-sm font-medium text-accent hover:underline">Full step-by-step guide<IconExternal className="size-3.5" /></a>
+      </div>
       <label htmlFor={id} className="mt-4 block text-xs font-medium text-label">{replacing ? `New ${nounOf(spec)}` : nounOf(spec)}</label>
       {spec.multiline
         ? <textarea {...field} rows={6} placeholder={spec.hint} className={cx(inputClass, "mt-1.5 resize-y font-mono text-xs")} />

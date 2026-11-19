@@ -30,7 +30,7 @@ function KeyField({ spec, state, tag, onSaved }: { spec: KeySpec; state: KeyStat
   }
 
   return (
-    <div className="rounded-inner border border-line p-4">
+    <div className="rounded-inner border border-line p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium">{spec.label}</h3>
         <span className="flex items-center gap-2">
@@ -51,7 +51,7 @@ function KeyField({ spec, state, tag, onSaved }: { spec: KeySpec; state: KeyStat
                 placeholder={state.set && state.last4 ? `Saved, ends in ${state.last4}. Paste a new key to replace it.` : "Paste the key here"} />
             </Field>
           </div>
-          <Button type="submit" disabled={busy || !value.trim()} className="mb-[22px]">{busy ? <><Spinner className="size-3.5" />Checking</> : "Check and save"}</Button>
+          <Button type="submit" disabled={busy || !value.trim()} className="mb-[22px]">{busy ? <><Spinner className="size-3.5" />Checking</> : "Save and check"}</Button>
         </form>
         {error && <p role="alert" className="text-sm text-warn">{error}</p>}
         {!error && state.set && state.status === "ok" && <p className="text-sm text-win">This key works. It is saved in your project{state.last4 ? ` (ends in ${state.last4})` : ""}.</p>}

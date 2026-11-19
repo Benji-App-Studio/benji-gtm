@@ -8,8 +8,15 @@
 // - An import of the Meta Ads MCP's `ads_library_search` output (free, newest 50 per query, no media).
 // - An import of the local Ad Library scraper's file (scripts/meta-ad-library, free): one advertiser's
 //   ads with media, Meta's impressions order and the creative's measured size.
-// - TikTok: the Commercial Content API (EU/UK ads; by application) or the Creative Center "Top Ads"
-//   via Apify. Both off unless RESEARCH_TIKTOK says otherwise.
+// - Google Ads Transparency Center via an Apify scraper (paid per ad): one advertiser's search, YouTube,
+//   Shopping, Maps and Play ads in any country, by advertiser id, website or name.
+// - TikTok: a brand's own ads only where they ran in Europe, from the Commercial Content API (by
+//   application) or TikTok's Ad Library through Apify (paid); or Creative Center "Top Ads" through Apify
+//   (by keyword and country, never by brand).
+// Which sources run is the owner's choice in Settings > Research sources (`install.settings.research`,
+// _shared/research-sources.ts), each only with its key saved; the older environment switches
+// RESEARCH_TIKTOK and RESEARCH_META_APIFY_ACTOR still win where set. plan.ts decides what a collection
+// does and what it costs at most; the studio shows that before anything paid starts.
 //
 // Pulls are logged in `ad_pulls`; an Apify pull stays "running" until a `poll` finds its run finished:
 // the Research page polls while it's open, and the `research-pulls` cron watchdog calls `poll-tick`
@@ -33,10 +40,14 @@
 // ads, their files and its import history.
 import { createClient } from "@supabase/supabase-js";
 import {
-  AD_FORMATS, adLibraryUrl, adToReel, creativeKey, daysRunning, formatSeed, fromMetaApi, fromMetaLibrary, fromMetaMcp, fromTikTokLibrary, fromTikTokTopAd,
-  META_API_COMMERCIAL_COUNTRIES, META_APIFY_ACTORS, META_APIFY_PRICE_PER_AD, metaAdLibraryUrl, metaApifyInput, TIKTOK_APIFY_ACTORS, TIKTOK_LIBRARY, tiktokTopAdsInput,
+  AD_FORMATS, adToReel, creativeKey, daysRunning, formatSeed, fromGoogleAd, fromMetaApi, fromMetaLibrary, fromMetaMcp, fromTikTokEuAd, fromTikTokLibrary, fromTikTokTopAd,
+  GOOGLE_APIFY_ACTOR, googleAdsInput, META_APIFY_ACTORS, metaAdLibraryUrl, metaApifyInput, TIKTOK_APIFY_ACTORS, TIKTOK_LIBRARY, tiktokEuInput, tiktokTopAdsInput,
   tiktokLibraryQuery, tiktokTokenBody, type AdSource, type PaidAd,
 } from "../radar/engine/adlibrary.ts";
+import { apifyRunLimits, LIMITS, makePlan as planFor, pageIdFrom, planAnswer, runEstimate } from "./plan.ts";
+import { giveUpPulls, NO_APIFY_MESSAGE } from "./pulls.ts";
+import { claimPatch, DECODE_MAX_ATTEMPTS, drainLanes, successPatch } from "./decode_retry.ts";
+import { onSources, readResearch, resolveSources, type ResolvedSources, tiktokSwitch } from "../_shared/research-sources.ts";
 import { apifyClient, isActive } from "../radar/engine/apify.ts";
 import { decoder } from "../radar/engine/decode.ts";
 import { LIBRARY } from "../radar/engine/formats.ts";
@@ -48,12 +59,13 @@ import {
   type MediaKind,
 } from "./media.ts";
 import { cleanAdMedia, MERGE_COLUMNS, mergeAdRow, scanTranscript, scanVideo } from "./rows.ts";
-import { type Judge, JudgeError } from "../_shared/ai/judge.ts";
+import { accountError, type Judge, JudgeError, keyRefusal } from "../_shared/ai/judge.ts";
 import { modelOverrides, resolveModels, TIMED_TRANSCRIBE_MODELS } from "../_shared/ai/models.ts";
 import { createJudge, judgeAvailability } from "../_shared/ai/provider.ts";
 import { createAuth, HttpError } from "../_shared/auth.ts";
 import { addKeyMessage, createKeys, sameSecret } from "../_shared/keys.ts";
 import { mediaTimings, resolveLimits, storageQuotaBytes, tooBigNote, uploadMaxBytes, withinWallClock, workWindowMs } from "../_shared/limits.ts";
+import { fits, storageErrorText, storageRoom } from "../_shared/storage.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -77,11 +89,11 @@ const STORAGE_HOST = new URL(SUPABASE_URL).host;
 /** A media link we may save, download or read (media.ts). */
 const allowedMedia = (url: unknown) => allowedMediaUrl(url, STORAGE_HOST);
 
-/** Ads kept per watchlist entry and source in one pull. */
-const PER_WATCH_LIMIT = 200;
-const META_API_PAGES = 5;
+/** Ads kept per watchlist entry and source in one pull (plan.ts). */
+const PER_WATCH_LIMIT = LIMITS.meta;
+const META_API_PAGES = LIMITS.metaApiPages;
 /** Creative Center top ads read per TikTok watchlist entry. */
-const TOP_ADS_LIMIT = 50;
+const TOP_ADS_LIMIT = LIMITS.tiktokTopAds;
 
 class UserError extends Error {}
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 400);
@@ -142,10 +154,20 @@ async function workerSecret(): Promise<string | null> {
   return (await secrets.get("RESEARCH_WORKER_SECRET")) ?? null;
 }
 
-/** TikTok research is off until switched on: `library` (Commercial Content API) or `creative_center` (Apify, paid). */
-const tiktokMode = (k: Keys) => (k.RESEARCH_TIKTOK === "library" || k.RESEARCH_TIKTOK === "creative_center" ? k.RESEARCH_TIKTOK : "off");
-/** curious_coder (~$0.75/1,000 ads) unless RESEARCH_META_APIFY_ACTOR=official (Apify's own, ~$5.80/1,000). */
-const metaActor = (k: Keys): keyof typeof META_APIFY_ACTORS => (k.RESEARCH_META_APIFY_ACTOR === "official" ? "official" : "curious");
+/**
+ * Which sources a pull uses (_shared/research-sources.ts): Settings > Research sources, each only with
+ * its keys saved; RESEARCH_TIKTOK and RESEARCH_META_APIFY_ACTOR win where they are set.
+ */
+async function sourcesFor(k: Keys): Promise<ResolvedSources> {
+  return resolveSources(readResearch((await installSettings())?.research), (name) => Boolean(k[name as keyof Keys]), {
+    RESEARCH_TIKTOK: k.RESEARCH_TIKTOK, RESEARCH_META_APIFY_ACTOR: k.RESEARCH_META_APIFY_ACTOR,
+  });
+}
+/** The older name for TikTok's mode, which health still reports: the library, Top Ads, or off. */
+const tiktokMode = (r: ResolvedSources, k: Keys) =>
+  tiktokSwitch(k) ?? (r.sources.tiktokLibrary.on || r.sources.tiktokEu.on ? "library" : r.sources.tiktokTopAds.on ? "creative_center" : "off");
+/** The Meta actor's key in META_APIFY_ACTORS: the community actor ($0.75 per 1,000 ads) or Apify's own ($5.80). */
+const metaActorKey = (r: ResolvedSources): keyof typeof META_APIFY_ACTORS => (r.metaActor === "official" ? "official" : "curious");
 
 // MARK: HTTP
 
@@ -197,8 +219,8 @@ Deno.serve(async (req) => {
     const user = await signedInUser(req);
     const input = req.method === "POST" ? await body(req) : {};
     switch (route) {
-      case "plan": return json(await plan(user, String(input.productId ?? "")));
-      case "pull": return json(await pull(user, String(input.productId ?? ""), Boolean(input.spend)));
+      case "plan": return json(await plan(user, String(input.productId ?? ""), watchIds(input.watchIds)));
+      case "pull": return json(await pull(user, String(input.productId ?? ""), Boolean(input.spend), watchIds(input.watchIds)));
       case "poll": return json(await poll(user, String(input.productId ?? "")));
       case "import": return json(await importMcp(user, String(input.productId ?? ""), input));
       case "import-local": return json(await importLocal(user, String(input.productId ?? ""), input));
@@ -218,13 +240,24 @@ Deno.serve(async (req) => {
   } catch (error) {
     if (error instanceof HttpError) return json({ error: error.message }, error.status);
     if (error instanceof UserError) return json({ error: error.message }, 400);
+    // A refused AI key reads as itself ("OpenAI refused the key: … Check Settings > API keys.").
+    const refused = accountError(error);
+    if (refused) return json({ error: refused.message }, 400);
     console.error(error);
     return json({ error: `Something went wrong: ${errorText(error)}` }, 500);
   }
 });
 
+/** The competitors a plan or pull is for (watchlist ids), or null for every followed one. */
+function watchIds(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const ids = value.filter((id): id is string => typeof id === "string" && /^[0-9a-f-]{36}$/.test(id)).slice(0, 200);
+  return ids.length ? ids : null;
+}
+
 async function health() {
   const k = await keys();
+  const resolved = await sourcesFor(k);
   const ai = await judgeAvailability(await aiChoice());
   return {
     metaApi: Boolean(k.META_AD_LIBRARY_TOKEN),
@@ -236,8 +269,11 @@ async function health() {
     aiProvider: ai.ok ? ai.provider : null,
     limits: await planLimits(),
     openai: Boolean(k.OPENAI_API_KEY),
-    tiktok: tiktokMode(k),
+    tiktok: tiktokMode(resolved, k),
     tiktokLibrary: Boolean(k.TIKTOK_RESEARCH_CLIENT_KEY && k.TIKTOK_RESEARCH_CLIENT_SECRET),
+    // Which collection sources are on now, and the Meta actor (Settings > Research sources).
+    sources: onSources(resolved),
+    metaActor: resolved.metaActor,
     mediaWorker: Boolean(await workerSecret()),
   };
 }
@@ -245,9 +281,11 @@ async function health() {
 // MARK: Workspace and watchlist
 
 interface WatchRow {
-  id: string; user_id: string; product_id: string; name: string; network: "meta" | "tiktok";
+  id: string; user_id: string; product_id: string; name: string; network: "meta" | "tiktok" | "google";
   page_id: string | null; page_url: string | null; search_terms: string | null; tiktok_advertiser_id: string | null;
   countries: string[]; enabled: boolean;
+  /** The competitor's site (Google ads by domain), Google advertiser id (AR…) and TikTok business name (migration 20261119140000). */
+  website?: string | null; google_advertiser_id?: string | null; tiktok_business_name?: string | null;
   /** Our own Page: its ads are saved as ours (Research → Our ads). */
   is_own?: boolean;
 }
@@ -259,65 +297,25 @@ async function ownProduct(user: string, productId: string) {
   return data as { id: string; user_id: string; name: string; description: string };
 }
 
-async function watchlist(productId: string): Promise<WatchRow[]> {
-  const { data } = await db.from("ad_watchlist").select("*").eq("product_id", productId).eq("enabled", true);
+async function watchlist(productId: string, withPaused = false): Promise<WatchRow[]> {
+  let query = db.from("ad_watchlist").select("*").eq("product_id", productId);
+  if (!withPaused) query = query.eq("enabled", true);
+  const { data } = await query;
   return (data ?? []) as WatchRow[];
 }
 
-/** A Page id from a facebook.com URL that carries one (`?id=`, `view_all_page_id=`, `/profile.php?id=`). */
-const pageIdFrom = (url: string | null) => url?.match(/(?:view_all_page_id|[?&]id)=(\d{5,})/)?.[1] ?? null;
-
-interface Plan {
-  metaApi: { watch: WatchRow; countries: string[] }[];
-  metaApify: { watch: WatchRow; url: string }[];
-  tiktokLibrary: WatchRow[];
-  tiktokTopAds: WatchRow[];
-  /** Ads the paid sources would read at most, and what that would cost at most. */
-  paidAds: number;
-  usd: number;
-  notes: string[];
-}
-
-/** What a pull would do with the current keys and watchlist, and the most it could cost. */
-async function makePlan(productId: string, k: Keys): Promise<Plan> {
-  const list = await watchlist(productId);
-  const p: Plan = { metaApi: [], metaApify: [], tiktokLibrary: [], tiktokTopAds: [], paidAds: 0, usd: 0, notes: [] };
-  for (const watch of list) {
-    if (watch.network === "tiktok") {
-      if (tiktokMode(k) === "library") p.tiktokLibrary.push(watch);
-      if (tiktokMode(k) === "creative_center") p.tiktokTopAds.push(watch);
-      continue;
-    }
-    const countries = (watch.countries.length ? watch.countries : ["US"]).map((c) => c.toUpperCase());
-    const apiCountries = countries.filter((c) => META_API_COMMERCIAL_COUNTRIES.includes(c));
-    const pageId = watch.page_id ?? pageIdFrom(watch.page_url);
-    if (k.META_AD_LIBRARY_TOKEN && apiCountries.length && (pageId || watch.search_terms)) p.metaApi.push({ watch: { ...watch, page_id: pageId }, countries: apiCountries });
-    // Outside the EU/UK the API has no commercial ads: the public Ad Library pages are the only source.
-    const others = countries.filter((c) => !META_API_COMMERCIAL_COUNTRIES.includes(c));
-    const scrapeCountries = others.length ? others : k.META_AD_LIBRARY_TOKEN ? [] : countries;
-    if (scrapeCountries.length) {
-      const country = scrapeCountries.length === 1 ? scrapeCountries[0] : "ALL";
-      const url = pageId ? adLibraryUrl({ pageId, country }) : watch.page_url?.includes("/ads/library") ? watch.page_url : adLibraryUrl({ searchTerms: watch.search_terms ?? watch.name, country });
-      p.metaApify.push({ watch, url });
-    }
-  }
-  p.paidAds = p.metaApify.length * PER_WATCH_LIMIT + p.tiktokTopAds.length * TOP_ADS_LIMIT;
-  // Apify's free-plan prices, plus each run's start fee; real runs usually stop well below the limit.
-  p.usd = Math.round((p.metaApify.length * PER_WATCH_LIMIT * META_APIFY_PRICE_PER_AD[metaActor(k)] + p.tiktokTopAds.length * TOP_ADS_LIMIT * 0.003 + 0.01) * 100) / 100;
-  if (!list.length) p.notes.push("Add competitors to the watchlist first.");
-  if (!k.META_AD_LIBRARY_TOKEN) p.notes.push("No Meta Ad Library token is set, so EU/UK ads come from the scraper too.");
+/** What a pull would do with the current sources and watchlist, and the most it could cost (plan.ts). */
+async function makePlan(productId: string, k: Keys, ids: string[] | null) {
+  const resolved = await sourcesFor(k);
+  const p = planFor(await watchlist(productId, Boolean(ids)), resolved, { watchIds: ids });
   if (p.metaApify.length && !k.APIFY_TOKEN) p.notes.push(`US and other non-EU ads can't be pulled yet. ${addKeyMessage("APIFY_TOKEN")}`);
-  return p;
+  return { p, resolved };
 }
 
-async function plan(user: string, productId: string) {
+async function plan(user: string, productId: string, ids: string[] | null) {
   await ownProduct(user, productId);
-  const k = await keys();
-  const p = await makePlan(productId, k);
-  return {
-    free: p.metaApi.length + p.tiktokLibrary.length, paid: p.metaApify.length + p.tiktokTopAds.length,
-    paidAds: p.paidAds, usd: p.usd, notes: p.notes,
-  };
+  const { p, resolved } = await makePlan(productId, await keys(), ids);
+  return { ...planAnswer(p), sourcesOn: onSources(resolved), metaActor: resolved.metaActor };
 }
 
 // MARK: Saving ads
@@ -426,17 +424,25 @@ async function logPull(user: string, productId: string, source: AdSource, fields
 }
 
 /**
- * Pulls every enabled watchlist entry. Free sources run now; paid ones (Apify) only with `spend`,
- * which the studio sends after the user confirmed the estimate. Apify pulls finish in `poll`.
+ * Pulls every enabled watchlist entry (or the competitors in `ids`). Free sources run now; paid ones
+ * (Apify) only with `spend`, which the studio sends after the user confirmed the estimate. Apify pulls
+ * finish in `poll`. Answers each source's result and the ids of the pulls it logged, so the studio can
+ * follow them to the end.
  */
-async function pull(user: string, productId: string, spend: boolean) {
+async function pull(user: string, productId: string, spend: boolean, ids: string[] | null = null) {
   await ownProduct(user, productId);
   const k = await keys();
-  const p = await makePlan(productId, k);
-  if (!p.metaApi.length && !p.metaApify.length && !p.tiktokLibrary.length && !p.tiktokTopAds.length) {
-    throw new UserError(p.notes[0] ?? "Nothing to pull: add a competitor with a Facebook Page or search terms.");
+  const { p, resolved } = await makePlan(productId, k, ids);
+  const paidCount = p.metaApify.length + p.google.length + p.tiktokEu.length + p.tiktokTopAds.length;
+  if (!p.metaApi.length && !p.tiktokLibrary.length && !paidCount) {
+    throw new UserError(p.notes[0] ?? p.skipped[0]?.reason ?? "Nothing to collect: turn on a source in Settings > Research sources, or add a competitor.");
   }
-  const results: { source: AdSource; ads?: number; started?: boolean; error?: string }[] = [];
+  const results: { source: AdSource; watch?: string; ads?: number; started?: boolean; error?: string }[] = [];
+  const pullIds: string[] = [];
+  const logged = async (source: AdSource, fields: Record<string, unknown>) => {
+    const id = await logPull(user, productId, source, fields);
+    if (id) pullIds.push(id);
+  };
 
   // Meta Ad Library API: one request chain per entry, EU/UK countries only.
   for (const { watch, countries } of p.metaApi) {
@@ -459,70 +465,84 @@ async function pull(user: string, productId: string, spend: boolean) {
       }
       const saved = await save(ads, { user, productId, watchFor: () => watch });
       if (complete && watch.page_id) await retireMissing(watch.id, "meta", ads.map((a) => a.adId), since);
-      await logPull(user, productId, "meta_api", { status: "done", ads: saved, input: { watch: watch.name, countries }, finished_at: new Date().toISOString() });
-      results.push({ source: "meta_api", ads: saved });
+      await logged("meta_api", { status: "done", ads: saved, input: { watch: watch.id, name: watch.name, countries }, finished_at: new Date().toISOString() });
+      results.push({ source: "meta_api", watch: watch.id, ads: saved });
     } catch (error) {
-      await logPull(user, productId, "meta_api", { status: "error", error: errorText(error), input: { watch: watch.name, countries }, finished_at: new Date().toISOString() });
-      results.push({ source: "meta_api", error: errorText(error) });
+      await logged("meta_api", { status: "error", error: errorText(error), input: { watch: watch.id, name: watch.name, countries }, finished_at: new Date().toISOString() });
+      results.push({ source: "meta_api", watch: watch.id, error: errorText(error) });
     }
   }
 
-  // TikTok Commercial Content API (EU/UK), when switched on and approved.
+  // TikTok Commercial Content API (ads shown in Europe), when its keys are saved and it's on.
   if (p.tiktokLibrary.length) {
     try {
       if (!k.TIKTOK_RESEARCH_CLIENT_KEY || !k.TIKTOK_RESEARCH_CLIENT_SECRET) throw new Error("TikTok's Commercial Content API isn't connected. Add your TikTok research client key and secret in Settings > API keys.");
       const tokenResponse = await fetch(TIKTOK_LIBRARY.token, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: tiktokTokenBody(k.TIKTOK_RESEARCH_CLIENT_KEY, k.TIKTOK_RESEARCH_CLIENT_SECRET) });
       const token = (await tokenResponse.json().catch(() => ({})))?.access_token;
       if (!token) throw new Error("TikTok didn't issue a token. Check the Commercial Content API keys and approval.");
-      for (const watch of p.tiktokLibrary) {
-        const response = await fetch(`${TIKTOK_LIBRARY.adQuery}?fields=${TIKTOK_LIBRARY.fields}`, {
-          method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify(tiktokLibraryQuery({ advertiserIds: watch.tiktok_advertiser_id ? [watch.tiktok_advertiser_id] : undefined, searchTerm: watch.tiktok_advertiser_id ? undefined : watch.search_terms ?? watch.name, country: watch.countries[0] })),
-          signal: AbortSignal.timeout(20_000),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || data?.error?.code && data.error.code !== "ok") throw new Error(`TikTok: ${String(data?.error?.message ?? response.status).slice(0, 200)}`);
-        const ads = (data?.data?.ads ?? []).flatMap((raw: Record<string, unknown>) => { const ad = fromTikTokLibrary(raw, watch.name); return ad ? [ad] : []; });
-        const saved = await save(ads, { user, productId, watchFor: () => watch });
-        await logPull(user, productId, "tiktok_library", { status: "done", ads: saved, input: { watch: watch.name }, finished_at: new Date().toISOString() });
-        results.push({ source: "tiktok_library", ads: saved });
+      for (const target of p.tiktokLibrary) {
+        const { watch } = target;
+        try {
+          const response = await fetch(`${TIKTOK_LIBRARY.adQuery}?fields=${TIKTOK_LIBRARY.fields}`, {
+            method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify(tiktokLibraryQuery({ advertiserIds: target.businessId ? [target.businessId] : undefined, searchTerm: target.businessId ? undefined : target.name, country: target.country ?? undefined, max: LIMITS.tiktokLibrary })),
+            signal: AbortSignal.timeout(20_000),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || data?.error?.code && data.error.code !== "ok") throw new Error(`TikTok: ${String(data?.error?.message ?? response.status).slice(0, 200)}`);
+          const ads = (data?.data?.ads ?? []).flatMap((raw: Record<string, unknown>) => { const ad = fromTikTokLibrary(raw, watch.name); return ad ? [ad] : []; });
+          const saved = await save(ads, { user, productId, watchFor: () => watch });
+          await logged("tiktok_library", { status: "done", ads: saved, input: { watch: watch.id, name: watch.name, country: target.country ?? "ALL" }, finished_at: new Date().toISOString() });
+          results.push({ source: "tiktok_library", watch: watch.id, ads: saved });
+        } catch (error) {
+          await logged("tiktok_library", { status: "error", error: errorText(error), input: { watch: watch.id, name: watch.name }, finished_at: new Date().toISOString() });
+          results.push({ source: "tiktok_library", watch: watch.id, error: errorText(error) });
+        }
       }
     } catch (error) {
-      await logPull(user, productId, "tiktok_library", { status: "error", error: errorText(error), finished_at: new Date().toISOString() });
+      await logged("tiktok_library", { status: "error", error: errorText(error), finished_at: new Date().toISOString() });
       results.push({ source: "tiktok_library", error: errorText(error) });
     }
   }
 
   // Paid scrapes start only after the user confirmed the cost.
-  if (spend && (p.metaApify.length || p.tiktokTopAds.length)) {
+  if (spend && paidCount) {
     if (!k.APIFY_TOKEN) throw new UserError(`Apify isn't connected. ${addKeyMessage("APIFY_TOKEN")}`);
     const apify = apifyClient(k.APIFY_TOKEN);
+    /** Starts one Apify run and logs it as a running pull (the poll finishes it). */
+    // Every run starts with Apify's own timeout and a charge cap a small margin above the estimate the
+    // person confirmed (plan.ts apifyRunLimits), so a run the app stops following still ends.
+    const start = async (source: AdSource, actor: string, input: Record<string, unknown>, extra: Record<string, unknown>, estimate: { usd: number; maxAds: number }, watch?: string) => {
+      try {
+        const run = await apify.start(actor, input, apifyRunLimits(estimate));
+        await logged(source, { apify_run_id: run.id, input: { actor, ...extra } });
+        results.push({ source, watch, started: true });
+      } catch (error) {
+        await logged(source, { status: "error", error: errorText(error), input: { actor, ...extra }, finished_at: new Date().toISOString() });
+        results.push({ source, watch, error: errorText(error) });
+      }
+    };
     if (p.metaApify.length) {
-      const actor = metaActor(k);
+      const actor = metaActorKey(resolved);
       const input = metaApifyInput({ urls: p.metaApify.map((x) => x.url), limitPerUrl: PER_WATCH_LIMIT, actor });
-      try {
-        const run = await apify.start(META_APIFY_ACTORS[actor], input);
-        await logPull(user, productId, "meta_apify", { apify_run_id: run.id, input: { actor: META_APIFY_ACTORS[actor], urls: p.metaApify.map((x) => ({ watch: x.watch.id, url: x.url })) } });
-        results.push({ source: "meta_apify", started: true });
-      } catch (error) {
-        await logPull(user, productId, "meta_apify", { status: "error", error: errorText(error), finished_at: new Date().toISOString() });
-        results.push({ source: "meta_apify", error: errorText(error) });
-      }
+      await start("meta_apify", META_APIFY_ACTORS[actor], input, { urls: p.metaApify.map((x) => ({ watch: x.watch.id, url: x.url })) }, runEstimate(resolved, "metaApify", p.metaApify.length));
     }
-    for (const watch of p.tiktokTopAds) {
-      try {
-        // Creative Center's best ads for the entry's keyword in its first country, over 30 days.
-        const input = tiktokTopAdsInput({ country: watch.countries[0], periodDays: 30, keyword: watch.search_terms ?? watch.name, max: TOP_ADS_LIMIT });
-        const run = await apify.start(TIKTOK_APIFY_ACTORS.topAds, input);
-        await logPull(user, productId, "tiktok_creative_center", { apify_run_id: run.id, input: { actor: TIKTOK_APIFY_ACTORS.topAds, watch: watch.id, ...input } });
-        results.push({ source: "tiktok_creative_center", started: true });
-      } catch (error) {
-        await logPull(user, productId, "tiktok_creative_center", { status: "error", error: errorText(error), finished_at: new Date().toISOString() });
-        results.push({ source: "tiktok_creative_center", error: errorText(error) });
-      }
+    // Google and TikTok's European library: one run per competitor, so each ad is filed under the one it was collected for.
+    for (const g of p.google) {
+      const input = googleAdsInput({ advertiserId: g.advertiserId, domain: g.domain, name: g.name, country: g.country, max: LIMITS.google });
+      await start("google_apify", GOOGLE_APIFY_ACTOR, input, { watch: g.watch.id, by: g.by }, runEstimate(resolved, "google"), g.watch.id);
+    }
+    for (const t of p.tiktokEu) {
+      const input = tiktokEuInput({ businessId: t.businessId, name: t.name, country: t.country, max: LIMITS.tiktokEu });
+      await start("tiktok_apify", TIKTOK_APIFY_ACTORS.library, input, { watch: t.watch.id, by: t.by }, runEstimate(resolved, "tiktokEu"), t.watch.id);
+    }
+    for (const t of p.tiktokTopAds) {
+      // Creative Center's best ads for the entry's keyword in its first country, over 30 days.
+      const input = tiktokTopAdsInput({ country: t.country, periodDays: 30, keyword: t.keyword, max: TOP_ADS_LIMIT });
+      await start("tiktok_creative_center", TIKTOK_APIFY_ACTORS.topAds, input, { watch: t.watch.id, ...input }, runEstimate(resolved, "tiktokTopAds"), t.watch.id);
     }
   }
-  return { results, pendingPaid: !spend && (p.metaApify.length > 0 || p.tiktokTopAds.length > 0), usd: p.usd };
+  return { results, pullIds, pendingPaid: !spend && paidCount > 0, usd: p.usd, skipped: p.skipped };
 }
 
 /** Finishes the workspace's Apify pulls whose runs are done (the Research page asks while it's open). */
@@ -531,30 +551,35 @@ async function poll(user: string, productId: string) {
   const { data: running } = await db.from("ad_pulls").select("*").eq("product_id", productId).eq("status", "running").not("apify_run_id", "is", null);
   if (!running?.length) return { running: 0 };
   const k = await keys();
-  if (!k.APIFY_TOKEN) throw new UserError(`Apify isn't connected. ${addKeyMessage("APIFY_TOKEN")}`);
-  return { running: await finishPulls(k.APIFY_TOKEN, productId, running as PullRow[]) };
+  // Without a token the pulls fail now with what to add (pulls.ts), instead of staying "running".
+  const live = await giveUpPulls(running as PullRow[], pullEnds(k.APIFY_TOKEN));
+  if (!k.APIFY_TOKEN) throw new UserError(NO_APIFY_MESSAGE);
+  return { running: await finishPulls(k.APIFY_TOKEN, productId, live) };
 }
 
-/** A pull still running this long is given up on (the run is gone or the token was removed). */
-const PULL_GIVE_UP_MS = 48 * 3_600_000;
 /** A pull claimed by a poll that then stopped (a crashed invocation) can be claimed again after this. */
 const PULL_CLAIM_MS = 10 * 60_000;
 
+/** How pulls.ts ends a pull: aborting its run at Apify (with the token) and writing the end while it is still running. */
+const pullEnds = (token: string | undefined) => ({
+  hasToken: Boolean(token),
+  abort: (runId: string) => (token ? apifyClient(token).abort(runId) : Promise.resolve(false)),
+  settle: async (id: string, patch: Record<string, unknown>) => { await db.from("ad_pulls").update(patch).eq("id", id).eq("status", "running"); },
+});
+
 /**
  * The `research-pulls` cron watchdog's call (with the worker secret): finishes every workspace's Apify
- * pulls whose runs are done, so a pull completes with the Research page closed. Pulls running for
- * more than two days are marked failed.
+ * pulls whose runs are done, so a pull completes with the Research page closed. A pull past the give-up
+ * time is stopped at Apify and marked failed; without an Apify token every running pull fails at once.
  */
 async function pollAll() {
-  const giveUp = new Date(Date.now() - PULL_GIVE_UP_MS).toISOString();
-  await db.from("ad_pulls").update({ status: "error", error: "The scrape didn't finish within two days.", finished_at: new Date().toISOString() })
-    .eq("status", "running").not("apify_run_id", "is", null).lt("started_at", giveUp);
   const { data: running } = await db.from("ad_pulls").select("*").eq("status", "running").not("apify_run_id", "is", null).order("started_at").limit(50);
   if (!running?.length) return { running: 0 };
   const k = await keys();
-  if (!k.APIFY_TOKEN) return { running: running.length, error: addKeyMessage("APIFY_TOKEN") };
+  const live = await giveUpPulls(running as PullRow[], pullEnds(k.APIFY_TOKEN));
+  if (!k.APIFY_TOKEN || !live.length) return { running: 0 };
   const byProduct = new Map<string, PullRow[]>();
-  for (const row of running as PullRow[]) byProduct.set(row.product_id, [...(byProduct.get(row.product_id) ?? []), row]);
+  for (const row of live) byProduct.set(row.product_id, [...(byProduct.get(row.product_id) ?? []), row]);
   let still = 0;
   for (const [productId, rows] of byProduct) {
     still += await finishPulls(k.APIFY_TOKEN, productId, rows).catch((error) => {
@@ -565,7 +590,15 @@ async function pollAll() {
   return { running: still };
 }
 
-interface PullRow { id: string; user_id: string; product_id: string; source: AdSource; apify_run_id: string; input: Record<string, any> | null; finished_at: string | null }
+/** One item of a finished Apify run, read the way its source writes it. */
+function mapItem(source: AdSource, raw: Record<string, any>, competitor: string | null): PaidAd | null {
+  if (source === "tiktok_creative_center") return fromTikTokTopAd(raw);
+  if (source === "google_apify") return fromGoogleAd(raw, competitor);
+  if (source === "tiktok_apify") return fromTikTokEuAd(raw, competitor);
+  return fromMetaLibrary(raw);
+}
+
+interface PullRow { id: string; user_id: string; product_id: string; source: AdSource; apify_run_id: string; input: Record<string, any> | null; finished_at: string | null; started_at: string | null }
 
 /**
  * Reads the ads of each finished run and saves them, then queues their media files for storage. A pull
@@ -574,7 +607,7 @@ interface PullRow { id: string; user_id: string; product_id: string; source: AdS
  */
 async function finishPulls(apifyToken: string, productId: string, running: PullRow[]): Promise<number> {
   const apify = apifyClient(apifyToken);
-  const list = await watchlist(productId);
+  const list = await watchlist(productId, true);
   const match = matcher(list);
   let still = 0;
   for (const row of running) {
@@ -589,13 +622,13 @@ async function finishPulls(apifyToken: string, productId: string, running: PullR
       if (run.status !== "SUCCEEDED") throw new Error(`The scrape ended ${run.status.toLowerCase()}${run.statusMessage ? `: ${run.statusMessage}` : ""}`);
       const items = await apify.items<Record<string, unknown>>(run.defaultDatasetId);
       const files: QueuedFile[] = [];
+      const pulledFor = list.find((w) => w.id === row.input?.watch);
       const ads = items.flatMap((raw) => {
-        const ad = row.source === "tiktok_creative_center" ? fromTikTokTopAd(raw as Record<string, any>) : fromMetaLibrary(raw);
+        const ad = mapItem(row.source, raw as Record<string, any>, pulledFor?.name ?? null);
         if (!ad) return [];
-        for (const file of mediaFiles({ raw: row.source === "tiktok_creative_center" ? null : raw, media: ad.media, thumb: ad.thumb })) files.push({ ...file, pageId: ad.pageId });
+        for (const file of mediaFiles({ raw: row.source === "meta_apify" ? raw : null, media: ad.media, thumb: ad.thumb })) files.push({ ...file, pageId: ad.pageId });
         return [ad];
       });
-      const pulledFor = list.find((w) => w.id === row.input?.watch);
       const saved = await save(ads, { user, productId, watchFor: pulledFor ? () => pulledFor : match });
       await db.from("ad_pulls").update({ status: "done", ads: saved, usd: Number(run.usageTotalUsd ?? 0), finished_at: new Date().toISOString() }).eq("id", row.id);
       // Like an import: the files go to storage in the background, before Meta's links expire.
@@ -864,7 +897,7 @@ async function importLocal(user: string, productId: string, input: Record<string
 const DECODE_LANES = 6;
 /** A run stops claiming ads after this and, if any are left, starts the next run itself. */
 const DECODE_RUN_MS = 60_000;
-/** An ad claimed this long ago and still not decoded (its run stopped, or the AI failed on it) can be claimed again. */
+/** An ad claimed this long ago and still not decoded (its run stopped) can be claimed again; a failed try waits per decode_retry.ts. */
 const DECODE_CLAIM_MS = 15 * 60_000;
 /** Claims newer than this mean a run for the product is going now, so a kick doesn't start another. */
 const DECODE_BUSY_MS = 90_000;
@@ -895,23 +928,35 @@ async function decodeRow(client: Judge, product: { name: string; description: st
   const decoded = { ...read, source: heard.length ? "transcript" : "copy" };
   const seed = formatSeed({ ...ad, daysRunning: days, groupSize: row.variants }, decoded);
   const decodedAt = new Date().toISOString();
-  await db.from("paid_ads").update({ decoded, decoded_at: decodedAt, library_seed: seed }).eq("id", row.id);
+  await db.from("paid_ads").update({ decoded, decoded_at: decodedAt, library_seed: seed, ...successPatch() }).eq("id", row.id);
   return { decoded, seed, decodedAt };
 }
 
-/** Reads one ad now: the drawer's "Read again", or after the scan heard its video. */
+/**
+ * Reads one ad now: the drawer's "Read again", or after the scan heard its video. A failure is kept on
+ * the ad (decode_error) for the page, without using up one of the background reader's tries.
+ */
 async function decode(user: string, adRowId: string) {
   if (!/^[0-9a-f-]{36}$/.test(adRowId)) throw new HttpError(400, "Which ad?");
   const { data: row } = await db.from("paid_ads").select("*").eq("id", adRowId).eq("user_id", user).maybeSingle();
   if (!row) throw new HttpError(404, "This ad doesn't exist.");
   const client = await aiJudge();
-  return decodeRow(client, await ownProduct(user, row.product_id), row);
+  try {
+    return await decodeRow(client, await ownProduct(user, row.product_id), row);
+  } catch (error) {
+    const message = accountError(error)?.message ?? errorText(error);
+    await db.from("paid_ads").update({ decode_error: message.slice(0, 300) }).eq("id", row.id).is("decoded", null);
+    throw error;
+  }
 }
 
-/** The product's ads still to read: shown, never decoded, and with copy. */
+/**
+ * The product's ads still to read: shown, never decoded, with copy, and not out of tries (an ad the AI
+ * failed on DECODE_MAX_ATTEMPTS times keeps its decode_error and is left for the person's "Read again").
+ */
 function unread(user: string, productId: string, columns = "id") {
   return db.from("paid_ads").select(columns, { count: "exact" }).eq("user_id", user).eq("product_id", productId).eq("hidden", false)
-    .is("decoded", null).or('body.neq."",headline.neq.""');
+    .is("decoded", null).or('body.neq."",headline.neq.""').lt("decode_attempts", DECODE_MAX_ATTEMPTS);
 }
 
 /**
@@ -935,42 +980,39 @@ async function decodeNew(user: string, productId: string) {
 /**
  * One run: DECODE_LANES lanes each claim an unread ad (longest-running first) and read it, until
  * DECODE_RUN_MS has passed; then, if ads are left, the next run starts itself. A claim is `decoded_at`
- * set while `decoded` is still null, so two runs never read the same ad; one that fails stays claimed
- * until DECODE_CLAIM_MS has passed, and a later kick tries it again.
+ * set while `decoded` is still null, so two runs never read the same ad, and it counts as a try. A
+ * failed try keeps its error and waits (15 min, then 1 h); after three the ad is left unread with its
+ * error (decode_retry.ts). A refused AI key stops the run without using up tries.
  */
 async function drainDecodes(user: string, productId: string) {
   const started = Date.now();
   const client = await aiJudge();
   const product = await ownProduct(user, productId);
   const runMs = workWindowMs(await planLimits(), DECODE_RUN_MS);
-  let left = true;
-  const claim = async (): Promise<Record<string, any> | null> => {
+  const claim = async (): Promise<(Record<string, any> & { id: string }) | null> => {
+    const nowIso = new Date().toISOString();
+    // Free: never claimed, or claimed long ago by a run that stopped; and past its wait after a failed try.
     const free = `decoded_at.is.null,decoded_at.lt.${new Date(Date.now() - DECODE_CLAIM_MS).toISOString()}`;
-    const { data: next } = await unread(user, productId).or(free)
+    const due = `decode_retry_at.is.null,decode_retry_at.lte.${nowIso}`;
+    const { data: next } = await unread(user, productId, "id, decode_attempts").or(free).or(due)
       .order("started_at", { ascending: true, nullsFirst: false }).order("id").limit(DECODE_LANES * 2);
-    if (!next?.length) { left = false; return null; }
-    // Another lane may take one first: the update only lands while the ad is still free.
-    for (const { id } of next as unknown as { id: string }[]) {
-      const { data: row } = await db.from("paid_ads").update({ decoded_at: new Date().toISOString() })
-        .eq("id", id).is("decoded", null).or(free).select("*").maybeSingle();
+    if (!next?.length) return null;
+    // Another lane may take one first: the update only lands while the ad is still free and on the
+    // same try count (decode_retry.ts: a claim is one more try).
+    for (const { id, decode_attempts } of next as unknown as { id: string; decode_attempts: number | null }[]) {
+      const { data: row } = await db.from("paid_ads").update(claimPatch(decode_attempts))
+        .eq("id", id).is("decoded", null).eq("decode_attempts", Number(decode_attempts) || 0).or(free).or(due).select("*").maybeSingle();
       if (row) return row;
     }
     return null;
   };
-  const lane = async () => {
-    while (Date.now() - started < runMs) {
-      const row = await claim();
-      if (!row) return;
-      try {
-        await decodeRow(client, product, row);
-      } catch (error) {
-        // Stays claimed (tried again later); a short pause so a rate limit isn't hit harder.
-        console.error("decode", row.id, errorText(error));
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      }
-    }
-  };
-  await Promise.all(Array.from({ length: DECODE_LANES }, lane));
+  const { left, refused } = await drainLanes({
+    lanes: DECODE_LANES, runMs, claim,
+    read: async (row) => { await decodeRow(client, product, row); },
+    record: async (row, patch) => { await db.from("paid_ads").update(patch).eq("id", row.id).is("decoded", null); },
+    refused: (error) => accountError(error)?.message ?? null,
+  });
+  if (refused) console.error("decode stopped: the AI key was refused");
   if (left && Date.now() - started >= runMs) await wakeDecodes(user, productId);
 }
 
@@ -1228,6 +1270,9 @@ async function transcribe(apiKey: string, model: string, url: string): Promise<{
     return none("Speech-to-text didn't answer in time.");
   }
   const data = await answer.json().catch(() => ({}));
+  // A refused key stops the scan with the key's message; anything else only leaves the audio unheard.
+  const refused = keyRefusal("openai", answer.status, data);
+  if (!answer.ok && refused) throw new UserError(refused.message);
   if (!answer.ok) return none(`Speech-to-text failed: ${String(data?.error?.message ?? answer.status).slice(0, 200)}`);
   const seconds = Number(data?.duration) > 0 ? Math.round(Number(data.duration) * 10) / 10 : null;
   let segments: Segment[] = (Array.isArray(data?.segments) ? data.segments : []).slice(0, 150)
@@ -1338,6 +1383,8 @@ async function scan(user: string, adRowId: string, force: boolean, framesInput?:
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const refused = keyRefusal("openai", response.status, data);
+    if (refused) throw new UserError(refused.message);
     const message = String(data?.error?.message ?? `error ${response.status}`);
     if (/download|image_url|invalid image|unsupported image/i.test(message)) throw new UserError(EXPIRED);
     throw new UserError(`OpenAI: ${message.slice(0, 300)}`);
@@ -1429,7 +1476,7 @@ async function readTemplate(id: string, sourceUrl: string, rename: boolean): Pro
       throw new UserError("OpenAI didn't answer in time. Try again in a moment.");
     }
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new UserError(`OpenAI: ${String(data?.error?.message ?? `error ${response.status}`).slice(0, 300)}`);
+    if (!response.ok) throw new UserError(keyRefusal("openai", response.status, data)?.message ?? `OpenAI: ${String(data?.error?.message ?? `error ${response.status}`).slice(0, 300)}`);
     const analysis = cleanTemplateAnalysis(responseJson(data));
     // Only while it's still waiting for this read (not deleted, not re-uploaded, not remade meanwhile).
     await db.from("product_templates").update({ analysis, status: "analyzed", error: null, ...(rename ? { name: analysis.name } : {}) }).eq("id", id).eq("status", "analyzing");
@@ -1462,7 +1509,9 @@ const MEDIA_FAN_OUT_AT = 30;
 /** Files up to this size are read into memory and uploaded; bigger ones (or of unknown size) stream through. */
 const MEDIA_BUFFER_BYTES = 20 * 1024 * 1024;
 const MEDIA_MAX_ATTEMPTS = 3;
-const MEDIA_NO_ROOM = "No room left in storage when it was imported: delete competitors you're done with, then import the same file again.";
+const MEDIA_NO_ROOM = "No room left in storage when it was imported: free up space in Settings > Storage (or delete competitors you're done with), then import the same file again.";
+/** A file the worker reached when storage had filled up: not stored, the ad and its poster link stay. */
+const MEDIA_NO_ROOM_NOW = "Storage was full when this file's turn came: free up space in Settings > Storage, then import the same file again.";
 
 /**
  * The media worker's numbers for this install's Supabase plan (_shared/limits.ts):
@@ -1480,7 +1529,8 @@ async function mediaPlan() {
   const uploadBytes = uploadMaxBytes(limits);
   return { ...mediaTimings(limits), uploadBytes, tooBig: tooBigNote(uploadBytes), quotaBytes: storageQuotaBytes(limits) };
 }
-type MediaPlan = Awaited<ReturnType<typeof mediaPlan>>;
+/** A worker run's plan, with the room left in storage (checked once at the start, then counted down as files are saved). */
+type MediaPlan = Awaited<ReturnType<typeof mediaPlan>> & { room?: { left: number } };
 /** The note on a download that ran out of time (tried again, up to MEDIA_MAX_ATTEMPTS). */
 const slowNote = (ms: number) => `It didn't finish downloading within ${Math.round(ms / 1000)} s, the time this plan gives a file.`;
 const timedOut = (error: unknown) => /abort|timed? ?out/i.test(error instanceof Error ? `${error.name} ${error.message}` : String(error));
@@ -1500,7 +1550,16 @@ async function enqueueMedia(user: string, productId: string, files: QueuedFile[]
   }
   // The import pop-up's decisions: files over the upload limit or past the storage room aren't queued, they're
   // recorded with the reason (a later import of the same file checks again).
-  const held = holds ? [...rows.values()].filter((r) => holds[r.url_key]) : [];
+  // Storage full (every bucket counts against the plan): nothing is queued; each file is recorded with the
+  // reason, so a later import of the same file, after space is freed, queues it again.
+  if (rows.size && !(holds && Object.keys(holds).length)) {
+    const room = await storageRoom(db, await planLimits()).catch(() => null);
+    if (room && !fits(room)) {
+      const all = [...rows.keys()];
+      holds = Object.fromEntries(all.map((k) => [k, "no_room"]));
+    }
+  }
+  const held = holds ? [...rows.values()].filter((r) => holds![r.url_key]) : [];
   if (held.length) {
     const { tooBig } = await mediaPlan();
     for (const r of held) rows.delete(r.url_key);
@@ -1551,7 +1610,9 @@ async function storedUrl(productId: string, url: string): Promise<string | null>
  */
 async function drainMedia() {
   const started = Date.now();
-  const plan = await mediaPlan();
+  const base = await mediaPlan();
+  const room = await storageRoom(db, await planLimits()).catch(() => null);
+  const plan: MediaPlan = { ...base, room: { left: room ? room.roomBytes : Infinity } };
   const { data: active } = await db.rpc("research_media_active");
   if (Number(active ?? 0) >= MEDIA_MAX_ACTIVE) return;
   // A big backlog: wake one more worker before starting, which does the same, until the cap is reached.
@@ -1601,12 +1662,17 @@ async function saveMedia(row: MediaRow, plan: MediaPlan) {
     await response.body?.cancel().catch(() => {});
     return finishFailed(row, null, plan.tooBig, false);
   }
+  // No room left for it (or storage is full and its size is unknown): not stored, never half-saved.
+  if (plan.room && (Number.isFinite(length) && length > 0 ? length > plan.room.left : plan.room.left <= 0)) {
+    await response.body?.cancel().catch(() => {});
+    return finishFailed(row, null, MEDIA_NO_ROOM_NOW, false);
+  }
   const path = mediaPath(row.product_id, row.page_id, await sha256Hex(row.url_key), extensionFor(mime, row.source_url));
   let bytes: number;
   if (Number.isFinite(length) && length > 0 && length <= MEDIA_BUFFER_BYTES) {
     const buffer = new Uint8Array(await response.arrayBuffer());
     const { error } = await db.storage.from(MEDIA_BUCKET).upload(path, buffer, { contentType: mime, upsert: true, cacheControl: "31536000" });
-    if (error) return finishFailed(row, null, tooLarge(error.message) ? plan.tooBig : `Storage: ${error.message}`, !tooLarge(error.message));
+    if (error) return finishFailed(row, null, tooLarge(error.message) ? plan.tooBig : storageErrorText(error.message, plan.uploadBytes), !tooLarge(error.message));
     bytes = buffer.byteLength;
   } else {
     // Large or of unknown size: streamed to storage. With a known size (already checked against the limit)
@@ -1641,6 +1707,7 @@ async function saveMedia(row: MediaRow, plan: MediaPlan) {
     await upload.body?.cancel().catch(() => {});
     bytes = known ? length : count;
   }
+  if (plan.room) plan.room.left -= bytes;
   const publicUrl = db.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl;
   const { data: updated } = await db.from("paid_ad_media")
     .update({ status: "done", storage_path: path, public_url: publicUrl, bytes, mime, error: null, lease_until: null })

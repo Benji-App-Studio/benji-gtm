@@ -9,6 +9,8 @@
 // shape (core.ts INSIGHT_SCHEMA). The result goes to `products.insight`; progress and errors to
 // `insight_message`. The studio's "Replace with AI insight" applies it (studio/src/lib/product-insight.ts).
 //
+// The `market-*` routes (market.ts) are the Market page's: competitors' apps, top charts, reviews.
+//
 // Only public http(s) links are opened (no private addresses, no credentials), every redirect is
 // re-checked, and each response is capped in size and time.
 import { createClient } from "@supabase/supabase-js";
@@ -18,9 +20,11 @@ import {
   readPage, sitemapLinks, type ColorCandidate, type PageRead,
 } from "./core.ts";
 import { createAuth, HttpError } from "../_shared/auth.ts";
+import { keyRefusal } from "../_shared/ai/judge.ts";
 import { modelOverrides, resolveModels } from "../_shared/ai/models.ts";
 import { addKeyMessage, createKeys } from "../_shared/keys.ts";
 import { resolveLimits, withinWallClock } from "../_shared/limits.ts";
+import { createMarket } from "./market.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -77,6 +81,9 @@ Deno.serve(async (req) => {
     if (route === "sort") return json(await sortRoute(user, String(input.productId ?? ""), input.all === true));
     if (route === "images") return json(await imagesRoute(user, String(input.productId ?? "")));
     if (route === "reviews") return json(await reviewsRoute(user, String(input.productId ?? "")));
+    // Market: competitors' apps, top charts and review summaries (market.ts).
+    const marketAnswer = route ? market.handle(route, user, input) : null;
+    if (marketAnswer) return json(await marketAnswer);
     return json({ error: "Not found" }, 404);
   } catch (error) {
     if (error instanceof HttpError) return json({ error: error.message }, error.status);
@@ -91,6 +98,7 @@ Deno.serve(async (req) => {
 /** Every key comes from the shared reader (edge function secret first, then Vault). */
 const secrets = createKeys(db);
 const auth = createAuth(db);
+const market = createMarket({ db, keys: secrets, install: () => auth.install() });
 
 async function openAiKey(): Promise<string | null> {
   return (await secrets.get("OPENAI_API_KEY")) ?? null;
@@ -405,6 +413,7 @@ async function run(product: ProductRow, links: string[]) {
 
   // The product's pictures from the site and the listing, saved and sorted (never fails the run).
   let saved = 0;
+  let sortNote = "";
   try {
     await progress(product.id, "Saving your product's images from the site and listing…");
     saved = await collectAssets(product, pages, app);
@@ -414,11 +423,13 @@ async function run(product: ProductRow, links: string[]) {
     }
   } catch (error) {
     console.error("insight assets", error);
+    // A refused key is said, not swallowed: the images stay unsorted until the key works.
+    if (error instanceof UserError && /refused the key/.test(error.message)) sortNote = ` The images weren't sorted: ${error.message}`;
   }
 
   await db.from("products").update({
     insight_status: "done",
-    insight_message: `Read ${[pagesRead ? `${pagesRead} page${pagesRead === 1 ? "" : "s"}` : "", app ? "the App Store listing" : "", sources.some((s) => s.ok && s.kind === "google_play") ? "the Google Play listing" : ""].filter(Boolean).join(", ")}${saved ? `; saved ${saved} image${saved === 1 ? "" : "s"}` : ""}.`,
+    insight_message: `Read ${[pagesRead ? `${pagesRead} page${pagesRead === 1 ? "" : "s"}` : "", app ? "the App Store listing" : "", sources.some((s) => s.ok && s.kind === "google_play") ? "the Google Play listing" : ""].filter(Boolean).join(", ")}${saved ? `; saved ${saved} image${saved === 1 ? "" : "s"}` : ""}.${sortNote}`,
   }).eq("id", product.id);
 }
 
@@ -632,6 +643,8 @@ async function ask(model: string, text: string, images: string[], shape: AskShap
   if (!response) throw new UserError("OpenAI didn't answer in time. Try again in a moment.");
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const refused = keyRefusal("openai", response.status, data);
+    if (refused) throw new UserError(refused.message);
     const message = String(data?.error?.message ?? `error ${response.status}`);
     if (images.length && /download|image_url|invalid image|unsupported image|image/i.test(message)) return "image_error";
     throw new UserError(`OpenAI: ${message.slice(0, 300)}`);

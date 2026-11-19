@@ -1,5 +1,5 @@
 "use client";
-// Settings → General: the workspace's name (the owner can change it) and the signed-in person's account.
+// Settings → General: the workspace's name (the owner can change it). The person's own sign-in is on Account.
 import { useState, type FormEvent } from "react";
 import { APP_NAME } from "@/lib/brand-config";
 import { prime } from "@/lib/client-cache";
@@ -8,9 +8,7 @@ import { INSTALL_URL } from "@/lib/install/use-install";
 import { Button, inputClass, SettingsGroup, SettingsRow, Spinner } from "../ui";
 import { api, ReadOnlyNote, SettingsPage, Status, WithInstall } from "./settings-ui";
 
-export interface Account { name: string | null; email: string | null; since: string | null }
-
-export function GeneralSettings({ account }: { account: Account }) {
+export function GeneralSettings() {
   return (
     <SettingsPage page="general">
       <WithInstall>
@@ -23,14 +21,6 @@ export function GeneralSettings({ account }: { account: Account }) {
           </>
         )}
       </WithInstall>
-      <SettingsGroup title="Your account" description="Your own sign-in on this workspace.">
-        <SettingsRow label="Name"><span className="text-sm text-label">{account.name || "Not set"}</span></SettingsRow>
-        <SettingsRow label="Email"><span className="text-sm [overflow-wrap:anywhere] text-label">{account.email || "Not set"}</span></SettingsRow>
-        {account.since && <SettingsRow label="Member since"><span className="text-sm text-label">{new Date(account.since).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}</span></SettingsRow>}
-        <SettingsRow label="Sign out" description="Ends your session on this device.">
-          <form action="/auth/signout" method="post"><Button type="submit" variant="secondary" size="sm">Sign out</Button></form>
-        </SettingsRow>
-      </SettingsGroup>
     </SettingsPage>
   );
 }

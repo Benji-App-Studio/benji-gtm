@@ -7,6 +7,7 @@ import {
 } from "@/lib/playground-plan";
 import type { ProductAsset } from "@/lib/product-assets";
 import { isResponse, requireUser, type Session } from "@/lib/server/auth";
+import { refuseWhenFull } from "@/lib/server/storage";
 import { brandFor } from "@/lib/server/brand";
 import { BatchError, createBatch } from "@/lib/server/creative-batches";
 import { creativesBackend } from "@/lib/server/creatives-backend";
@@ -14,6 +15,7 @@ import { getWorkspace, WORKSPACE_BUCKET } from "@/lib/workspace";
 import { providerOfJob, readOpenAiImagePlan } from "@/lib/image-provider";
 import { readImageProvider } from "@/lib/server/image-provider";
 import { confirmedCreditsOf } from "@/lib/playground-templates-plan";
+import { caughtFailure, dbFailure } from "@/lib/server/errors";
 
 // The Playground's API. Generations (images, and Seedance videos in video mode) run on the creative
 // pipeline (creative_batches tagged settings.source = "playground"); outputs land in the `creatives`
@@ -130,6 +132,8 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/playgro
   if (body.action === "ticket") {
     const ext = UPLOAD_TYPES[body.contentType];
     if (!ext) return Response.json({ error: "Use a PNG, JPEG or WebP image." }, { status: 400 });
+    const full = await refuseWhenFull(session, "upload", { fileBytes: Number(body.size) || 0 });
+    if (full) return full;
     const path = `${session.user.id}/${productId}/playground/inputs/${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
     const bucket = session.supabase.storage.from(WORKSPACE_BUCKET);
     const { data, error } = await bucket.createSignedUploadUrl(path);
@@ -164,7 +168,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/playgro
     return Response.json({ batchId: started.batchId, jobIds: started.jobIds, credits: started.credits, usd: started.usd ?? 0, warnings: started.warnings });
   } catch (error) {
     if (error instanceof BatchError) return Response.json({ error: error.message, credits: error.plan?.credits }, { status: error.status });
-    return Response.json({ error: `Couldn't start: ${error instanceof Error ? error.message : String(error)}` }, { status: 500 });
+    return caughtFailure("playground start", error, "Couldn't start. Try again.");
   }
 }
 
@@ -188,7 +192,7 @@ export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/playg
     if (!creative) return Response.json({ error: "This result doesn't exist." }, { status: 404 });
     if (!creative.batch_id || !(await isPlaygroundBatch(session, productId, creative.batch_id))) return Response.json({ error: "Only Playground results can be deleted here." }, { status: 400 });
     const { error } = await supabase.from("creatives").delete().eq("id", creative.id);
-    if (error) return Response.json({ error: error.message }, { status: 400 });
+    if (error) return dbFailure("playground delete result", error, "Couldn't delete the result. Try again.", 400);
     const files = [creative.storage_path, creative.poster_path].filter((p): p is string => Boolean(p) && p!.startsWith(`${productId}/`) && !p!.includes(".."));
     if (files.length) await supabase.storage.from(CREATIVES_BUCKET).remove(files);
     batchId = creative.batch_id;

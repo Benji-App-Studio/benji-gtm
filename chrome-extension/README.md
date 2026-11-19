@@ -40,9 +40,9 @@ You only do this once. It takes about two minutes.
 
 ### 1. Get the extension's folder
 
-1. Open your dashboard and go to your app's **Research** page. Open **How to get ads in, and stored
-   media**, find **The Ad Library extension** and click **Download** (or the
-   **ad-library-extension.zip** link). It's also at `/downloads/ad-library-extension.zip` on your
+1. Open your dashboard → **Settings → Ad Library extension** (or your app's **Research** page →
+   **How to get ads in, and stored media** → **Get the free extension**) and click **Download the
+   extension**. That page has every step below with pictures. The zip is also at `/downloads/ad-library-extension.zip` on your
    dashboard's address (for example `http://localhost:3000/downloads/ad-library-extension.zip`), and
    in your copy of the repository at `studio/public/downloads/ad-library-extension.zip`.
 2. Open the zip. On a Mac, double-click it; on Windows, right-click it → **Extract All**. You get a
@@ -117,12 +117,15 @@ how Chrome behaves elsewhere.
 1. **Open the advertiser's page in the Ad Library.**
    1. Go to https://www.facebook.com/ads/library/.
    2. Choose a country (or "All") and the ad category "All ads".
-   3. Search for the advertiser and pick it from the suggestions. Searching a keyword shows everyone's ads.
+   3. Type the advertiser's name and pick it under **Advertisers** in the suggestions. The top line,
+      "Search this exact phrase", is a keyword search: it shows everyone's ads that mention the words.
 
    You're on the right page when the link contains `view_all_page_id=`.
 2. **Click the orange extension icon.** The popup shows **Use this page** and Meta's number of ads for it
-   (the "~1,000 results" on the page) and about how long reading all of them takes, e.g.
-   "Meta shows ~1,003 ads: reading all of them, ~5.5 min". Click **Collect ads**. (You can also
+   (the "~290 results" on the page) and about how long reading all of them takes, e.g.
+   "Meta shows ~290 ads: reading all of them, ~4 min". Click **Collect ads**. On any other page it
+   says "This tab isn't Meta's Ad Library" (with **Open the Ad Library**); on the Ad Library before an
+   advertiser is picked, "Pick an advertiser first". (You can also
    paste an Ad Library link or a Page ID into the popup from any tab.)
 3. **A small collector window opens at the right edge of your screen** and loads the page there. A
    small panel in its corner shows the pages read, the ads found and the countdown to the next
@@ -139,14 +142,18 @@ how Chrome behaves elsewhere.
    `Downloads/Ad Library/<advertiser>-<page ID>-<date>.json`. A Chrome notification and the popup offer
    **Show in Finder**. The collector window stays open showing the result; close it whenever you like.
 
-**How long a run takes.** It reads every ad to the end of the advertiser's list, about 30 ads every
-9 seconds (Meta's page size and the person-like pauses):
+**How long a run takes.** It reads every ad to the end of the advertiser's list. The first results
+page has about 30 ads; each scroll after it loads about 10 more (Meta's page size, checked in
+November 2026), one every 9 seconds or so with the person-like pauses:
 
 | Meta shows | Pages | About |
 |---|---|---|
-| 150 ads | 6 | 1 min |
-| 1,000 ads | 36 | 5–6 min |
-| 9,000 ads | ~320 | 50 min |
+| 150 ads | 13 | 2 min |
+| 1,000 ads | ~100 | 15 min |
+| 9,000 ads | ~900 | 2 h 15 min |
+
+Runs past about 45 pages are when Meta is most likely to pause a connection. For a big advertiser, a
+quick look (**10** or **20** pages under **Ads to read**) reads its most-shown ads first.
 
 **No duplicates.** Each ad (Library ID) is saved once, even when Meta lists it again further down,
 so the file can come out a little under Meta's number. Ads that share a creative ("N ads use this
@@ -201,7 +208,7 @@ Library choices are kept, and media isn't downloaded twice.
 |---|---|---|
 | Country | `ALL` (or the page's own) | Ads shown in that country (a 2-letter code such as `US`, `GB`). |
 | Active ads only | On | Off includes stopped ads too. |
-| Ads to read | **All** | Reads to the end of the list. The run ends only when Meta says there are no more ads; when Meta stops sending them although it said more were coming (after 6 tries, nudging the page); at a block sign; or when you press Stop. **5 / 10 / 20 / 30** are quick looks: that many pages (~30 ads each) of the most-shown ads, since Meta lists those first. Above 15 shows a warning. |
+| Ads to read | **20** | **All** reads to the end of the list. The run ends only when Meta says there are no more ads; when Meta stops sending them although it said more were coming (after 6 tries, nudging the page); at a block sign; or when you press Stop. **5 / 10 / 20 / 30** are quick looks: that many pages of the most-shown ads, since Meta lists those first (about 70 / 120 / 220 / 320 ads: 30 on the first page, 10 on each after it). Above 15 shows a warning. |
 | Measure media sizes | Off | Measures the top 40 ads' video and image sizes after collecting (adds about a minute). That fills in each ad's size and nearest Meta placement in the file. Not needed for the dashboard, which measures an ad when you open it. |
 
 The popup remembers your choices.
@@ -214,7 +221,7 @@ person browsing, and stops as soon as Meta pushes back.
 - **One run at a time.**
 - **Pacing:** it pauses 2.5–6 seconds before each scroll, sometimes 8–12, and waits for each page of results before the next.
 - **Runs at least 30 minutes apart, at most 20 a day.** Going past either asks you to confirm first.
-- **Long runs:** reading everything for a big advertiser (thousands of ads) means hundreds of page
+- **Long runs:** reading everything for a big advertiser (hundreds or thousands of ads) means hundreds of page
   loads in a row. That's when Meta is most likely to pause a connection; one public report put it at
   about 47 pages. If that happens, the run stops and saves everything it has (see below).
 - **Stops at the first block sign:**
@@ -261,7 +268,7 @@ covers EU and UK ads.
 ## Update or remove it
 
 **Update to a new version:**
-1. Get the new zip from the Research page (after you update your dashboard) and open it.
+1. Get the new zip from **Settings → Ad Library extension** (after you update your dashboard) and open it.
 2. Replace the **contents** of your existing `ad-library-extension` folder with the new files.
    Keep the folder in the same place, so Chrome keeps the extension's history and limits.
 3. In `chrome://extensions`, click the **reload** arrow (↻) on the Ad Library Collector card, or the

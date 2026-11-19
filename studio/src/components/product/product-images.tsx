@@ -14,6 +14,7 @@ import { IconChevronDown, IconExternal, IconEye, IconEyeOff, IconImage, IconLock
 import { Badge, Button, cx, Spinner, Thumb, TintIcon } from "../ui";
 import { LockedNote, useLocked } from "../research/gates";
 import { ASSET_IMAGE_TYPES, ASSET_MAX_BYTES, uploadProductAsset } from "./upload-asset";
+import { StorageNotice, useStorageGuard } from "../storage-notice";
 
 type Patch = Partial<Pick<ProductAsset, "kind" | "label" | "group_name" | "hidden" | "consent" | "possible_minor">>;
 type Pending = { key: string; name: string; preview: string };
@@ -236,6 +237,8 @@ export const ProductImages = memo(function ProductImages({ productId, refreshKey
   const visibleCount = all.length - hiddenCount;
   const empty = assets !== null && all.length === 0 && pending.length === 0;
   const pick = () => input.current?.click();
+  // Uploading adds files: refused when storage is full (the notice under the buttons says why).
+  const uploadGuard = useStorageGuard("upload");
 
   const caption = assets === null ? (failed ? "Couldn't load the images." : "Loading…")
     : "What you sell, as pictures. They are suggested as references when you recreate a competitor's ad.";
@@ -248,7 +251,7 @@ export const ProductImages = memo(function ProductImages({ productId, refreshKey
         <div className="flex min-w-0 flex-1 basis-[260px] items-start gap-3">
           <TintIcon size="sm"><IconImage /></TintIcon>
           <div className="min-w-0 flex-1">
-            <div className="flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1">
+            <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1">
               <h3 className="text-sm font-medium">Images</h3>
               {assets !== null && visibleCount > 0 && <Badge>{visibleCount}</Badge>}
               {unsorted > 0 && !sorting && <Badge tone="accent">{unsorted} not sorted</Badge>}
@@ -266,12 +269,13 @@ export const ProductImages = memo(function ProductImages({ productId, refreshKey
             <Button size="sm" variant="ghost" onClick={find} disabled={finding} title="Read your website and store listing again for their pictures (no new profile)">
               {finding ? <Spinner className="size-3.5" /> : <IconExternal />}{finding ? "Finding images…" : "Find images on my site"}
             </Button>
-            <Button size="sm" variant="secondary" onClick={pick}><IconUpload />Upload</Button>
+            <Button size="sm" variant="secondary" onClick={pick} disabled={uploadGuard.block} title={uploadGuard.block ? uploadGuard.message ?? undefined : undefined}><IconUpload />Upload</Button>
             {hiddenCount > 0 && (
               <Button size="sm" variant={showHidden ? "secondary" : "ghost"} aria-pressed={showHidden} onClick={() => setShowHidden(!showHidden)}>
                 {showHidden ? <IconEye /> : <IconEyeOff />}Show hidden ({hiddenCount})
               </Button>
             )}
+            <StorageNotice action="upload" className="basis-full" />
           </div>
         )}
       </div>
@@ -279,7 +283,7 @@ export const ProductImages = memo(function ProductImages({ productId, refreshKey
       {sorting && <SortProgress sorting={sorting} />}
 
       <div className="@container px-4 pb-4">
-      <div className={cx("grid gap-5", tileColumns)} style={tileWidth}>
+      <div className={cx("grid gap-4", tileColumns)} style={tileWidth}>
         {assets === null && !failed && (
           <div className="flex gap-3 overflow-hidden" aria-hidden>
             {[0, 1, 2, 3, 4].map((i) => <div key={i} className={cx(tileClass, "skeleton aspect-square !rounded-inner")} />)}
@@ -288,7 +292,7 @@ export const ProductImages = memo(function ProductImages({ productId, refreshKey
 
         {empty && (
           <button type="button" onClick={pick}
-            className="group flex flex-col items-center rounded-inner border border-dashed border-hairline px-4 py-8 text-center transition-colors hover:bg-hover">
+            className="group flex flex-col items-center rounded-small border border-dashed border-hairline px-4 py-6 text-center transition-colors hover:bg-hover">
             <TintIcon className="mb-3"><IconUpload /></TintIcon>
             <span className="text-sm font-medium">Add pictures of what you sell</span>
             <span className="mt-1 max-w-md text-caption text-muted">
@@ -374,7 +378,7 @@ export const ProductImages = memo(function ProductImages({ productId, refreshKey
 
 // An even column grid that groups can share: columns by the section's width, every tile the same
 // width, 12 px gaps (the flex rows' gap-3), so tiles line up across groups that sit side by side.
-const tileColumns = "[--cols:2] @sm:[--cols:3] @xl:[--cols:4] @3xl:[--cols:5]";
+const tileColumns = "[--cols:2] @sm:[--cols:3] @xl:[--cols:5] @3xl:[--cols:6]";
 const tileWidth = { "--tile": "calc((100cqw - (var(--cols) - 1) * 12px) / var(--cols) - 0.1px)" } as CSSProperties;
 const tileClass = "w-[var(--tile)] min-w-0 shrink-0";
 

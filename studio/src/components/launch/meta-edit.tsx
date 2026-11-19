@@ -3,7 +3,7 @@
 // It never turns anything on. Budgets change only where they live (the campaign under CBO, the ad set
 // under ABO); a rise of more than 20% shows the playbook's note but isn't blocked. The launch function
 // plans the change first ("Check"), then applies it.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { BID_INFO, BID_STRATEGIES, type BidStrategy, budgetRaiseHint, validateEdit } from "@/lib/launch/rules";
 import { type AdSetRow, type CampaignRow, type EditPlan, fromLocalInput, metaCall, MetaCallError, money, toLocalInput } from "@/lib/launch/send";
 import { IconX } from "../icons";
@@ -28,11 +28,6 @@ export function MetaEdit({ productId, level, row, currency, ownsBudget, onClose,
   const [problems, setProblems] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const lifetime = row.lifetimeBudget != null;
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
   const currentBudget = row.dailyBudget ?? row.lifetimeBudget;
 
   const changes = {
@@ -62,17 +57,17 @@ export function MetaEdit({ productId, level, row, currency, ownsBudget, onClose,
   }
 
   return (
-    <PanelPortal>
+    <PanelPortal onClose={onClose}>
       <div className={`${MODAL_OVERLAY} z-[46]`} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
         <div role="dialog" aria-modal="true" aria-labelledby="meta-edit-title" className={`${MODAL} max-w-lg`}>
-          <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-line bg-card px-5 py-3">
+          <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-line bg-card px-4 py-2.5">
             <div className="min-w-0">
-              <h2 id="meta-edit-title" className="text-title font-medium">Edit {level === "campaign" ? "campaign" : "ad set"}</h2>
+              <h2 id="meta-edit-title" className="text-sm font-medium">Edit {level === "campaign" ? "campaign" : "ad set"}</h2>
               <p className="truncate text-xs text-muted">{row.name} · <a href={row.url} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">Ads Manager ↗</a></p>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close" className="grid size-8 shrink-0 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink"><IconX className="size-4" /></button>
+            <button type="button" onClick={onClose} aria-label="Close" className="grid size-7 shrink-0 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink"><IconX className="size-3.5" /></button>
           </header>
-          <div className="grid gap-4 p-5">
+          <div className="grid gap-4 p-4">
             <Labeled label="Name"><input className={inputClass} value={name} maxLength={400} onChange={(e) => { setName(e.target.value); setPlan(null); }} /></Labeled>
             {ownsBudget ? (
               <>
@@ -99,7 +94,7 @@ export function MetaEdit({ productId, level, row, currency, ownsBudget, onClose,
             </label>
             <p className="text-xs text-muted">Nothing is turned on from here: publish in Ads Manager.</p>
             {plan && (
-              <div className="rounded-inner bg-raised p-3 text-sm shadow-raised">
+              <div className="rounded-inner border border-line bg-raised p-3 text-sm">
                 <p className="font-medium">Meta will receive</p>
                 <dl className="mt-1">{plan.lines.map((l) => <div key={l.label} className="flex justify-between gap-3 border-t border-line py-1.5 first:border-t-0"><dt className="text-muted">{l.label}</dt><dd className="text-right">{l.value}</dd></div>)}</dl>
                 {plan.hints.map((h) => <p key={h} className="mt-2 text-xs text-caution-ink">{h}</p>)}
@@ -107,7 +102,7 @@ export function MetaEdit({ productId, level, row, currency, ownsBudget, onClose,
             )}
             <Problems list={problems.length ? problems : local.errors} />
           </div>
-          <footer className="sticky bottom-0 flex justify-end gap-2 border-t border-line bg-card px-5 py-3">
+          <footer className="sticky bottom-0 flex justify-end gap-2 border-t border-line bg-card px-4 py-2.5">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
             {plan
               ? <Button disabled={busy} onClick={() => run(true)}>{busy && <Spinner className="size-3.5" />}Apply</Button>

@@ -23,6 +23,7 @@ import { availableProvider, FeatureLock, type Features } from "../studio/feature
 import { Button, cx, inputClass, Segmented, SelectPill, Spinner, Toggle } from "../ui";
 import { ImagePicker, type PickSource, type PickTile } from "./image-picker";
 import { imageFiles, uploadPlaygroundImage } from "./upload";
+import { StorageNotice, useStorageGuard } from "../storage-notice";
 
 export const fmtCredits = (n: number) => (n % 1 === 0 ? String(n) : n.toFixed(2));
 const QUALITY_LABEL: Record<ImageQuality, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
@@ -34,7 +35,7 @@ const VIDEO_DURATIONS = Array.from({ length: PLAYGROUND_VIDEO.maxDuration - PLAY
 function Label({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
     <div className="flex min-h-5 items-center justify-between gap-2">
-      <span className="text-xs font-medium text-label">{children}</span>
+      <span className="text-xs font-medium text-muted">{children}</span>
       {aside && <span className="text-xs text-faint">{aside}</span>}
     </div>
   );
@@ -63,6 +64,8 @@ export function PlaygroundForm({ productId, overview, features, request, options
   sources: Record<PickSource, PickTile[]>;
   onStarted: () => void;
 }) {
+  // Generating saves the new creatives: a warning at 95% of storage, refused when it's full.
+  const storageGuard = useStorageGuard("generate");
   const [uploading, setUploading] = useState<"reference" | "inputs" | null>(null);
   const [picking, setPicking] = useState<"reference" | "inputs" | null>(null);
   const [busy, setBusy] = useState(false);
@@ -194,7 +197,7 @@ export function PlaygroundForm({ productId, overview, features, request, options
             </>
           ) : (
             <div className="flex h-36 flex-col items-center justify-center gap-2.5 px-4 text-center">
-              <span className="grid size-8 place-items-center rounded-full bg-control text-muted"><IconImage className="size-4" /></span>
+              <span className="text-faint"><IconImage className="size-5" /></span>
               <p className="text-xs text-muted">Drop a reference ad here. Without one, the prompt alone makes it.</p>
               <div className="flex gap-1.5">
                 <Button size="sm" variant="secondary" onClick={() => refInput.current?.click()}><IconUpload />Upload</Button>
@@ -215,7 +218,7 @@ export function PlaygroundForm({ productId, overview, features, request, options
             const n = imageNumber(url, i);
             const start = isVideo && video.startFrame === url;
             return (
-              <div key={url} className={cx("group/tile relative size-14 overflow-hidden rounded-md border bg-canvas", start ? "border-accent ring-2 ring-accent/40" : "border-line")} title={start ? `Image ${n}: the start frame` : `Image ${n}`}>
+              <div key={url} className={cx("group/tile relative size-14 overflow-hidden rounded-small border bg-canvas", start ? "border-accent ring-2 ring-accent/40" : "border-line")} title={start ? `Image ${n}: the start frame` : `Image ${n}`}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={thumbUrl(url, 160, 160)} alt={`Your image ${i + 1}`} decoding="async" onError={(e) => showOriginal(e.currentTarget)} className="size-full object-cover" />
                 <span className={cx("absolute bottom-0.5 left-0.5 rounded px-1 text-[10px] leading-3.5 font-medium tabular-nums", start ? "bg-accent text-on-ink" : "bg-card/90 text-label")}>{start ? `${n} · start` : n}</span>
@@ -231,7 +234,7 @@ export function PlaygroundForm({ productId, overview, features, request, options
           })}
           {room > 0 && (
             <button type="button" onClick={() => inputsInput.current?.click()} disabled={uploading === "inputs"} aria-label="Upload your images"
-              className="grid size-14 place-items-center rounded-md border border-dashed border-ink/20 text-muted transition hover:border-ink/35 hover:text-ink">
+              className="grid size-14 place-items-center rounded-small border border-dashed border-ink/20 text-muted transition hover:border-ink/35 hover:text-ink">
               {uploading === "inputs" ? <Spinner className="size-4" /> : <IconPlus className="size-4" />}
             </button>
           )}
@@ -270,15 +273,15 @@ export function PlaygroundForm({ productId, overview, features, request, options
       ) : (
       <div className="grid gap-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-medium text-label">Aspect</span>
+          <span className="text-xs font-medium text-muted">Aspect</span>
           <Segmented label="Aspect" value={request.aspect} onChange={(aspect) => set({ aspect })} options={(["1:1", "4:5", "9:16", "16:9"] as const).map((a) => ({ value: a, label: a }))} />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-medium text-label">Versions</span>
+          <span className="text-xs font-medium text-muted">Versions</span>
           <Segmented label="Versions" value={String(request.count)} onChange={(n) => set({ count: Number(n) as PlaygroundRequest["count"] })} options={["1", "2", "3", "4"].map((n) => ({ value: n, label: <span className="inline-block w-4 tabular-nums">{n}</span> }))} />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-medium text-label">Model</span>
+          <span className="text-xs font-medium text-muted">Model</span>
           <div className="flex flex-wrap justify-end gap-1.5">
             <SelectPill label="Quality" value={options.quality} onChange={(q) => onOptions({ ...options, quality: q as ImageQuality })} options={PLAYGROUND_QUALITIES.map((q) => ({ value: q, label: QUALITY_LABEL[q] }))} />
             <SelectPill label="Resolution" value={options.resolution} onChange={(r) => onOptions({ ...options, resolution: r as ImageResolution })} options={PLAYGROUND_RESOLUTIONS.map((r) => ({ value: r, label: r.toUpperCase() }))} />
@@ -286,9 +289,9 @@ export function PlaygroundForm({ productId, overview, features, request, options
           </div>
         </div>
         <label className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-medium text-label">Never show</span>
+          <span className="text-xs font-medium text-muted">Never show</span>
           <input
-            className={cx(inputClass, "h-8 max-w-[260px] flex-1 py-1")} placeholder="Names or words, comma-separated"
+            className={cx(inputClass, "max-w-[260px] flex-1")} placeholder="Names or words, comma-separated"
             defaultValue={(request.mustAvoid ?? []).join(", ")} key={(request.mustAvoid ?? []).join("|")}
             onBlur={(e) => set({ mustAvoid: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
           />
@@ -302,7 +305,8 @@ export function PlaygroundForm({ productId, overview, features, request, options
             openaiReady={overview.backend ? overview.backend.openaiImages : null} plan={overview.backend?.openaiImagePlan} quality={options.quality} resolution={options.resolution} className="mb-1.5" />
         )}
         {lock ? <FeatureLock state={lock} /> : <>
-          <Button onClick={generate} disabled={busy || uploading !== null || plan.errors.length > 0} className="w-full">
+          <StorageNotice action="generate" className="mb-1.5" />
+          <Button onClick={generate} disabled={busy || uploading !== null || plan.errors.length > 0 || storageGuard.block} className="w-full">
             {busy ? <><Spinner className="size-3.5" />Checking the price…</> : <>
               {isVideo ? `Generate ${request.count > 1 ? `${request.count} videos` : "video"}` : `Generate ${request.count > 1 ? `${request.count} versions` : ""}`}
               <span className="font-normal opacity-60">· {provider === "openai" ? costLabel("openai", { usd: plan.usd }) : costLabel("higgsfield", { credits: plan.credits })}</span>
@@ -338,37 +342,37 @@ function VideoOptions({ request, video, perVersion, onRequest, onVideo }: {
   return (
     <div className="grid gap-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs font-medium text-label">Length</span>
+        <span className="text-xs font-medium text-muted">Length</span>
         <SelectPill label="Length" value={String(video.duration)} onChange={(d) => onVideo({ duration: Number(d) })} options={VIDEO_DURATIONS.map((d) => ({ value: String(d), label: `${d} s` }))} />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs font-medium text-label">Aspect</span>
+        <span className="text-xs font-medium text-muted">Aspect</span>
         <Segmented label="Aspect" value={request.aspect} onChange={(aspect) => onRequest({ aspect })} options={(["9:16", "1:1", "4:5", "16:9"] as const).map((a) => ({ value: a, label: a }))} />
       </div>
       {request.aspect === "4:5" && <p className="-mt-1 text-right text-xs text-faint">Seedance makes 4:5 in 3:4 (Meta trims it to 4:5).</p>}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs font-medium text-label">Versions</span>
+        <span className="text-xs font-medium text-muted">Versions</span>
         <Segmented label="Versions" value={String(request.count)} onChange={(n) => onRequest({ count: Number(n) as PlaygroundRequest["count"] })} options={["1", "2"].map((n) => ({ value: n, label: <span className="inline-block w-4 tabular-nums">{n}</span> }))} />
       </div>
       <details className="group rounded-inner border border-line px-3 py-2">
-        <summary className="cursor-pointer text-xs font-medium text-label select-none">More options <span className="font-normal text-faint">· {video.resolution} · sound {video.audio ? "on" : "off"}{video.useBrand ? " · brand" : ""}</span></summary>
+        <summary className="cursor-pointer text-xs font-medium text-muted select-none">More options <span className="font-normal text-faint">· {video.resolution} · sound {video.audio ? "on" : "off"}{video.useBrand ? " · brand" : ""}</span></summary>
         <div className="mt-2.5 grid gap-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs font-medium text-label">Resolution</span>
+            <span className="text-xs font-medium text-muted">Resolution</span>
             <Segmented label="Resolution" value={video.resolution} onChange={(resolution) => onVideo({ resolution })} options={PLAYGROUND_VIDEO_RESOLUTIONS.map((r) => ({ value: r, label: r }))} />
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-label">Sound <span className="font-normal text-faint">(voices, ambience)</span></span>
+            <span className="text-xs font-medium text-muted">Sound <span className="font-normal text-faint">(voices, ambience)</span></span>
             <Toggle label="Sound" checked={video.audio} onChange={(audio) => onVideo({ audio })} />
           </div>
           <div className="flex items-center justify-between gap-2">
-            <span className="grid text-xs font-medium text-label">Use my brand<span className="font-normal text-faint">Adds your brand&apos;s look, name and rules. Off: the prompt goes as written.</span></span>
+            <span className="grid text-xs font-medium text-muted">Use my brand<span className="font-normal text-faint">Adds your brand&apos;s look, name and rules. Off: the prompt goes as written.</span></span>
             <Toggle label="Use my brand" checked={video.useBrand} onChange={(useBrand) => onVideo({ useBrand })} />
           </div>
           <label className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs font-medium text-label">Never show</span>
+            <span className="text-xs font-medium text-muted">Never show</span>
             <input
-              className={cx(inputClass, "h-8 max-w-[220px] flex-1 py-1")} placeholder="Names or words, comma-separated"
+              className={cx(inputClass, "max-w-[220px] flex-1")} placeholder="Names or words, comma-separated"
               defaultValue={(request.mustAvoid ?? []).join(", ")} key={(request.mustAvoid ?? []).join("|")}
               onBlur={(e) => onRequest({ mustAvoid: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
             />

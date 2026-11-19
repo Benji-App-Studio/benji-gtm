@@ -47,7 +47,9 @@ restart the app, then let the app update your Supabase project.
    The first start after an update installs and prepares the app again ("Step 1 of 2" and/or
    "Step 2 of 2", about two minutes each). That is normal.
 
-   ✅ **Checkpoint:** the app opens, already signed in or asking you to sign in. Your apps and data are there.
+   ✅ **Checkpoint:** the app opens, already signed in. Your apps and data are there. (A copy set up
+   before automatic sign-in existed asks you to sign in once, with your email and password; from
+   then on it signs in by itself. Forgot the password? Press **Forgot your password?** on that page.)
 
 4. **Open the update page.** In the app, click the name at the top of the sidebar, then **Settings**,
    then **Updates**, then **Open setup**.
@@ -55,8 +57,9 @@ restart the app, then let the app update your Supabase project.
    ✅ **Checkpoint:** a page headed "Setup" with a card called "Updates".
 
 5. **Make an access token.** Click **Access Tokens in Supabase** on that card (it opens
-   https://supabase.com/dashboard/account/tokens), press **Generate new token**, give it any name,
-   and press **Copy**.
+   https://supabase.com/dashboard/account/tokens), click **Generate new token** and name it
+   "setup". Choose your project and the **Full access** preset, pick the shortest expiry, create it,
+   and click **Copy**.
 6. **Apply the update.** Paste the token into the **Access token** box and click
    **Check for updates**. The page says how many database changes are new. Click **Apply the update**
    and keep the page open (about two minutes).
@@ -100,8 +103,16 @@ Nothing is lost when it happens.
   from the update, keeping my changes where they still make sense, then commit." Afterwards start the
   app and continue at step 3.
 
-⚠️ Never change files in `supabase/migrations/`. Add a new file there instead. Changed migrations stop
-updates from applying.
+⚠️ Never change files in `supabase/migrations/`. A change to a migration that has already run on
+your project is never applied. **Apply the update** checks every one: if one was changed, the line
+"Create the database tables" stops with "… was changed after it was applied to your project", names
+the file, and nothing new is applied until it is put back. To put it back, run
+`git checkout -- supabase/migrations` (or Sync fork again), then click **Retry**.
+
+To change the database, add a **new** file to `supabase/migrations/` with a later date and time at
+the start of its name: `<14 digits>_<name>.sql`, for example `20261120093000_my_change.sql`, using
+lower-case letters, digits and `_` only. A file there with any other name stops the update with
+"… would never be applied" and says which file to rename. (A README file there is fine.)
 
 ## If the app asks you to set up again
 
@@ -110,14 +121,18 @@ setup page again and pick the **same** Supabase project:
 
 1. In step 2 the page says your project "was prepared for Benji GTM before. Setup will add only what is missing." Click **Continue**.
 2. In step 3 click **Prepare the project**.
-3. Step 4 is now called "Connect this computer". Click **Connect this computer**, then sign in with
-   the same email and password as before.
+3. Step 4 is now called "Connect this computer". Choose a password (you can type your old one
+   again) and click **Connect this computer**. The box **Your sign-in details** shows your email and
+   the password once: save them, then click **Continue**. You are signed in, and the app signs you in
+   by itself on this Mac from then on.
 
 All your data is kept.
 
 ## Troubleshooting
 
-- "This step didn't finish" while applying: click **Retry**. Finished parts are skipped.
+- "This step didn't finish" while applying: click **Retry**. Finished parts are skipped. If it says a
+  database file "was changed after it was applied" or "would never be applied", see the ⚠️ note under
+  "If you changed files yourself": Retry works once that file is put back or renamed.
 - `npm run update` says "some files have changes that are not saved in git yet": save them as in
   "If you changed files yourself", then run it again.
 - `git pull` says "There is no tracking information": you are not in the folder you cloned. `cd` into it and try again.

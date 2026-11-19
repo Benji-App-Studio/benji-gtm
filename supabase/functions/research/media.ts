@@ -30,7 +30,9 @@ export function urlKey(url: unknown): string | null {
 /**
  * Whether a media link may be saved, downloaded or read: https on Meta's or Instagram's CDN
  * (fbcdn.net, cdninstagram.com), Facebook's ad image endpoint (facebook.com/ads/image), TikTok's
- * CDNs (tiktokcdn.com, tiktokcdn-us.com, tiktokcdn-eu.com…), or our own storage's public files
+ * CDNs (tiktokcdn.com, tiktokcdn-us.com, tiktokcdn-eu.com…) and TikTok's Ad Library video links
+ * (library.tiktok.com/api/v1/cdn/…), Google's ad image archive (tpc.googlesyndication.com/archive/…),
+ * or our own storage's public files
  * (`storageHost`, the project's host). Anything else (another site, an internal address, a link with
  * a user name or an odd port) is refused, so an imported file can't make the worker fetch it.
  */
@@ -44,6 +46,8 @@ export function allowedMediaUrl(url: unknown, storageHost?: string | null): bool
   if (under("fbcdn.net") || under("cdninstagram.com")) return true;
   if ((host === "facebook.com" || host === "www.facebook.com") && /^\/ads\/image\/?$/.test(parsed.pathname)) return true;
   if (/^([a-z0-9-]+\.)*tiktokcdn(-[a-z0-9]+)?\.com$/.test(host)) return true;
+  if (host === "library.tiktok.com" && parsed.pathname.startsWith("/api/v1/cdn/")) return true;
+  if (host === "tpc.googlesyndication.com" && parsed.pathname.startsWith("/archive/")) return true;
   const own = storageHost?.toLowerCase();
   return Boolean(own) && host === own && parsed.pathname.startsWith("/storage/v1/object/public/");
 }

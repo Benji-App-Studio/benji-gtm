@@ -627,7 +627,7 @@ Use only what you can see and what the profile says. Never invent product names.
  * A customer review from the App Store, verbatim (`products.insight.appStore.reviews`): the text,
  * title and author exactly as Apple shows them, so an ad can quote one word for word with its author.
  */
-export interface AppStoreReview { id: string; author: string; rating: number; title: string; body: string; date: string; url?: string }
+export interface AppStoreReview { id: string; author: string; rating: number; title: string; body: string; date: string; url?: string; /** The app version the review was written on, when the feed names it. */ version?: string }
 
 /** Reviews kept per product (the most recent first). */
 export const MAX_REVIEWS = 50;
@@ -644,18 +644,19 @@ const label = (v: unknown): string => {
 const httpsOrNone = (v: unknown) => (typeof v === "string" && /^https:\/\/[^\s]+$/.test(v) ? v : undefined);
 
 /** One review made safe: text kept exactly (only trimmed), rating 1–5, an id; null when it isn't one. */
-function cleanReview(r: { id: unknown; author: unknown; rating: unknown; title: unknown; body: unknown; date: unknown; url?: unknown }): AppStoreReview | null {
+function cleanReview(r: { id: unknown; author: unknown; rating: unknown; title: unknown; body: unknown; date: unknown; url?: unknown; version?: unknown }): AppStoreReview | null {
   const body = typeof r.body === "string" ? r.body.trim() : "";
   const rating = Math.round(Number(r.rating));
   const id = String(r.id ?? "").trim().slice(0, 64);
   if (!body || !id || !(rating >= 1 && rating <= 5)) return null;
   const date = typeof r.date === "string" && !Number.isNaN(Date.parse(r.date)) ? new Date(r.date).toISOString() : "";
   const url = httpsOrNone(r.url);
+  const version = typeof r.version === "string" && /^[\w.\- ]{1,40}$/.test(r.version.trim()) ? r.version.trim() : "";
   return {
     id, rating, body: body.slice(0, 4000),
     author: typeof r.author === "string" ? r.author.trim().slice(0, 120) : "",
     title: typeof r.title === "string" ? r.title.trim().slice(0, 300) : "",
-    date, ...(url ? { url } : {}),
+    date, ...(url ? { url } : {}), ...(version ? { version } : {}),
   };
 }
 
@@ -678,6 +679,7 @@ export function parseReviewFeed(json: unknown): AppStoreReview[] {
     return cleanReview({
       id: label(e.id), author: label(e.author?.name), rating: label(e["im:rating"]), title: label(e.title),
       body: label(e.content), date: label(e.updated), url: links.map((l: any) => l?.attributes?.href).find((h: unknown) => httpsOrNone(h)),
+      version: label(e["im:version"]),
     });
   }));
 }

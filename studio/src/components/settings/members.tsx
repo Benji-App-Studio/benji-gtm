@@ -7,6 +7,7 @@ import { ask } from "../dialog";
 import { IconCheck, IconCopy } from "../icons";
 import { Badge, Button, ErrorNote, inputClass, SettingsGroup, SettingsRow, Spinner } from "../ui";
 import { api, type ApiResult, ReadOnlyNote, SettingsPage, SettingsRowsSkeleton, Status, WithInstall } from "./settings-ui";
+import { UI_LOCALE } from "@/lib/ui-locale";
 
 const MEMBERS_URL = "/api/install/members";
 type AddAnswer = { member: InstallMember; inviteLink?: string | null; link?: string | null };
@@ -77,7 +78,7 @@ function MembersList() {
   return (
     <>
       <SettingsGroup title="Add a member" description="A member signs in with their own email and password and works with this workspace's API keys. Their apps, research and creatives are their own: they don't see yours, and you don't see theirs. Only you can change these settings.">
-        <div className="px-4 py-3">
+        <div className="px-4 py-3.5">
           <form onSubmit={add} className="flex flex-wrap items-center gap-2">
             <input type="email" aria-label="Email address" className={`${inputClass} min-w-0 flex-[1_1_220px]`} value={email} placeholder="name@company.com" autoComplete="off" onChange={(event) => { setEmail(event.target.value); setNote({}); }} disabled={busy} />
             <Button type="submit" size="md" disabled={busy || !email.trim()}>{busy && <Spinner className="size-3.5" />}Add member</Button>
@@ -93,7 +94,7 @@ function MembersList() {
         <SettingsGroup title={members.length === 1 ? "1 member" : `${members.length} members`}>
           {members.map((member) => (
             <SettingsRow key={member.userId} label={<span className="flex flex-wrap items-center gap-2 [overflow-wrap:anywhere]">{member.email ?? "No email on file"}{member.role === "owner" && <Badge>Owner</Badge>}</span>}
-              description={`Added ${new Date(member.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`}>
+              description={`Added ${new Date(member.createdAt).toLocaleDateString(UI_LOCALE, { day: "numeric", month: "short", year: "numeric" })}`}>
               {member.role !== "owner" && (
                 <Button variant="danger" size="sm" disabled={removing !== null} onClick={() => { void remove(member); }}>{removing === member.userId && <Spinner className="size-3.5" />}Remove</Button>
               )}

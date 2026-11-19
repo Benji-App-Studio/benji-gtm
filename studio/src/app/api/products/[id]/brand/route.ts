@@ -1,8 +1,10 @@
 import type { NextRequest } from "next/server";
 import type { SuggestionKey } from "@/lib/brand";
 import { isResponse, requireUser } from "@/lib/server/auth";
+import { refuseWhenFull } from "@/lib/server/storage";
 import { brandOverview, BrandSaveError, saveBrand, applyBrandSuggestion } from "@/lib/server/brand";
 import { WORKSPACE_BUCKET, WorkspaceNotFoundError } from "@/lib/workspace";
+import { caughtFailure } from "@/lib/server/errors";
 
 const SUGGESTION_KEYS: SuggestionKey[] = ["tagline", "colors", "tone", "claims", "appStoreUrl", "icon", "screenshots"];
 
@@ -14,7 +16,7 @@ const FONT_MAX_BYTES = 8 * 1024 * 1024;
 function failed(error: unknown) {
   if (error instanceof WorkspaceNotFoundError) return Response.json({ error: "This product doesn't exist." }, { status: 404 });
   if (error instanceof BrandSaveError) return Response.json({ error: error.message }, { status: error.status });
-  return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  return caughtFailure("brand", error, "Couldn't save the brand. Try again.");
 }
 
 /** The whole brand as the Brand page edits it (basics + system), and what the AI profile suggests. */
@@ -64,6 +66,8 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/product
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
   if (!FONT_TYPES[ext]) return Response.json({ error: "Use a TTF, OTF or WOFF font file (WOFF2 can't be rendered)." }, { status: 400 });
   if (Number(body.size) > FONT_MAX_BYTES) return Response.json({ error: "Font files are 8 MB at most." }, { status: 400 });
+  const full = await refuseWhenFull(session, "upload", { fileBytes: Number(body.size) || 0 });
+  if (full) return full;
   const safe = name.replace(/\.[^.]+$/, "").replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 60) || "font";
   const path = `${session.user.id}/${id}/fonts/${safe}-${crypto.randomUUID().slice(0, 6)}.${ext}`;
   const bucket = session.supabase.storage.from(WORKSPACE_BUCKET);

@@ -121,7 +121,7 @@ function CopyLine({ value, label, copy, className }: { value: string; label: str
   return (
     <div className={cx("flex flex-wrap items-center gap-2", className)}>
       {/* A long command wraps so all of it can be read; one click selects it for copying by hand. */}
-      <code aria-label={label} className="min-w-0 flex-[1_1_240px] rounded-control border border-hairline bg-raised px-2.5 py-[5px] font-mono text-xs leading-5 break-all text-ink select-all">{value}</code>
+      <code aria-label={label} className="min-w-0 flex-[1_1_240px] rounded-control border border-hairline bg-raised px-2.5 py-1 font-mono text-xs leading-5 break-all text-ink select-all">{value}</code>
       <Button type="button" variant="secondary" onClick={() => { void run(); }}>{copied ? <IconCheck /> : <IconCopy />}{copied ? "Copied" : copy}</Button>
     </div>
   );

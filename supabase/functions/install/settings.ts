@@ -4,8 +4,9 @@
 // studio/src/lib/install/key-catalog.ts; settings_test.ts fails when the key lists drift apart.
 import { MODEL_DEFAULTS, type ModelEnv, type Models, resolveModels } from "../_shared/ai/models.ts";
 import { DEFAULT_LIMITS, type InstallLimits } from "../_shared/limits.ts";
+import { DEFAULT_RESEARCH, mergeResearch, readResearch, type ResearchPatch, researchPatch, type ResearchSettings, type SourceEnv } from "../_shared/research-sources.ts";
 
-export { DEFAULT_LIMITS, type InstallLimits };
+export { DEFAULT_LIMITS, DEFAULT_RESEARCH, type InstallLimits, type ResearchSettings };
 
 export type InstallRole = "owner" | "member" | "legacy";
 export type AiProvider = "openai" | "typesafe";
@@ -23,7 +24,11 @@ export interface KeyState {
 }
 
 export interface InstallModels { text: string; vision: string; transcribe: string; image: string }
-export interface InstallSettings { name: string | null; aiProvider: AiProvider; models: InstallModels; limits: InstallLimits }
+export interface InstallSettings {
+  name: string | null; aiProvider: AiProvider; models: InstallModels; limits: InstallLimits;
+  /** Settings > Research sources: each source on, off or automatic (null), and the Meta actor. */
+  research: ResearchSettings;
+}
 
 export interface InstallState extends InstallSettings {
   /**
@@ -36,6 +41,8 @@ export interface InstallState extends InstallSettings {
   /** False on an install from before setup existed: no owner, keys come from the environment. */
   owned: boolean;
   keys: Record<string, KeyState>;
+  /** The older research switches set on the project (RESEARCH_TIKTOK, RESEARCH_META_APIFY_ACTOR): they win over `research`. */
+  researchEnv: { tiktok: string | null; metaActor: string | null };
 }
 
 export interface InstallMember { userId: string; email: string | null; role: "owner" | "member"; createdAt: string }
@@ -61,14 +68,17 @@ export function readSettings(raw: unknown): InstallSettings {
   const models = isObject(source.models) ? source.models : {};
   const limits = isObject(source.limits) ? source.limits : {};
   const name = typeof source.name === "string" ? source.name.trim().slice(0, NAME_MAX) : "";
-  const out: InstallSettings = { name: name || null, aiProvider: isProvider(source.aiProvider) ? source.aiProvider : DEFAULT_AI_PROVIDER, models: { ...DEFAULT_MODELS }, limits: { ...DEFAULT_LIMITS } };
+  const out: InstallSettings = {
+    name: name || null, aiProvider: isProvider(source.aiProvider) ? source.aiProvider : DEFAULT_AI_PROVIDER, models: { ...DEFAULT_MODELS }, limits: { ...DEFAULT_LIMITS },
+    research: readResearch(source.research),
+  };
   for (const field of MODEL_FIELDS) if (isModel(models[field])) out.models[field] = (models[field] as string).trim();
   for (const field of LIMIT_FIELDS) if (isLimit(limits[field])) out.limits[field] = limits[field] as number;
   return out;
 }
 
-/** `models: null` and `limits: null` clear what is stored, so the defaults apply again. */
-export interface SettingsPatch { name?: string | null; aiProvider?: AiProvider; models?: Partial<InstallModels> | null; limits?: Partial<InstallLimits> | null }
+/** `models: null`, `limits: null` and `research: null` clear what is stored, so the defaults apply again. */
+export interface SettingsPatch { name?: string | null; aiProvider?: AiProvider; models?: Partial<InstallModels> | null; limits?: Partial<InstallLimits> | null; research?: ResearchPatch | null }
 
 /**
  * Checks what the owner sent. Answers the part to merge (only the fields that were sent), or a
@@ -76,7 +86,7 @@ export interface SettingsPatch { name?: string | null; aiProvider?: AiProvider; 
  */
 export function settingsPatch(input: unknown): SettingsPatch | string {
   if (!isObject(input)) return "Send the settings to change.";
-  const unknown = Object.keys(input).filter((key) => !["name", "aiProvider", "models", "limits"].includes(key));
+  const unknown = Object.keys(input).filter((key) => !["name", "aiProvider", "models", "limits", "research"].includes(key));
   if (unknown.length) return `Unknown setting: ${unknown[0]}.`;
   const patch: SettingsPatch = {};
   if (input.name !== undefined) {
@@ -113,6 +123,13 @@ export function settingsPatch(input: unknown): SettingsPatch | string {
     }
     patch.limits = limits;
   }
+  if (input.research === null) {
+    patch.research = null;
+  } else if (input.research !== undefined) {
+    const research = researchPatch(input.research);
+    if (typeof research === "string") return research;
+    patch.research = research;
+  }
   if (!Object.keys(patch).length) return "Send the settings to change.";
   return patch;
 }
@@ -131,6 +148,8 @@ export function mergeSettings(current: unknown, patch: SettingsPatch): Record<st
   else if (patch.models) base.models = { ...(isObject(base.models) ? base.models : {}), ...patch.models };
   if (patch.limits === null) delete base.limits;
   else if (patch.limits) base.limits = { ...(isObject(base.limits) ? base.limits : {}), ...patch.limits };
+  if (patch.research === null) delete base.research;
+  else if (patch.research) base.research = mergeResearch(base.research, patch.research);
   return base;
 }
 
@@ -162,9 +181,13 @@ export function keyState(source: "env" | "vault" | null, meta: KeyMeta | undefin
  * The answer to `capabilities`. `modelEnv` holds the model names set as environment variables or
  * stored keys (`modelOverrides` in _shared/ai/models.ts); they win over the settings.
  */
-export function installState(o: { role: InstallRole; owned: boolean; settings: unknown; keys: Record<string, KeyState>; modelEnv?: ModelEnv }): InstallState {
+export function installState(o: { role: InstallRole; owned: boolean; settings: unknown; keys: Record<string, KeyState>; modelEnv?: ModelEnv; researchEnv?: SourceEnv }): InstallState {
   const settings = readSettings(o.settings);
-  return { role: o.role, owned: o.owned, ...settings, resolvedModels: resolveModels(settings.models, o.modelEnv ?? {}), keys: o.keys };
+  const env = (value: string | null | undefined) => value?.trim() || null;
+  return {
+    role: o.role, owned: o.owned, ...settings, resolvedModels: resolveModels(settings.models, o.modelEnv ?? {}), keys: o.keys,
+    researchEnv: { tiktok: env(o.researchEnv?.RESEARCH_TIKTOK), metaActor: env(o.researchEnv?.RESEARCH_META_APIFY_ACTOR) },
+  };
 }
 
 // MARK: Members
