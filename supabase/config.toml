@@ -1,0 +1,56 @@
+# Supabase CLI configuration. The project to deploy to is never named here: pass it to
+# scripts/deploy-functions.sh as SUPABASE_PROJECT_REF (the setup wizard deploys to the project you pick).
+#
+# Only the edge functions are declared here; everything else keeps the CLI's defaults. This file is
+# for deploys (scripts/deploy-functions.sh) and local `supabase functions serve`. Do NOT run
+# `supabase config push`: it would push these defaults over the hosted project's auth and API settings.
+#
+# Every function checks its caller itself (a user's session JWT, or a worker/runner secret header for
+# cron jobs and the local creative runner), so the gateway's JWT check is off for all of them: cron
+# calls and the runner carry no user JWT. Paths are relative to this supabase/ folder.
+
+project_id = "gtm-install"
+
+[functions.radar]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/radar/index.ts"
+import_map = "./functions/radar/deno.json"
+
+[functions.metrics]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/metrics/index.ts"
+import_map = "./functions/metrics/deno.json"
+
+[functions.research]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/research/index.ts"
+import_map = "./functions/research/deno.json"
+
+[functions.creatives]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/creatives/index.ts"
+import_map = "./functions/creatives/deno.json"
+
+[functions.launch]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/launch/index.ts"
+import_map = "./functions/launch/deno.json"
+
+[functions.insight]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/insight/index.ts"
+import_map = "./functions/insight/deno.json"
+
+# The install itself: its owner and members, settings and API keys (stored in Vault). Owner only,
+# except `capabilities` (any member) and `health`.
+[functions.install]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/install/index.ts"
+import_map = "./functions/install/deno.json"

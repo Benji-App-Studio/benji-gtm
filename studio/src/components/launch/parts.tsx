@@ -1,0 +1,35 @@
+"use client";
+import type { ReactNode } from "react";
+
+/** Draft statuses that are still on their way to Meta. */
+export const IN_PROGRESS = new Set(["queued", "processing", "creating"]);
+
+/** A section of the Launch page with its title row. */
+export function Section({ id, title, hint, action, children }: { id?: string; title: string; hint?: ReactNode; action?: ReactNode; children: ReactNode }) {
+  return (
+    <section id={id} className="min-w-0 scroll-mt-6">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-title font-medium">{title}</h2>
+          {hint && <p className="text-sm text-muted">{hint}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+export function money(n: number | null | undefined, currency = "USD") {
+  if (n == null || !Number.isFinite(n)) return "–";
+  try { return new Intl.NumberFormat("en", { style: "currency", currency, maximumFractionDigits: n < 100 ? 2 : 0 }).format(n); }
+  catch { return `${Math.round(n)} ${currency}`; }
+}
+
+/** Posts JSON and returns the answer, throwing the server's error message. */
+export async function send<T = Record<string, unknown>>(url: string, body: unknown, method = "POST"): Promise<T> {
+  const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error ?? `The server answered ${response.status}.`);
+  return data as T;
+}

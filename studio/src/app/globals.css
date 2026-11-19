@@ -1,0 +1,349 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────────────────────────────────────
+   Design tokens. Every visual decision lives here; components only use these names. See DESIGN.md.
+   The look: a pale grey app background, the page in a slightly lighter panel with a hairline border,
+   small type, small radii and almost no shadow.
+   Plain @theme (not inline) so utilities read the variables at runtime (bg-card is
+   background-color: var(--color-card)), which lets the dark theme below swap them.
+   ───────────────────────────────────────────────────────────────────────────────────────────── */
+@theme {
+  /* Surfaces, back to front. */
+  --color-shell: #f4f4f5;        /* the app background, behind the page panel */
+  --color-sidebar: #f4f4f5;      /* the sidebar (the same grey: no divider between it and the background) */
+  --color-canvas: #fcfcfc;       /* the page panel, and pages outside the app */
+  --color-card: #ffffff;         /* cards: white on the panel, told apart by their hairline */
+  --color-raised: #ffffff;       /* fields, menus, the selected segment, a hovered table row */
+  --color-control: #efeff1;      /* grey pills, the segmented track, keyboard hints */
+  --color-hover: rgb(20 20 28 / 0.05);   /* a row or icon button under the pointer */
+  --color-active: rgb(20 20 28 / 0.08);  /* the current page in a sidebar, the highlighted menu row */
+
+  /* Text. */
+  --color-ink: #1a1a1e;          /* titles, values, body */
+  --color-label: #3d3e45;        /* row labels, sidebar links */
+  --color-muted: #6a6b73;        /* descriptions, secondary text */
+  --color-faint: #8d8e96;        /* section labels, hints, axis ticks */
+
+  /* The dark fill: primary buttons, the current page in pagination. */
+  --color-primary: #222226;
+  /* Text and marks on an ink or primary fill. */
+  --color-on-ink: #ffffff;
+
+  --color-line: #e9e9ec;         /* dividers and card borders */
+  --color-hairline: #e2e2e6;     /* the page panel's edge, field borders */
+  --color-focus: #3358d4;        /* the keyboard focus ring */
+
+  /* Data colours. */
+  --color-accent: #3358d4;       /* "actual", selection, toggles, links */
+  --color-accent-soft: #ebf0fd;  /* tinted icons, the forecast band */
+  --color-accent-muted: #8ba3ec; /* hatched "planned/estimate" bars */
+  --color-win: #1b9a3e;          /* up and good */
+  --color-win-soft: #e6f6ea;
+  --color-warn: #d6364b;         /* down, lost, failed, destructive */
+  --color-warn-soft: #fdecee;
+  --color-caution: #c96a12;      /* at risk, counts */
+  --color-caution-soft: #fdf0de; /* the insight callout */
+  --color-caution-ink: #8a4b0c;  /* text on the callout */
+  --color-highlight: #fdf0de;    /* kept for older code: same as caution-soft */
+
+  /* Heat-map steps, lightest to strongest. */
+  --color-heat-1: #fdecee;
+  --color-heat-2: #f6b3bc;
+  --color-heat-3: #e96d7e;
+  --color-heat-4: #d6364b;
+
+  /* The activity log stays a dark terminal in both themes. */
+  --color-console: #101012;
+  /* Behind dialogs and drawers (used at ~25-30% opacity). */
+  --color-scrim: #000000;
+
+  /* Elevation. Almost none: surfaces are separated by hairlines. Only things that float get a shadow. */
+  --shadow-card: 0 1px 1px rgb(0 0 0 / 0.02);
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.06);
+  --shadow-pill: 0 1px 2px rgb(0 0 0 / 0.1);
+  --shadow-pop: 0 10px 32px -8px rgb(0 0 0 / 0.16), 0 2px 6px rgb(0 0 0 / 0.05), 0 0 0 1px rgb(0 0 0 / 0.04);
+  --shadow-frame: 0 0 0 0 transparent;
+  --shadow-glow: 0 2px 6px -1px rgb(51 88 212 / 0.35);
+
+  /* Corner radii. rounded-card / rounded-control / rounded-frame are the names to reach for. */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+  --radius-3xl: 14px;
+  --radius-4xl: 16px;
+  --radius-card: 8px;      /* cards */
+  --radius-control: 6px;   /* buttons, fields, sidebar rows, segmented controls */
+  --radius-inner: 6px;     /* callouts and boxes inside a card */
+  --radius-dialog: 12px;   /* dialogs, the command menu */
+  --radius-frame: 8px;     /* the page panel */
+
+  /* Type scale. text-sm is the 13 px UI text everything is set in; text-xs is the 12 px small text. */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.125rem;
+  --text-xl--line-height: 1.625rem;
+  --text-2xl: 1.25rem;
+  --text-2xl--line-height: 1.75rem;
+  --text-3xl: 1.5rem;
+  --text-3xl--line-height: 2rem;
+  --text-caption: 0.75rem;           /* descriptions under a title: 12 px with a little more leading */
+  --text-caption--line-height: 1.125rem;
+  --text-title: 0.9375rem;           /* card and section titles: 15 px */
+  --text-title--line-height: 1.375rem;
+  --text-title--letter-spacing: -0.005em;
+  --text-display: 1.5rem;            /* page titles on centred pages: 24 px */
+  --text-display--line-height: 1.25;
+  --text-display--letter-spacing: -0.015em;
+  --text-figure: 1.5rem;             /* KPI row figures */
+  --text-figure--line-height: 1.1;
+  --text-figure--letter-spacing: -0.02em;
+  --text-kpi: 2.25rem;               /* the one big number on a page */
+  --text-kpi--line-height: 1;
+  --text-kpi--letter-spacing: -0.03em;
+}
+
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+}
+
+/* Appearance. The root layout sets data-theme on <html> from the theme cookie: "light", "dark", or
+   "system" (follows the OS). Primary buttons turn near-white in dark. The dark values are written
+   twice (chosen, and following the OS): keep the two blocks the same. */
+:root { color-scheme: light; }
+:root[data-theme="system"] { color-scheme: light dark; }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-shell: #0d0d0e;
+  --color-sidebar: #0d0d0e;
+  --color-canvas: #131315;
+  --color-card: #18181b;
+  --color-raised: #1f1f23;
+  --color-control: #232327;
+  --color-hover: rgb(255 255 255 / 0.055);
+  --color-active: rgb(255 255 255 / 0.09);
+  --color-ink: #ececef;
+  --color-label: #c3c3ca;
+  --color-muted: #96969f;
+  --color-faint: #6e6e78;
+  --color-primary: #ececef;
+  --color-on-ink: #131315;
+  --color-line: #242428;
+  --color-hairline: #2a2a2f;
+  --color-focus: #7c98f6;
+  --color-accent: #7c98f6;
+  --color-accent-soft: rgb(124 152 246 / 0.16);
+  --color-accent-muted: #5a71bd;
+  --color-win: #4cc76a;
+  --color-win-soft: rgb(76 199 106 / 0.14);
+  --color-warn: #f2647a;
+  --color-warn-soft: rgb(242 100 122 / 0.15);
+  --color-caution: #f0a05a;
+  --color-caution-soft: rgb(240 160 90 / 0.14);
+  --color-caution-ink: #f6c493;
+  --color-highlight: rgb(240 160 90 / 0.16);
+  --color-heat-1: rgb(242 100 122 / 0.12);
+  --color-heat-2: rgb(242 100 122 / 0.3);
+  --color-heat-3: rgb(242 100 122 / 0.55);
+  --color-heat-4: rgb(242 100 122 / 0.85);
+  --color-console: #09090a;
+  --color-scrim: #000000;
+  --shadow-card: 0 0 0 0 transparent;
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-pill: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-pop: 0 14px 40px -8px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.07);
+  --shadow-frame: 0 0 0 0 transparent;
+  --shadow-glow: 0 2px 6px -1px rgb(124 152 246 / 0.45);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --color-shell: #0d0d0e;
+    --color-sidebar: #0d0d0e;
+    --color-canvas: #131315;
+    --color-card: #18181b;
+    --color-raised: #1f1f23;
+    --color-control: #232327;
+    --color-hover: rgb(255 255 255 / 0.055);
+    --color-active: rgb(255 255 255 / 0.09);
+    --color-ink: #ececef;
+    --color-label: #c3c3ca;
+    --color-muted: #96969f;
+    --color-faint: #6e6e78;
+    --color-primary: #ececef;
+    --color-on-ink: #131315;
+    --color-line: #242428;
+    --color-hairline: #2a2a2f;
+    --color-focus: #7c98f6;
+    --color-accent: #7c98f6;
+    --color-accent-soft: rgb(124 152 246 / 0.16);
+    --color-accent-muted: #5a71bd;
+    --color-win: #4cc76a;
+    --color-win-soft: rgb(76 199 106 / 0.14);
+    --color-warn: #f2647a;
+    --color-warn-soft: rgb(242 100 122 / 0.15);
+    --color-caution: #f0a05a;
+    --color-caution-soft: rgb(240 160 90 / 0.14);
+    --color-caution-ink: #f6c493;
+    --color-highlight: rgb(240 160 90 / 0.16);
+    --color-heat-1: rgb(242 100 122 / 0.12);
+    --color-heat-2: rgb(242 100 122 / 0.3);
+    --color-heat-3: rgb(242 100 122 / 0.55);
+    --color-heat-4: rgb(242 100 122 / 0.85);
+    --color-console: #09090a;
+    --color-scrim: #000000;
+    --shadow-card: 0 0 0 0 transparent;
+    --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-pill: 0 1px 2px rgb(0 0 0 / 0.5);
+    --shadow-pop: 0 14px 40px -8px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.07);
+    --shadow-frame: 0 0 0 0 transparent;
+    --shadow-glow: 0 2px 6px -1px rgb(124 152 246 / 0.45);
+  }
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+::selection { background: color-mix(in srgb, var(--color-accent) 24%, transparent); }
+
+/* Keyboard focus: one ring everywhere. In the base layer, so a control that draws its own focus state
+   (a field's border, a menu row's highlight) can turn it off with outline-none. */
+@layer base {
+  :where(a, button, input, select, textarea, summary, [tabindex], [role="button"], [role="menuitem"], [role="menuitemradio"], [role="option"], [role="radio"], [role="switch"], [role="tab"]):focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--color-focus) 70%, transparent);
+    outline-offset: 2px;
+  }
+}
+
+/* Small section labels ("Your apps", table and field headers). Sentence case, quiet grey. */
+.eyebrow {
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0;
+  color: var(--color-faint);
+}
+
+/* Diagonal stripes in the current text colour: planned/estimate (accent-muted), lost (warn), targets (faint).
+   Set the colour with a text-* utility: <span class="hatch text-accent-muted" />. */
+.hatch { background-color: color-mix(in srgb, currentColor 14%, transparent); background-image: repeating-linear-gradient(135deg, currentColor 0 1.6px, transparent 1.6px 4.6px); }
+/* Bars that fade toward their base. */
+.fade-down { mask-image: linear-gradient(to bottom, #000 35%, rgb(0 0 0 / 0.4)); }
+
+@keyframes pulse-dot { 50% { opacity: 0.35; } }
+.pulse-dot { animation: pulse-dot 1.1s ease-in-out infinite; }
+
+/* Motion: quick and quiet. Navigation is instant; a page, a menu or a dialog fades in over a few frames
+   (no slide); cards in a list follow a beat apart; bars grow from their base. */
+@keyframes page-in { from { opacity: 0; } to { opacity: 1; } }
+.page-in { animation: page-in 120ms ease-out both; }
+.rise { animation: page-in 160ms ease-out both; animation-delay: calc(var(--i, 0) * 20ms); }
+@keyframes grow-y { from { transform: scaleY(0); } to { transform: none; } }
+.grow-y { transform-origin: bottom; animation: grow-y 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 30ms); }
+@keyframes grow-x { from { transform: scaleX(0); } to { transform: none; } }
+.grow-x { transform-origin: left; animation: grow-x 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 40ms); }
+/* Loading placeholders (components/skeleton.tsx): a faint ink tint with a soft band of light sweeping
+   left to right. The band is sized to the viewport (fixed attachment), so every shape on the page
+   shimmers as one wave instead of each at its own speed. Ink-based, so it works in both themes. */
+@keyframes shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+.skeleton {
+  border-radius: var(--radius-sm);
+  background-color: color-mix(in srgb, var(--color-ink) 6%, transparent);
+  background-image: linear-gradient(90deg, transparent 40%, color-mix(in srgb, var(--color-ink) 5%, transparent) 50%, transparent 60%);
+  background-size: 200% 100%;
+  background-position: 150% 0; /* off screen when still (reduced motion): a plain tint */
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+@keyframes gear-spin { to { transform: rotate(360deg); } }
+.gear-spin { animation: gear-spin 2.4s linear infinite; transform-origin: 50% 50%; }
+@media (prefers-reduced-motion: reduce) {
+  .page-in, .rise, .skeleton, .gear-spin, .grow-y, .grow-x { animation: none; }
+}
+
+/* The one emphasised card on a page (HeroCard): a flat dark panel with a faint tint of the accent in
+   one corner. Text on it is white. Same in both themes. */
+.hero-gradient {
+  position: relative;
+  isolation: isolate;
+  color: #fff;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  background: radial-gradient(90% 120% at 100% 0%, rgb(124 152 246 / 0.22) 0%, rgb(124 152 246 / 0) 60%), #1c1c20;
+}
+
+/* Scrollbars: thin and quiet instead of the browser's default bar. */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--color-ink) 22%, transparent) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--color-ink) 20%, transparent); border: 2px solid transparent; background-clip: padding-box; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--color-ink) 35%, transparent); }
+/* Scrolls without a visible bar (the sidebar's links). Unlayered, after the rule above, so it wins over it. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+/* Rows that scroll sideways (the masks only use alpha, so they work in both themes) hide the bar entirely and fade at the edge that has more (see ScrollRow). */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+[data-fade-right] { mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent); }
+[data-fade-left] { mask-image: linear-gradient(to right, transparent, #000 48px); }
+[data-fade-left][data-fade-right] { mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
+
+/* Dropdowns: our own chevron, set 12px in from the edge, instead of the browser's arrow that sits flush against the
+   border. Unlayered so it wins over px-* utilities; selects that draw their own arrow use appearance-none. */
+select:not([multiple]):not(.appearance-none) {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238d8e96' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px 16px;
+  text-overflow: ellipsis;
+}
+
+/* The moving stripe of a progress bar whose task has no count (background tasks). */
+@keyframes task-indeterminate { from { left: -33%; } to { left: 100%; } }
+.bg-task-indeterminate { animation: task-indeterminate 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .bg-task-indeterminate { animation: none; left: 0; width: 100%; opacity: 0.4; } }
+
+/* One checkbox everywhere: a 16px rounded square that fills with the ink colour and a white tick when
+   on (the browser's own blue box looked out of place next to the drawn ones). Unlayered on purpose. */
+input[type="checkbox"] {
+  appearance: none;
+  flex-shrink: 0;
+  display: inline-grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  border: 1px solid var(--color-hairline);
+  border-radius: 4px;
+  background: var(--color-raised);
+  cursor: pointer;
+  transition: background-color 120ms, border-color 120ms;
+}
+input[type="checkbox"]:hover:not(:disabled) { border-color: color-mix(in srgb, var(--color-ink) 35%, transparent); }
+input[type="checkbox"]:checked { background: var(--color-primary); border-color: var(--color-primary); }
+input[type="checkbox"]::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  clip-path: polygon(14% 52%, 0 66%, 40% 100%, 100% 22%, 86% 8%, 40% 72%);
+  background: var(--color-on-ink);
+  transform: scale(0);
+  transition: transform 120ms;
+}
+input[type="checkbox"]:checked::before { transform: scale(1); }
+input[type="checkbox"]:focus-visible { outline: 2px solid color-mix(in srgb, var(--color-focus) 70%, transparent); outline-offset: 2px; }
+input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }

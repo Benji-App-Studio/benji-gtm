@@ -1,0 +1,30 @@
+{
+ "image": [
+  {
+   "id": "00000000-0000-4000-8000-000000000001",
+   "job_type": "gpt_image_2_5",
+   "status": "completed",
+   "created_at": "2026-10-02T09:16:45Z",
+   "result_url": "https://cdn.example.com/fixture/image-4x5.png",
+   "min_result_url": "https://cdn.example.com/fixture/image-4x5_min.webp",
+   "params": {
+    "aspect_ratio": "4:5",
+    "prompt": "(fixture)"
+   }
+  }
+ ],
+ "video": [
+  {
+   "id": "00000000-0000-4000-8000-000000000002",
+   "job_type": "marketing_studio_video",
+   "status": "completed",
+   "created_at": "2026-10-02T09:16:45Z",
+   "result_url": "https://cdn.example.com/fixture/video-9x16.mp4",
+   "min_result_url": null,
+   "params": {
+    "aspect_ratio": "9:16",
+    "duration": 15
+   }
+  }
+ ]
+}

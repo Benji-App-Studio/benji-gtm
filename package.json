@@ -1,0 +1,17 @@
+{
+  "name": "benji-gtm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN LICENSE",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "bash start.command",
+    "update": "node scripts/update.mjs",
+    "provision": "node scripts/provision.mjs",
+    "creative-runner": "tsx scripts/creative-runner/runner.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
+  }
+}

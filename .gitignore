@@ -1,0 +1,17 @@
+# Kept out of every copy of this repository: installed packages, the prepared app, builds, the start
+# log, local settings and the Mac's own files. Your keys never go in a file here at all: they are
+# stored in your own Supabase project.
+node_modules/
+.next/
+dist/
+out/
+.vercel/
+start-log.txt
+*.log
+/package-lock.json
+.env*
+*.pem
+*.tsbuildinfo
+.DS_Store
+._*
+Thumbs.db
