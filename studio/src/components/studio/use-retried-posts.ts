@@ -2,7 +2,9 @@
 // The loop behind useComposedAds and useLogoOverlays: POST once to `urlFor(id)` for every pending
 // creative, one at a time; a failure is tried again after RETRY_AFTER_MS, at most RETRIES times. After
 // the last try the error is returned per creative (`failed`), for its card, until `retry(id)` starts over.
+// `what` is an m()-marked English sentence; the error reads in the page's language.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useT } from "@/lib/i18n/client";
 
 const RETRIES = 3;
 const RETRY_AFTER_MS = 30_000;
@@ -11,6 +13,7 @@ const never = () => false;
 
 /** `urlFor` and `settled` should be stable (module-level) functions: they're effect dependencies. */
 export function useRetriedPosts(pendingIds: string[], urlFor: (id: string) => string, what: string, onDone?: () => void, settled: (status: number) => boolean = never) {
+  const { t } = useT();
   const tries = useRef(new Map<string, { count: number; at: number }>());
   const busy = useRef(false);
   // Bumped to look again: after a pass, and when a failed one may be retried.
@@ -40,14 +43,14 @@ export function useRetriedPosts(pendingIds: string[], urlFor: (id: string) => st
         if (response?.ok || (response && settled(response.status))) { done++; continue; }
         const data = await response?.json().catch(() => null) as { error?: string } | null;
         console.warn(what, id, data);
-        if (count >= RETRIES) errors[id] = `${what}: ${data?.error ?? (response ? `the server answered ${response.status}` : "the server couldn't be reached")}`;
+        if (count >= RETRIES) errors[id] = t("{what}: {reason}", { what: t(what), reason: data?.error ?? (response ? t("the server answered {status}", { status: String(response.status) }) : t("the server couldn't be reached")) });
       }
       busy.current = false;
       if (Object.keys(errors).length) setFailed((f) => ({ ...f, ...errors }));
       if (done) onDone?.();
       setNonce((n) => n + 1);
     })();
-  }, [pending, urlFor, what, onDone, settled, nonce]);
+  }, [pending, urlFor, what, onDone, settled, nonce, t]);
 
   const retry = useCallback((id: string) => {
     tries.current.delete(id);

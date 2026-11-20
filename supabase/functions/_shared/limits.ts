@@ -47,6 +47,34 @@ export function resolveLimits(install: { settings?: unknown } | null | undefined
   return out;
 }
 
+/**
+ * Accounts mode: the limits in `platform.settings.limits` (shared by every account: one Supabase project).
+ * For each limit: the environment variable, else the stored number, else the numbers the functions were
+ * written with (LEGACY_LIMITS), since platform_enable() stores those by default.
+ */
+export function resolvePlatformLimits(platform: { settings?: unknown } | null | undefined, env: LimitEnv = {}): InstallLimits {
+  const read = (name: string) => positive(typeof env === "function" ? env(name) : env[name]);
+  const settings = platform?.settings;
+  const stored = (settings && typeof settings === "object" ? (settings as Record<string, unknown>).limits : undefined);
+  const set = (stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {}) as Record<string, unknown>;
+  const out = { ...LEGACY_LIMITS };
+  for (const field of FIELDS) out[field] = read(LIMIT_ENV[field]) ?? positive(set[field]) ?? LEGACY_LIMITS[field];
+  return out;
+}
+
+/** Accounts mode: the whole project's storage safety net when platform.settings.safetyStorageGb isn't set. */
+export const DEFAULT_SAFETY_STORAGE_GB = 10_000;
+
+/**
+ * Accounts mode: the whole project's storage, as a safety net only (each account's plan is the real
+ * limit). platform.settings.safetyStorageGb, else DEFAULT_SAFETY_STORAGE_GB.
+ */
+export function platformSafetyGb(platform: { settings?: unknown } | null | undefined): number {
+  const settings = platform?.settings;
+  const value = settings && typeof settings === "object" ? (settings as Record<string, unknown>).safetyStorageGb : undefined;
+  return positive(value) ?? DEFAULT_SAFETY_STORAGE_GB;
+}
+
 /** The shortest wall clock the timings are worked out for: below this nothing useful fits in a run. */
 export const MIN_WALL_CLOCK_SEC = 60;
 

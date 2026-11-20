@@ -4,6 +4,8 @@
 // link, an id or a name), shows what will be saved, and says where to find it. Cleaning is shared with
 // the watch route (lib/ad-sources.ts), which cleans again before saving.
 import { cleanGoogle, cleanMetaPage, cleanTikTok, type Cleaned } from "@/lib/ad-sources";
+import { useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
 import { cx, Field, inputClass } from "../ui";
 
 export interface CompetitorIds { page: string; google: string; tiktok: string }
@@ -15,9 +17,9 @@ export function idsOf(w: { page_id: string | null; page_url: string | null; webs
   return { page: w.page_id ?? w.page_url ?? "", google: w.google_advertiser_id ?? w.website ?? "", tiktok: w.tiktok_advertiser_id ?? w.tiktok_business_name ?? "" };
 }
 
-/** The first field that can't be saved, as a sentence, or null. */
-export function idsError(ids: CompetitorIds): string | null {
-  for (const cleaned of [cleanMetaPage(ids.page), cleanGoogle(ids.google), cleanTikTok(ids.tiktok)] as Cleaned<unknown>[]) if (!cleaned.ok) return cleaned.error;
+/** The first field that can't be saved, as a sentence (in `t`'s language, English without it), or null. */
+export function idsError(ids: CompetitorIds, t?: Translator["t"]): string | null {
+  for (const cleaned of [cleanMetaPage(ids.page, t), cleanGoogle(ids.google, t), cleanTikTok(ids.tiktok, t)] as Cleaned<unknown>[]) if (!cleaned.ok) return cleaned.error;
   return null;
 }
 
@@ -27,34 +29,36 @@ export function changedIds(ids: CompetitorIds, from: CompetitorIds): Partial<Com
 }
 
 function Shown({ cleaned }: { cleaned: Cleaned<unknown> }) {
+  const { t } = useT();
   if (!cleaned.ok) return <span className="block text-warn">{cleaned.error}</span>;
-  return cleaned.shown ? <span className="block text-label">Saved as {cleaned.shown}</span> : null;
+  return cleaned.shown ? <span className="block text-label">{t("Saved as {value}", { value: cleaned.shown })}</span> : null;
 }
 
 export function CompetitorIdFields({ ids, onChange, metaOnly = false, className }: { ids: CompetitorIds; onChange: (ids: CompetitorIds) => void; metaOnly?: boolean; className?: string }) {
-  const page = cleanMetaPage(ids.page), google = cleanGoogle(ids.google), tiktok = cleanTikTok(ids.tiktok);
+  const { t } = useT();
+  const page = cleanMetaPage(ids.page, t), google = cleanGoogle(ids.google, t), tiktok = cleanTikTok(ids.tiktok, t);
   return (
     <div className={cx("grid gap-3 sm:grid-cols-2", className)}>
-      <Field label="Facebook Page (Meta ads)" hint={<>
+      <Field label={t("Facebook Page (Meta ads)")} hint={<>
         <Shown cleaned={page} />
-        Open the brand&apos;s Facebook Page or its page in the Meta Ad Library and copy the link. Without one, its name is searched.
+        {t("Open the brand's Facebook Page or its page in the Meta Ad Library and copy the link. Without one, its name is searched.")}
       </>}>
         <input className={inputClass} value={ids.page} onChange={(e) => onChange({ ...ids, page: e.target.value })} placeholder="facebook.com/ads/library/?view_all_page_id=…" spellCheck={false} />
       </Field>
       {!metaOnly && (
-        <Field label="Website or Google advertiser (Google ads)" hint={<>
+        <Field label={t("Website or Google advertiser (Google ads)")} hint={<>
           <Shown cleaned={google} />
-          Its website finds every Google ad that links to it. For one exact account, search the brand on adstransparency.google.com, open the advertiser and copy the link (it has AR… in it).
+          {t("Its website finds every Google ad that links to it. For one exact account, search the brand on adstransparency.google.com, open the advertiser and copy the link (it has AR… in it).")}
         </>}>
           <input className={inputClass} value={ids.google} onChange={(e) => onChange({ ...ids, google: e.target.value })} placeholder="notion.so" spellCheck={false} />
         </Field>
       )}
       {!metaOnly && (
-        <Field label="TikTok business (TikTok ads)" hint={<>
+        <Field label={t("TikTok business (TikTok ads)")} hint={<>
           <Shown cleaned={tiktok} />
-          Search the brand on library.tiktok.com with a European country picked, then paste the advertiser name it shows, or the link. TikTok lists ads shown in Europe only.
+          {t("Search the brand on library.tiktok.com with a European country picked, then paste the advertiser name it shows, or the link. TikTok lists ads shown in Europe only.")}
         </>}>
-          <input className={inputClass} value={ids.tiktok} onChange={(e) => onChange({ ...ids, tiktok: e.target.value })} placeholder="The advertiser name in TikTok's Ad Library" spellCheck={false} />
+          <input className={inputClass} value={ids.tiktok} onChange={(e) => onChange({ ...ids, tiktok: e.target.value })} placeholder={t("The advertiser name in TikTok's Ad Library")} spellCheck={false} />
         </Field>
       )}
     </div>

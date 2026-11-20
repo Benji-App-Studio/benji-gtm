@@ -17,7 +17,8 @@ export const isVaultOnly = (name: string) => name.endsWith("_WORKER_SECRET") || 
 
 type Row = { name: string; value: string | null };
 export type Env = (name: string) => string | undefined;
-export type KeySource = "env" | "vault";
+/** `platform`: accounts mode, a staff account without a key of its own uses the platform's (env or Vault). */
+export type KeySource = "env" | "vault" | "platform";
 
 export interface Keys {
   /** The key's value, or undefined when it isn't set anywhere. */
@@ -28,7 +29,11 @@ export interface Keys {
   has(name: string): Promise<boolean>;
   /** Which of these keys are set, for a function's /health answer. */
   flags(names: readonly string[]): Promise<Record<string, boolean>>;
-  /** Where the value in use comes from: `env` (an edge function secret, which wins) or `vault`; null when unset. */
+  /**
+   * Where the value in use comes from: `env` (an edge function secret, which wins) or `vault`; null when
+   * unset. An account's reader (createAccountKeys) answers `vault` for its own key and `platform` for one
+   * a staff account borrows from the platform.
+   */
   source(name: string): Promise<KeySource | null>;
   /** The names of the keys that are set and start with `prefix` (per-app keys such as APPSTACK_API_KEY_<APP>). */
   withPrefix(prefix: string): Promise<string[]>;
@@ -104,6 +109,58 @@ export function createKeys(
   };
 }
 
+/**
+ * One account's keys (accounts mode): Vault rows named `acct:<user>:<NAME>`, read through the
+ * `account_secrets` RPC (service role only), cached for a minute. Nothing else: never an edge function
+ * secret, never an install-wide (bare-name) Vault row, never a worker secret or function address, never
+ * another account's keys. `fallback` is the platform's reader, given for staff accounts only: a key the
+ * account hasn't set is then taken from the platform (source `platform`).
+ */
+export function createAccountKeys(db: SupabaseClient, userId: string, fallback: Keys | null = null): Keys {
+  let cache: { until: number; values: Map<string, string> } | null = null;
+
+  async function mine(): Promise<Map<string, string>> {
+    if (cache && Date.now() < cache.until) return cache.values;
+    const values = new Map<string, string>();
+    const { data, error } = await db.rpc("account_secrets", { p_user: userId });
+    for (const row of (error ? [] : (data as Row[] | null)) ?? []) if (row.value?.trim()) values.set(row.name, row.value.trim());
+    cache = { until: Date.now() + (error ? FAILED_TTL_MS : TTL_MS), values };
+    return values;
+  }
+
+  async function get(name: string): Promise<string | undefined> {
+    if (isVaultOnly(name)) return undefined;
+    return (await mine()).get(name) ?? (fallback ? await fallback.get(name) : undefined);
+  }
+
+  return {
+    get,
+    async need(name, error = (missing) => new Error(addKeyMessage(missing))) {
+      const value = await get(name);
+      if (!value) throw error(name);
+      return value;
+    },
+    async has(name) { return Boolean(await get(name)); },
+    async flags(names) {
+      const out: Record<string, boolean> = {};
+      for (const name of names) out[name] = Boolean(await get(name));
+      return out;
+    },
+    async source(name) {
+      if (isVaultOnly(name)) return null;
+      if ((await mine()).has(name)) return "vault";
+      return fallback && await fallback.source(name) ? "platform" : null;
+    },
+    async withPrefix(prefix) {
+      const found = new Set<string>();
+      for (const name of (await mine()).keys()) if (name.startsWith(prefix)) found.add(name);
+      for (const name of fallback ? await fallback.withPrefix(prefix) : []) found.add(name);
+      return [...found].sort();
+    },
+    clear() { cache = null; fallback?.clear(); },
+  };
+}
+
 /** What each key is called in the app, for messages that tell a person what to add. */
 const KEY_LABELS: Record<string, string> = {
   OPENAI_API_KEY: "your OpenAI key",
@@ -119,10 +176,21 @@ const KEY_LABELS: Record<string, string> = {
   CREATIVES_RUNNER_SECRET: "the desktop runner's secret",
   TIKTOK_RESEARCH_CLIENT_KEY: "your TikTok research client key",
   TIKTOK_RESEARCH_CLIENT_SECRET: "your TikTok research client secret",
+  MIXPANEL_SERVICE_ACCOUNT: "your Mixpanel service account",
+  SUPERWALL_API_KEY: "your Superwall API key",
 };
 
+/**
+ * Keys that can also be set per app: AppStack (one key per AppStack app) and RevenueCat (a v2 secret key
+ * belongs to one RevenueCat project). The per-app name is `<BASE>_<ID>`, the ID in capitals with anything
+ * else turned into "_" (the AppStack app ID, the RevenueCat project ID). The app's own key wins over the default.
+ */
+export const PER_APP_BASES = ["APPSTACK_API_KEY", "REVENUECAT_API_KEY"] as const;
+export const perAppKeyName = (base: (typeof PER_APP_BASES)[number], id: string) => `${base}_${id.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`;
+const perAppBase = (name: string) => PER_APP_BASES.find((base) => name.startsWith(`${base}_`));
+
 /** "your OpenAI key" for OPENAI_API_KEY; the name itself for a key the app has no label for. */
-export const keyLabel = (name: string) => KEY_LABELS[name] ?? (name.startsWith("APPSTACK_API_KEY_") ? KEY_LABELS.APPSTACK_API_KEY : name);
+export const keyLabel = (name: string) => KEY_LABELS[name] ?? KEY_LABELS[perAppBase(name) ?? ""] ?? name;
 
 /** The sentence shown when a key is missing: what to add and where. */
 export const addKeyMessage = (name: string) => `Add ${keyLabel(name)} in Settings > API keys.`;

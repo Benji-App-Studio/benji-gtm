@@ -73,7 +73,7 @@ export async function getBackgroundTasks(supabase: Supabase): Promise<Background
   const cutouts = (jobs.data ?? []).filter((r) => r.model === CUTOUT_MODEL);
   if (cutouts.length) {
     const productId = cutouts[0].product_id as string;
-    tasks.push({ id: "creatives:cutouts", kind: "creatives", label: "Making product cut-outs", productName: nameOf(productId), done: null, total: null, detail: `${cutouts.length} waiting for, or running on, the desktop runner`, href: `/app/w/${productId}/brand?tab=product` });
+    tasks.push({ id: "creatives:cutouts", kind: "creatives", label: "Making product cut-outs", productName: nameOf(productId), done: null, total: null, detail: `${cutouts.length} waiting for, or running on, the desktop runner`, href: `/app/w/${productId}/settings` });
   }
 
   // Launch uploads to Meta (paused drafts).
@@ -104,7 +104,7 @@ export async function getBackgroundTasks(supabase: Supabase): Promise<Background
     if (p.insight_status !== "running" || !p.insight_started_at || Date.now() - Date.parse(p.insight_started_at) > INSIGHT_STALE_MS) continue;
     tasks.push({
       id: `insight:${p.id}`, kind: "insight", label: "AI reading your product's links", productName: p.name as string,
-      done: null, total: null, detail: (p.insight_message as string | null) ?? null, href: `/app/w/${p.id}/brand?tab=product`,
+      done: null, total: null, detail: (p.insight_message as string | null) ?? null, href: `/app/w/${p.id}/settings`,
     });
   }
 

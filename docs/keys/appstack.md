@@ -45,7 +45,7 @@ one for the platform you advertise.
 
 ### Part 2: Paste the key into Benji GTM
 
-6. In Benji GTM, open **Settings > API keys**.
+6. In Benji GTM, open **Settings > Your keys**.
 7. Find the **AppStack** row and click **Add**.
 8. Paste the key and click **Save and check**.
 

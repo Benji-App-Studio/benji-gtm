@@ -17,6 +17,19 @@ const nextConfig: NextConfig = {
   turbopack: { root: __dirname },
   outputFileTracingRoot: __dirname,
   env: { BUNDLED_MIGRATION_VERSION: newestMigration() },
+  // The extension download (app/api/extension) reads the zip from the build's own files.
+  // The bundled Chinese, Japanese and Korean fonts (lib/server/cjk-font-files.ts).
+  outputFileTracingIncludes: {
+    "/api/extension": ["./public/downloads/**"],
+    // Composed ads and Reddit/tweet-style posts (made when a batch starts) read these files.
+    "/api/studio/creatives/[id]/compose": ["./assets/fonts/cjk/**"],
+    "/api/studio/[productId]/batches": ["./assets/fonts/cjk/**"],
+    "/api/playground/[productId]": ["./assets/fonts/cjk/**"],
+    "/api/playground/[productId]/templates": ["./assets/fonts/cjk/**"],
+    // The Terms and Privacy pages read their text (components/legal-page.tsx).
+    "/terms": ["./content/legal/**"],
+    "/privacy": ["./content/legal/**"],
+  },
   experimental: {
     // Pages in the app fetch their own data on the client (kept live over Realtime), so their server
     // part can be reused when switching back to them: no round trip on every click.

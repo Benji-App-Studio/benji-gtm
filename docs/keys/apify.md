@@ -50,7 +50,7 @@ During setup (step 5, "Add your keys"):
 
 Later, in the app:
 
-1. Open **Settings > API keys**.
+1. Open **Settings > Your keys**.
 2. In the **Apify** row (under "Research"), click **Add** (or **Replace**).
 3. Paste the token into the box.
 4. Click **Save and check**.
@@ -77,7 +77,7 @@ Later, in the app:
   GitHub copy. Anyone with it can use your Apify account and its credit.
 - To delete or replace a token: open https://console.apify.com/settings/integrations, find it in
   **Personal API tokens**, and delete it (or use **Rotate**, which gives a new value). Then paste
-  the new one into **Settings > API keys > Apify > Replace**.
+  the new one into **Settings > Your keys > Apify > Replace**.
 
 ---
 

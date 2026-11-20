@@ -1,14 +1,21 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { OnlineForgotHelp } from "@/components/account-pieces";
 import { AuthForm } from "@/components/auth-form";
+import { getTranslator } from "@/lib/i18n/server";
 import { LocalLogin } from "@/components/local-login";
 import { getInstallConfig, projectRef } from "@/lib/install/config";
 import { isLoginReason, safeNext } from "@/lib/install/local-auth";
+import { captchaConfig } from "@/lib/install/captcha";
 import { signupOpen } from "@/lib/install/signup";
+import { showGoogle } from "@/lib/auth/flows";
+import { authProviders, googleClientId } from "@/lib/server/auth-providers";
 import { localModePage } from "@/lib/server/owner-session";
+import { startEmail } from "@/lib/server/start-email";
 
-export const metadata: Metadata = { title: "Log in" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("Log in") };
+}
 export const dynamic = "force-dynamic";
 
 /**
@@ -23,10 +30,7 @@ export default async function Login({ searchParams }: PageProps<"/login">) {
     const config = getInstallConfig();
     return <LocalLogin reason={isLoginReason(reason) ? reason : "no-owner"} next={safeNext(one(params.next))} projectRef={config ? projectRef(config.supabaseUrl) : null} />;
   }
-  return (
-    <>
-      <Suspense><AuthForm mode="login" signupOpen={signupOpen()} /></Suspense>
-      <OnlineForgotHelp />
-    </>
-  );
+  const [providers, email] = await Promise.all([authProviders(), startEmail()]);
+  const open = await signupOpen();
+  return <Suspense><AuthForm mode="login" signupOpen={open} google={showGoogle(providers, open)} googleClientId={googleClientId()} initialEmail={email} captcha={captchaConfig()} /></Suspense>;
 }

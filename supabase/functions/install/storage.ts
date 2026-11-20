@@ -7,6 +7,7 @@
 //                        stay and fall back to their original links), and old video key frames
 //   app_media            all of one app's saved competitor media (and its key frames)
 //   app_files            every file of an app that is being deleted or is gone already
+// clearFolder empties one account's own folder (account deletion: account.ts).
 // Built over a database client so the tests run it against fakes (storage_test.ts). The rows of
 // storage_usage() go back as they are; the studio sums them (studio/src/lib/storage-usage.ts).
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -31,6 +32,13 @@ export function cleanupInput(input: Record<string, unknown>): CleanupInput | str
 }
 
 export interface StorageDeps { db: SupabaseClient; limits: () => Promise<InstallLimits>; now?: () => Date }
+
+/**
+ * Accounts mode: whose storage a request may see and clear. Only that account's apps, its own uploads,
+ * and its plan's storage (instead of the project's quota). Absent in install and legacy mode, where a
+ * member sees the whole install, as before.
+ */
+export interface StorageScope { userId: string; quotaBytes: number }
 interface ObjectRow { name: string; bytes: number; created_at: string }
 interface Target { bucket: string; paths: string[] }
 export interface CleanupResult { action: CleanupAction; files: number; bytes: number; items: number; done: boolean }
@@ -40,17 +48,21 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e)).s
 
 export function createStorage({ db, limits, now = () => new Date() }: StorageDeps) {
   /** What is stored, by bucket and app, with the apps' names and the plan's numbers. */
-  async function usage() {
+  async function usage(scope: StorageScope | null = null) {
     const plan = await limits();
-    const { data: rows, error } = await db.rpc("storage_usage");
+    const { data: rows, error } = scope ? await db.rpc("storage_usage_for", { p_user: scope.userId }) : await db.rpc("storage_usage");
     // The migration isn't applied yet: say so instead of showing an empty store as "nothing stored".
     if (error) throw new HttpError(503, "Storage can't be measured yet: apply the latest database update (Settings > Updates), then reload.");
-    const { data: apps } = await db.from("products").select("id, name").order("created_at", { ascending: true });
+    let apps = db.from("products").select("id, name");
+    if (scope) apps = apps.eq("user_id", scope.userId);
+    const { data: appRows } = await apps.order("created_at", { ascending: true });
     return {
       rows: ((rows ?? []) as { bucket: string; app_id: string | null; files: number; bytes: number }[]).map((r) => ({ bucket: r.bucket, app_id: r.app_id, files: Number(r.files) || 0, bytes: Number(r.bytes) || 0 })),
-      apps: ((apps ?? []) as { id: string; name: string }[]).map((a) => ({ id: a.id, name: a.name })),
-      quotaBytes: storageQuotaBytes(plan),
+      apps: ((appRows ?? []) as { id: string; name: string }[]).map((a) => ({ id: a.id, name: a.name })),
+      quotaBytes: scope ? scope.quotaBytes : storageQuotaBytes(plan),
       uploadLimitBytes: uploadMaxBytes(plan),
+      // Accounts mode: the caller's own files against their plan (the studio says what to delete when full).
+      ...(scope ? { scope: "account" as const } : {}),
     };
   }
 
@@ -69,10 +81,29 @@ export function createStorage({ db, limits, now = () => new Date() }: StorageDep
     }
   }
 
-  async function appIds(appId: string | null): Promise<string[]> {
+  /** The apps a cleanup looks at: the one asked for, or all of them (in accounts mode, all of the caller's). */
+  async function appIds(appId: string | null, scope: StorageScope | null): Promise<string[]> {
     if (appId) return [appId];
-    const { data } = await db.from("products").select("id");
+    let query = db.from("products").select("id");
+    if (scope) query = query.eq("user_id", scope.userId);
+    const { data } = await query;
     return ((data ?? []) as { id: string }[]).map((r) => r.id);
+  }
+
+  /**
+   * Accounts mode: whose app this is. `mine`: the caller's, still there. `gone-mine`: deleted, but
+   * app_owners records it as the caller's (its leftover files still count against them, so they may clear
+   * them). `gone`: no record of it being theirs. Another account's app is refused (404).
+   */
+  async function ownApp(appId: string, scope: StorageScope): Promise<"mine" | "gone-mine" | "gone"> {
+    const { data } = await db.from("products").select("user_id").eq("id", appId).maybeSingle();
+    if (data) {
+      if (data.user_id !== scope.userId) throw new HttpError(404, "This app doesn't exist.");
+      return "mine";
+    }
+    const { data: owner } = await db.from("app_owners").select("user_id").eq("app_id", appId).maybeSingle();
+    if (owner && owner.user_id !== scope.userId) throw new HttpError(404, "This app doesn't exist.");
+    return owner ? "gone-mine" : "gone";
   }
 
   async function launched(): Promise<Set<string>> {
@@ -81,12 +112,12 @@ export function createStorage({ db, limits, now = () => new Date() }: StorageDep
   }
 
   /** Creatives to delete, their files (each one's own files; a job folder left with no creative goes whole). */
-  async function creativesPlan(input: CleanupInput) {
+  async function creativesPlan(input: CleanupInput, scope: StorageScope | null) {
     const keep = await launched();
     const targets: Target[] = [];
     const ids: string[] = [];
     let files = 0, bytes = 0;
-    for (const app of await appIds(input.appId)) {
+    for (const app of await appIds(input.appId, scope)) {
       let query = db.from("creatives").select("id, storage_path, poster_path, approval, created_at").eq("product_id", app);
       if (input.action === "rejected_creatives") query = query.eq("approval", "rejected");
       else query = query.neq("approval", "approved").lt("created_at", new Date(now().getTime() - (input.days ?? 30) * 86_400_000).toISOString());
@@ -123,12 +154,12 @@ export function createStorage({ db, limits, now = () => new Date() }: StorageDep
   }
 
   /** Saved competitor media (and video key frames) to delete: an app's, or every app's, older than `before` when given. */
-  async function mediaPlan(appId: string | null, before?: Date) {
+  async function mediaPlan(appId: string | null, scope: StorageScope | null, before?: Date) {
     const targets: Target[] = [];
     const rowIds: string[] = [];
     const frameAds = new Set<string>();
     let files = 0, bytes = 0;
-    for (const app of await appIds(appId)) {
+    for (const app of await appIds(appId, scope)) {
       const objects = await objectsUnder("ad-media", `${app}/`, before);
       if (!objects.length) continue;
       const paths = objects.map((o) => o.name);
@@ -144,11 +175,24 @@ export function createStorage({ db, limits, now = () => new Date() }: StorageDep
   }
 
   /** Every file of one app: creatives, saved ad media, and each member's uploads and brand files for it. */
-  async function appFilesPlan(appId: string) {
+  async function appFilesPlan(appId: string, scope: StorageScope | null) {
+    if (scope) {
+      // Accounts mode: the caller's own app (also one they deleted: app_owners remembers it), with its files;
+      // a gone app with no record of being theirs leaves only their own uploads for it to clear.
+      const state = await ownApp(appId, scope);
+      const lists: [string, string][] = state !== "gone"
+        ? [["creatives", `${appId}/`], ["ad-media", `${appId}/`], ["workspace", `${scope.userId}/${appId}/`]]
+        : [["workspace", `${scope.userId}/${appId}/`]];
+      return { ...(await filesUnder(lists)), exists: state === "mine" };
+    }
     const { data: members } = await db.from("install_members").select("user_id");
     const { data: product } = await db.from("products").select("user_id").eq("id", appId).maybeSingle();
     const users = new Set<string>([...((members ?? []) as { user_id: string }[]).map((m) => m.user_id), ...(product?.user_id ? [product.user_id as string] : [])]);
     const lists: [string, string][] = [["creatives", `${appId}/`], ["ad-media", `${appId}/`], ...[...users].map((u): [string, string] => ["workspace", `${u}/${appId}/`])];
+    return { ...(await filesUnder(lists)), exists: Boolean(product) };
+  }
+
+  async function filesUnder(lists: [string, string][]) {
     const targets: Target[] = [];
     let files = 0, bytes = 0;
     for (const [bucket, prefix] of lists) {
@@ -157,7 +201,7 @@ export function createStorage({ db, limits, now = () => new Date() }: StorageDep
       for (const o of objects) { files++; bytes += o.bytes; }
       targets.push({ bucket, paths: objects.map((o) => o.name) });
     }
-    return { targets, files, bytes, items: files, exists: Boolean(product) };
+    return { targets, files, bytes, items: files };
   }
 
   /** Clears the key frames a cleanup deleted from each ad's stored scan, so no ad shows a missing frame. */
@@ -180,13 +224,15 @@ export function createStorage({ db, limits, now = () => new Date() }: StorageDep
   }
 
   /** Previews (`run` false) or runs a cleanup. */
-  async function cleanup(raw: Record<string, unknown>): Promise<CleanupResult> {
+  async function cleanup(raw: Record<string, unknown>, scope: StorageScope | null = null): Promise<CleanupResult> {
     const input = cleanupInput(raw);
     if (typeof input === "string") throw new HttpError(400, input);
+    // Accounts mode: an app named in the request must be the caller's (app_files checks its own way).
+    if (scope && input.appId && input.action !== "app_files" && await ownApp(input.appId, scope) === "gone") throw new HttpError(404, "This app doesn't exist.");
     const result = (files: number, bytes: number, items: number): CleanupResult => ({ action: input.action, files, bytes, items, done: input.run });
     try {
       if (input.action === "rejected_creatives" || input.action === "unused_creatives") {
-        const plan = await creativesPlan(input);
+        const plan = await creativesPlan(input, scope);
         if (input.run) {
           await remove(plan.targets);
           await deleteRows("creatives", plan.ids);
@@ -195,7 +241,7 @@ export function createStorage({ db, limits, now = () => new Date() }: StorageDep
       }
       if (input.action === "old_media" || input.action === "app_media") {
         const before = input.action === "old_media" ? new Date(now().getTime() - (input.days ?? 90) * 86_400_000) : undefined;
-        const plan = await mediaPlan(input.appId, before);
+        const plan = await mediaPlan(input.appId, scope, before);
         if (input.run) {
           // Rows first: an ad never points at a copy that is about to go; then the files and the frames.
           await deleteRows("paid_ad_media", plan.rowIds);
@@ -204,7 +250,7 @@ export function createStorage({ db, limits, now = () => new Date() }: StorageDep
         }
         return result(plan.files, plan.bytes, plan.items);
       }
-      const plan = await appFilesPlan(input.appId!);
+      const plan = await appFilesPlan(input.appId!, scope);
       // An app that still exists loses its files only as part of being deleted (the studio deletes it next).
       if (input.run && plan.exists && !input.deleting) throw new HttpError(409, "This app still exists. Delete it in its settings, which removes its files too.");
       if (input.run) await remove(plan.targets);
@@ -215,5 +261,25 @@ export function createStorage({ db, limits, now = () => new Date() }: StorageDep
     }
   }
 
-  return { usage, cleanup };
+  /**
+   * Deletes every file under one folder (`<uuid>/`, as storage_objects_under lists them), a page at a time,
+   * until none is left. For account deletion (account.ts): an account's own workspace and thumbs folders.
+   */
+  async function clearFolder(bucket: string, prefix: string, stop: () => boolean = () => false): Promise<{ files: number; bytes: number; done: boolean }> {
+    let files = 0, bytes = 0;
+    for (let page = 0; page < 1000; page++) {
+      const objects = await objectsUnder(bucket, prefix);
+      if (!objects.length) return { files, bytes, done: true };
+      // A batch at a time, so a time budget (`stop`) can end the call between batches.
+      for (let i = 0; i < objects.length; i += BATCH) {
+        const batch = objects.slice(i, i + BATCH);
+        await remove([{ bucket, paths: batch.map((o) => o.name) }]);
+        for (const o of batch) { files++; bytes += o.bytes; }
+        if (stop()) return { files, bytes, done: false };
+      }
+    }
+    return { files, bytes, done: false };
+  }
+
+  return { usage, cleanup, clearFolder };
 }

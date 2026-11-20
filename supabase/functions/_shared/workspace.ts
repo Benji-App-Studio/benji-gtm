@@ -8,6 +8,12 @@ export interface WorkspaceConnections {
   meta?: { adAccountId?: string; pageId?: string; instagramId?: string; pixelId?: string; appId?: string };
   revenuecat?: { projectId?: string };
   appstack?: { appId?: string };
+  /** The operating dashboard: a Mixpanel project (with its data residency and the mapped event names) and a Superwall app. */
+  mixpanel?: {
+    projectId?: string; region?: string; funnelId?: string; workspaceId?: string;
+    installEvent?: string; signupEvent?: string; paywallEvent?: string; trialEvent?: string; purchaseEvent?: string; activeEvent?: string;
+  };
+  superwall?: { applicationId?: string };
   storage?: { supabasePrefix?: string; driveFolderId?: string };
 }
 
@@ -32,6 +38,8 @@ const FIELDS: Record<keyof WorkspaceConnections, string[]> = {
   meta: ["adAccountId", "pageId", "instagramId", "pixelId", "appId"],
   revenuecat: ["projectId"],
   appstack: ["appId"],
+  mixpanel: ["projectId", "region", "installEvent", "signupEvent", "paywallEvent", "trialEvent", "purchaseEvent", "activeEvent", "funnelId", "workspaceId"],
+  superwall: ["applicationId"],
   storage: ["supabasePrefix", "driveFolderId"],
 };
 

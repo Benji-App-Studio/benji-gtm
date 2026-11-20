@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getTranslator } from "@/lib/i18n/server";
 import { cleanCleanup } from "@/lib/storage-usage";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { callFunction, relay } from "@/lib/server/functions";
@@ -12,14 +13,15 @@ import { forgetStorage } from "@/lib/server/storage";
 export async function POST(request: NextRequest) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const body = await request.json().catch(() => ({}));
-  const input = cleanCleanup(body);
+  const input = cleanCleanup(body, t);
   if (typeof input === "string") return Response.json({ error: input }, { status: 400 });
   const result = await callFunction("install", session, "storage/cleanup", {
     body: { ...input, run: body.run === true }, timeoutMs: 140_000,
-    messages: { unreachable: "Couldn't reach the backend to clean up. Nothing was deleted; try again in a moment.", notDeployed: "Cleanup needs the latest backend: update it (Settings > Updates)." },
+    messages: { unreachable: t("Couldn't reach the backend to clean up. Nothing was deleted; try again in a moment."), notDeployed: t("Cleanup needs the latest backend: update it (Settings › Updates).") },
   });
   if (body.run === true) forgetStorage();
-  if (result.status === 404) return Response.json({ error: "Cleanup needs the latest backend: update it (Settings > Updates explains how). Nothing was deleted." }, { status: 503 });
+  if (result.status === 404) return Response.json({ error: t("Cleanup needs the latest backend: update it (Settings › Updates explains how). Nothing was deleted.") }, { status: 503 });
   return relay(result);
 }

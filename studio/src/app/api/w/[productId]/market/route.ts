@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { loadMarket, MARKET_ACTIONS, marketFunction, type MarketAction } from "@/lib/server/market";
 import { caughtFailure } from "@/lib/server/errors";
+import { getTranslator } from "@/lib/i18n/server";
 
 const UUID = /^[0-9a-f-]{36}$/;
 
@@ -13,11 +14,12 @@ export async function GET(_request: NextRequest, ctx: RouteContext<"/api/w/[prod
   const session = await requireUser();
   if (isResponse(session)) return session;
   const { productId } = await ctx.params;
-  if (!UUID.test(productId)) return Response.json({ error: "Which app?" }, { status: 400 });
+  const { t } = await getTranslator();
+  if (!UUID.test(productId)) return Response.json({ error: t("Which app?") }, { status: 400 });
   try {
-    return Response.json(await loadMarket(session, productId));
+    return Response.json(await loadMarket(session, productId, t));
   } catch (error) {
-    return caughtFailure("market load", error, "Couldn't load Market. Try again.");
+    return caughtFailure("market load", error, t("Couldn't load Market. Try again."), 500, {}, t);
   }
 }
 
@@ -29,12 +31,13 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/w/[prod
   const session = await requireUser();
   if (isResponse(session)) return session;
   const { productId } = await ctx.params;
-  if (!UUID.test(productId)) return Response.json({ error: "Which app?" }, { status: 400 });
+  const { t } = await getTranslator();
+  if (!UUID.test(productId)) return Response.json({ error: t("Which app?") }, { status: 400 });
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   const action = String(body.action ?? "") as MarketAction;
-  if (!(action in MARKET_ACTIONS)) return Response.json({ error: "Unknown action." }, { status: 400 });
+  if (!(action in MARKET_ACTIONS)) return Response.json({ error: t("Unknown action.") }, { status: 400 });
   const fields: Record<string, unknown> = { ...body, productId };
   delete fields.action;
-  const result = await marketFunction(session, action, fields);
+  const result = await marketFunction(session, action, fields, t);
   return Response.json(result.data, { status: result.ok ? 200 : result.status });
 }

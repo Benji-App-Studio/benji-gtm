@@ -8,11 +8,19 @@ import { canManage, useInstall, type UseInstall } from "@/lib/install/use-instal
 import { IconLock } from "../icons";
 import { Bone, Skeleton, SkeletonLine } from "../skeleton";
 import { Button, Card, cx, ErrorNote } from "../ui";
+import { useT } from "@/lib/i18n/client";
+import { sentenceGap } from "../rich";
+import { failedWith, NO_CONNECTION, sayError } from "./say-error";
 import { settingsColumnClass, settingsPage, type SettingsPageKey } from "./pages";
+import { useSettingsLabels } from "./settings-nav";
+
+export { sayError };
 
 /** A settings page: its title, one muted line, then its groups. */
 export function SettingsPage({ page, title, description, children }: { page?: SettingsPageKey; title?: ReactNode; description?: ReactNode; children: ReactNode }) {
-  const known = page ? settingsPage(page) : undefined;
+  const { t } = useT();
+  const labels = useSettingsLabels();
+  const known = page ? { label: labels.page[page], description: t(settingsPage(page).description) } : undefined;
   return (
     <div>
       <header className="mb-8">
@@ -26,8 +34,9 @@ export function SettingsPage({ page, title, description, children }: { page?: Se
 
 /** The shape of a settings page while it loads: a couple of groups of rows. */
 export function SettingsRowsSkeleton({ groups = 2, rows = 3 }: { groups?: number; rows?: number }) {
+  const { t } = useT();
   return (
-    <Skeleton label="Loading settings" className="grid gap-10">
+    <Skeleton label={t("Loading settings")} className="grid gap-10">
       {Array.from({ length: groups }, (_, g) => (
         <div key={g}>
           <SkeletonLine size="title" width="w-28" className="mb-4" />
@@ -47,9 +56,10 @@ export function SettingsRowsSkeleton({ groups = 2, rows = 3 }: { groups?: number
 
 /** A whole settings page while it loads: the heading, then rows. `framed` adds the page's column (for a fallback drawn outside the settings layout). */
 export function SettingsLoading({ framed = false }: { framed?: boolean }) {
+  const { t } = useT();
   return (
     <div className={framed ? settingsColumnClass : undefined}>
-      <Skeleton label="Loading settings" className="mb-8">
+      <Skeleton label={t("Loading settings")} className="mb-8">
         <span className="flex h-[30px] items-center"><Bone className="h-5 w-40" /></span>
         <SkeletonLine size="sm" width="w-80" className="mt-1.5" />
       </Skeleton>
@@ -60,13 +70,14 @@ export function SettingsLoading({ framed = false }: { framed?: boolean }) {
 
 /** Loading and failure for pages that need the install; calls `children` once it has loaded. */
 export function WithInstall({ children }: { children: (install: InstallState, manage: boolean, refresh: UseInstall["refresh"]) => ReactNode }) {
+  const { t } = useT();
   const { install, error, refresh } = useInstall();
   if (install) return <>{children(install, canManage(install), refresh)}</>;
   if (error) {
     return (
-      <ErrorNote title="These settings didn't load">
-        <p>{error}</p>
-        <Button variant="secondary" size="sm" className="mt-3" onClick={() => { void refresh(); }}>Try again</Button>
+      <ErrorNote title={t("These settings didn't load")}>
+        <p>{sayError(t, error)}</p>
+        <Button variant="secondary" size="sm" className="mt-3" onClick={() => { void refresh(); }}>{t("Try again")}</Button>
       </ErrorNote>
     );
   }
@@ -78,21 +89,25 @@ export function WithInstall({ children }: { children: (install: InstallState, ma
  * an install from before owners existed. Nothing for the owner.
  */
 export function ReadOnlyNote({ install, what, legacy }: { install: InstallState; what: string; legacy?: ReactNode }) {
+  const { t, locale } = useT();
+  const gap = sentenceGap(locale);
   if (canManage(install)) return null;
   return (
     <div className="flex items-start gap-2.5 rounded-small border border-line bg-card px-3 py-2.5 text-sm">
       <IconLock className="mt-[3px] size-3.5 shrink-0 text-muted" />
       {install.owned
-        ? <p className="text-label"><span className="font-medium text-ink">Only the owner can change {what}.</span> You can see what is set; ask the owner to change it.</p>
-        : <p className="text-label">{legacy ?? <><span className="font-medium text-ink">This workspace has no owner yet, so {what} can&apos;t be changed here.</span> Run setup to make it yours. <Link href="/setup" className="font-medium text-accent hover:underline">Open setup</Link></>}</p>}
+        ? <p className="text-label"><span className="font-medium text-ink">{t("Only the owner can change {what}.", { what })}</span>{gap}{t("You can see what is set; ask the owner to change it.")}</p>
+        : <p className="text-label">{legacy ?? <><span className="font-medium text-ink">{t("This workspace has no owner yet, so {what} can't be changed here.", { what })}</span>{gap}{t("Run setup to make it yours.")}{gap}<Link href="/setup" className="font-medium text-accent hover:underline">{t("Open setup")}</Link></>}</p>}
     </div>
   );
 }
 
 /** A line that reports what just happened (saved, or why not). Announced to screen readers. */
 export function Status({ error, ok, className }: { error?: string | null; ok?: string | null; className?: string }) {
-  return <p role="status" className={cx("min-h-5 text-sm", error ? "text-warn" : "text-win", className)}>{error || ok || ""}</p>;
+  const { t } = useT();
+  return <p role="status" className={cx("min-h-5 text-sm", error ? "text-warn" : "text-win", className)}>{(error && sayError(t, error)) || ok || ""}</p>;
 }
+
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -102,9 +117,9 @@ export async function api<T>(url: string, method: "GET" | "PUT" | "POST" | "PATC
   try {
     response = await fetch(url, { method, cache: "no-store", headers: body === undefined ? undefined : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch {
-    return { ok: false, error: "The request didn't go through. Check your connection and try again." };
+    return { ok: false, error: NO_CONNECTION };
   }
   const data = await response.json().catch(() => null) as (T & { error?: string }) | null;
-  if (!response.ok || !data) return { ok: false, error: (data && typeof data.error === "string" && data.error) || `That didn't work (error ${response.status}). Try again.` };
+  if (!response.ok || !data) return { ok: false, error: (data && typeof data.error === "string" && data.error) || failedWith(response.status) };
   return { ok: true, data };
 }

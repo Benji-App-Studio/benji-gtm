@@ -1,13 +1,18 @@
 import type { NextRequest } from "next/server";
 import { cleanBrandSystem, hasBrandSystem, offerRules } from "@/lib/brand-system";
-import { cleanCopy, composedParam, layoutById, type ComposedCopy } from "@/lib/composed-ads";
+import { cleanCopy, COMPOSE_WORDS, composedParam, layoutById, type ComposedCopy } from "@/lib/composed-ads";
 import { CREATIVES_BUCKET } from "@/lib/creatives";
 import type { Aspect } from "@/lib/meta-formats";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { ComposeError, composeAd } from "@/lib/server/compose";
 import { setCreativeFile } from "@/lib/server/creative-file";
 import { creativesBackend } from "@/lib/server/creatives-backend";
+import { isLocale } from "@/lib/i18n/locales";
+import { getLocale, getTranslator } from "@/lib/i18n/server";
+import { translateServerMessage } from "@/lib/i18n/server-messages";
 import { caughtFailure, logDbError } from "@/lib/server/errors";
+import { fill } from "@/lib/i18n/translate";
+import { storedWords } from "@/lib/stored-words";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -48,22 +53,30 @@ interface Row { id: string; product_id: string; job_id: string | null; kind: str
  * to QA and any decision back to pending.
  */
 export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/creatives/[id]/compose">) {
+  const tr = await getTranslator();
+  const { t } = tr;
+  // A saved English sentence in the page's language: the composer's own templates (COMPOSE_WORDS), else
+  // the backend and font messages (lib/i18n/server-messages.ts).
+  const shown = (text: string) => {
+    const words = storedWords(text, COMPOSE_WORDS, t);
+    return words !== text ? words : translateServerMessage(text, tr);
+  };
   const session = await requireUser();
   if (isResponse(session)) return session;
   const { id } = await ctx.params;
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return Response.json({ error: "This creative doesn't exist." }, { status: 404 });
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return Response.json({ error: t("This creative doesn't exist.") }, { status: 404 });
   const body = await request.json().catch(() => ({})) as { copy?: unknown; layout?: unknown };
   const { supabase } = session;
   const { data: creative } = await supabase.from("creatives").select("id, product_id, job_id, kind, aspect, storage_path, url, mime, size_bytes, copy").eq("id", id).maybeSingle<Row>();
-  if (!creative) return Response.json({ error: "This creative doesn't exist." }, { status: 404 });
-  if (creative.kind !== "image") return Response.json({ error: "Only image creatives are composed." }, { status: 400 });
+  if (!creative) return Response.json({ error: t("This creative doesn't exist.") }, { status: 404 });
+  if (creative.kind !== "image") return Response.json({ error: t("Only image creatives are composed.") }, { status: 400 });
   const [{ data: job }, { data: product }] = await Promise.all([
     creative.job_id ? supabase.from("creative_jobs").select("params").eq("id", creative.job_id).maybeSingle<{ params: Record<string, unknown> }>() : Promise.resolve({ data: null }),
     supabase.from("products").select("brand_system").eq("id", creative.product_id).maybeSingle<{ brand_system: unknown }>(),
   ]);
   const record = (creative.copy?.composed ?? null) as Composed | null;
   const asked = composedParam(job?.params);
-  if (!asked && !record) return Response.json({ error: "This creative wasn't made as a composed ad." }, { status: 400 });
+  if (!asked && !record) return Response.json({ error: t("This creative wasn't made as a composed ad.") }, { status: 400 });
   const copy = cleanCopy(body.copy) ?? record?.copy ?? asked!.copy;
   const layout = layoutById(body.layout ?? record?.layout ?? asked!.layout);
   // What the batch asked for stays on every re-compose (a record from before these existed falls back to the job's).
@@ -73,7 +86,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/
   const system = hasBrandSystem(stored) ? stored : null;
   const offers = offerRules(system);
   if (copy.offer && offers?.allowed.length && !offers.allowed.some((a) => a.toLowerCase() === copy.offer!.toLowerCase())) {
-    return Response.json({ error: `"${copy.offer}" isn't one of your offers. Pick one from the Brand page's list.` }, { status: 422 });
+    return Response.json({ error: t("\"{offer}\" isn't one of your offers. Pick one from the Brand page's list.", { offer: copy.offer }) }, { status: 422 });
   }
   const plate = record?.plate ?? { path: creative.storage_path, url: creative.url, sizeBytes: creative.size_bytes };
   const publicUrl = (path: string) => supabase.storage.from(CREATIVES_BUCKET).getPublicUrl(path).data.publicUrl;
@@ -86,13 +99,16 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/
     const product = productUrl ? await fetchImage(productUrl, "product cut-out") : null;
     // A logo that won't load leaves its slot empty, with a warning on the card.
     const logoProblem: string[] = [];
-    const logo = logoUrl ? await fetchImage(logoUrl, "logo").catch((e) => { logoProblem.push(`Our logo wasn't placed: ${e instanceof Error ? e.message : String(e)}`); return null; }) : null;
-    const out = await composeAd({ plate: new Uint8Array(await response.arrayBuffer()), aspect, layout, copy, system, logo, product });
+    // Copy in Chinese characters alone takes the ad's language for its glyph shapes (Japanese or Chinese):
+    // the copy language stored with the creative or its job when there is one, else the page's.
+    const adLanguage = [creative.copy?.copyLanguage, job?.params?.copyLanguage].find(isLocale);
+    const logo = logoUrl ? await fetchImage(logoUrl, "logo").catch((e) => { logoProblem.push(fill(COMPOSE_WORDS[3], { reason: e instanceof Error ? e.message : String(e) })); return null; }) : null;
+    const out = await composeAd({ plate: new Uint8Array(await response.arrayBuffer()), aspect, layout, copy, system, logo, product, language: adLanguage ?? (await getLocale()) });
     out.warnings.push(...logoProblem);
     const stem = `${plate.path.replace(/\.[^./]+$/, "")}-composed-${Date.now().toString(36)}`;
     const upload = async (path: string, bytes: Buffer | string, type: string) => {
       const { error } = await supabase.storage.from(CREATIVES_BUCKET).upload(path, typeof bytes === "string" ? new Blob([bytes], { type }) : bytes, { contentType: type, upsert: true });
-      if (error) throw new Error(/row-level security|policy/i.test(error.message) ? logDbError("compose upload", error, "Storage refused the upload. Open /setup and press Apply the update, then try again.") : logDbError("compose upload", error, `Couldn't store ${path.split("/").pop()}. Try again.`));
+      if (error) throw new Error(/row-level security|policy/i.test(error.message) ? logDbError("compose upload", error, t("Storage refused the upload. Open /setup and press Apply the update, then try again."), t) : logDbError("compose upload", error, t("Couldn't store {file}. Try again.", { file: path.split("/").pop() ?? "" }), t));
       return publicUrl(path);
     };
     const pngUrl = await upload(`${stem}.png`, out.png, "image/png");
@@ -113,17 +129,18 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/
     if ("error" in saved) throw new Error(saved.error);
     // QA reads the exact words now (and their sizes and contrast): no OCR needed.
     await creativesBackend(session, "qa", { creativeIds: [id] }).catch(() => null);
-    return Response.json({ creative: saved.creative, warnings: out.warnings });
+    // Warnings are stored in English (data); the answer shows them in the page's language.
+    return Response.json({ creative: saved.creative, warnings: out.warnings.map(shown) });
   } catch (error) {
     if (error instanceof ComposeError) {
       // Recorded on the creative, so the card shows "text to shorten" and approval waits for a fix.
       const saved = await setCreativeFile(supabase, id, { copy: { ...(creative.copy ?? {}), composeError: { problems: error.problems, at: new Date().toISOString(), copy, layout: layout.id } } });
       if ("error" in saved) {
         console.error("[api] compose save problems:", saved.error);
-        return Response.json({ error: `${error.message} (and the problems couldn't be saved on the creative)`, problems: error.problems }, { status: 502 });
+        return Response.json({ error: t("{reason} (and the problems couldn't be saved on the creative)", { reason: error.message }), problems: error.problems }, { status: 502 });
       }
-      return Response.json({ error: error.message, problems: error.problems }, { status: 422 });
+      return Response.json({ error: shown(error.message), problems: error.problems.map(shown) }, { status: 422 });
     }
-    return caughtFailure("compose", error, "Couldn't compose the ad. Try again.", 502);
+    return caughtFailure("compose", error, t("Couldn't compose the ad. Try again."), 502, {}, t);
   }
 }

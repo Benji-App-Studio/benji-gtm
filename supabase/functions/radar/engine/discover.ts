@@ -4,6 +4,7 @@
 import { accountError, type AiProvider, type Judge, type JudgeError } from "../../_shared/ai/judge.ts";
 import { choice, score } from "../../_shared/ai/questions.ts";
 import { thresholdsFor } from "../../_shared/ai/thresholds.ts";
+import { type UiLocale, withLanguage } from "../../_shared/language.ts";
 import type { Candidate, DiscoveryProject, Platform } from "./types.ts";
 
 export const SEARCH_LIMIT = 15;
@@ -79,11 +80,13 @@ export function tiktokCandidates(items: any[]): Candidate[] {
   });
 }
 
+export const DISCOVER_SYSTEM = "You research competitors for founders. Use web search thoroughly. Match on what the product does (its features, the job it does and who buys it), never on its name: a brand that shares the product's name but sells something else is not a competitor. Only list real, currently operating brands or products that compete for the same customers, with their official social accounts. Never invent handles: use null when unsure.";
+
 /**
  * The OpenAI Responses request that names real competing brands and their social handles, using web
  * search. `background` lets a caller start it and collect the answer later.
  */
-export function openAIRequest(project: DiscoveryProject, model: string, background = false) {
+export function openAIRequest(project: DiscoveryProject, model: string, background = false, locale: UiLocale | null = null) {
   const product = { name: project.name, description: project.description, website: project.website ?? null, category: project.category, ...project.answers };
   const handle = { type: ["string", "null"], description: "Handle or URL, or null when unknown" };
   return {
@@ -92,7 +95,7 @@ export function openAIRequest(project: DiscoveryProject, model: string, backgrou
     reasoning: { effort: "high" },
     tools: [{ type: "web_search" }],
     input: [
-      { role: "system", content: "You research competitors for founders. Use web search thoroughly. Match on what the product does (its features, the job it does and who buys it), never on its name: a brand that shares the product's name but sells something else is not a competitor. Only list real, currently operating brands or products that compete for the same customers, with their official social accounts. Never invent handles: use null when unsure." },
+      { role: "system", content: withLanguage(DISCOVER_SYSTEM, locale, { writes: "each competitor's description" }) },
       { role: "user", content: `Find up to 15 competitors of this product, closest first: direct competitors with the same core features first, then the strongest alternatives customers compare it with. Include each one's official Instagram, TikTok, YouTube, X and LinkedIn accounts and website.\n\n${JSON.stringify(product, null, 2)}` },
     ],
     text: {

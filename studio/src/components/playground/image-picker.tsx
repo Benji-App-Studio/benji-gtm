@@ -8,15 +8,17 @@ import { showOriginal, thumbUrl } from "@/lib/thumb";
 import { IconX } from "../icons";
 import { PanelPortal } from "../panel-portal";
 import { Button, cx, Segmented } from "../ui";
+import { m } from "@/lib/i18n/translate";
+import { useT } from "@/lib/i18n/client";
 
 export type PickSource = "product" | "research" | "results";
 export type PickTile = PlaygroundPick & { caption?: string | null };
 
-const SOURCE_LABEL: Record<PickSource, string> = { product: "Product images", research: "Research ads", results: "Results" };
+const SOURCE_LABEL: Record<PickSource, string> = { product: m("Product images"), research: m("Research ads"), results: m("Results") };
 const EMPTY: Record<PickSource, string> = {
-  product: "No product images yet. Add them under Brand > Assets.",
-  research: "No stored competitor image ads yet. Import ads in Research; their images are saved in the background.",
-  results: "No Playground results yet.",
+  product: m("No product images yet. Add them in App settings › Brand."),
+  research: m("No stored competitor image ads yet. Import ads in Research; their images are saved in the background."),
+  results: m("No Remix results yet."),
 };
 
 export function ImagePicker({ title, sources, initial = "product", picked, max = 1, onPick, onClose }: {
@@ -30,6 +32,7 @@ export function ImagePicker({ title, sources, initial = "product", picked, max =
   onPick: (urls: string[]) => void;
   onClose: () => void;
 }) {
+  const { t } = useT();
   const [source, setSource] = useState<PickSource>(initial);
   const [chosen, setChosen] = useState<string[]>(picked ?? []);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -49,39 +52,39 @@ export function ImagePicker({ title, sources, initial = "product", picked, max =
         <div role="dialog" aria-modal="true" aria-label={title} className="page-in flex h-[min(560px,88dvh)] w-full max-w-[720px] flex-col overflow-hidden rounded-dialog border border-hairline bg-card shadow-pop">
           <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2.5">
             <h2 className="mr-auto text-sm font-medium">{title}</h2>
-            <Segmented label="Source" value={source} onChange={setSource} options={(Object.keys(SOURCE_LABEL) as PickSource[]).map((s) => ({ value: s, label: <>{SOURCE_LABEL[s]} <span className="text-faint tabular-nums">{sources[s].length}</span></> }))} />
-            <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="grid size-7 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink"><IconX className="size-4" /></button>
+            <Segmented label={t("Source")} value={source} onChange={setSource} options={(Object.keys(SOURCE_LABEL) as PickSource[]).map((s) => ({ value: s, label: <>{t(SOURCE_LABEL[s])} <span className="text-faint tabular-nums">{sources[s].length}</span></> }))} />
+            <button ref={closeRef} type="button" onClick={onClose} aria-label={t("Close")} className="grid size-7 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink"><IconX className="size-4" /></button>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
             {tiles.length ? (
               <ul className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
-                {tiles.map((t) => {
-                  const n = chosen.indexOf(t.url) + 1;
+                {tiles.map((tile) => {
+                  const n = chosen.indexOf(tile.url) + 1;
                   const full = multi && !n && chosen.length >= max;
                   return (
-                    <li key={t.url} className="grid min-w-0 gap-1">
+                    <li key={tile.url} className="grid min-w-0 gap-1">
                       <button
-                        type="button" onClick={() => toggle(t.url)} aria-pressed={multi ? n > 0 : undefined} disabled={full}
-                        title={[t.label, t.caption, full ? `Up to ${max}: unpick one first` : null].filter(Boolean).join(" · ")}
+                        type="button" onClick={() => toggle(tile.url)} aria-pressed={multi ? n > 0 : undefined} disabled={full}
+                        title={[tile.label, tile.caption, full ? t("Up to {max}: unpick one first", { max }) : null].filter(Boolean).join(" · ")}
                         className={cx("relative aspect-square overflow-hidden rounded-small border bg-canvas transition", n ? "border-accent ring-2 ring-accent" : "border-line hover:border-ink/30", full && "cursor-not-allowed opacity-45")}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={thumbUrl(t.url, 320, 320)} alt={t.label ?? ""} loading="lazy" decoding="async" onError={(e) => showOriginal(e.currentTarget)} className="size-full object-cover" />
+                        <img src={thumbUrl(tile.url, 320, 320)} alt={tile.label ?? ""} loading="lazy" decoding="async" onError={(e) => showOriginal(e.currentTarget)} className="size-full object-cover" />
                         {n > 0 && <span className="absolute top-1.5 left-1.5 grid size-5 place-items-center rounded-full bg-accent text-[11px] font-medium text-white tabular-nums">{n}</span>}
                       </button>
-                      {(t.caption || t.label) && <span className="truncate text-xs leading-tight text-muted">{t.caption || t.label}</span>}
+                      {(tile.caption || tile.label) && <span className="truncate text-xs leading-tight text-muted">{tile.caption || tile.label}</span>}
                     </li>
                   );
                 })}
               </ul>
-            ) : <p className="py-10 text-center text-xs text-muted">{EMPTY[source]}</p>}
+            ) : <p className="py-10 text-center text-xs text-muted">{t(EMPTY[source])}</p>}
           </div>
           {multi && (
             <footer className="flex items-center justify-between gap-3 border-t border-line px-4 py-2.5">
-              <span className="text-xs text-muted tabular-nums">{chosen.length} of {max} picked</span>
+              <span className="text-xs text-muted tabular-nums">{t("{n} of {max} picked", { n: chosen.length, max })}</span>
               <div className="flex gap-2">
-                <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
-                <Button size="sm" onClick={() => onPick(chosen)}>Done</Button>
+                <Button size="sm" variant="ghost" onClick={onClose}>{t("Cancel")}</Button>
+                <Button size="sm" onClick={() => onPick(chosen)}>{t("Done")}</Button>
               </div>
             </footer>
           )}

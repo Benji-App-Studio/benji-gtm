@@ -20,6 +20,8 @@ export interface RunningPull { id: string; apify_run_id: string | null; started_
 export interface GiveUpDeps {
   /** Whether an Apify token is saved. */
   hasToken: boolean;
+  /** What a pull without a token fails with (default NO_APIFY_MESSAGE). */
+  noTokenMessage?: string;
   /** Aborts a run at Apify; true when Apify accepted it. Only called with a token. */
   abort(runId: string): Promise<boolean>;
   /** Writes a pull's end (only while it is still running). */
@@ -34,7 +36,7 @@ export async function giveUpPulls<T extends RunningPull>(rows: T[], deps: GiveUp
   const keep: T[] = [];
   for (const row of rows) {
     if (!deps.hasToken) {
-      await deps.settle(row.id, { status: "error", error: NO_APIFY_MESSAGE, finished_at: finished });
+      await deps.settle(row.id, { status: "error", error: deps.noTokenMessage ?? NO_APIFY_MESSAGE, finished_at: finished });
       continue;
     }
     const since = Date.parse(row.started_at ?? "");
@@ -46,4 +48,42 @@ export async function giveUpPulls<T extends RunningPull>(rows: T[], deps: GiveUp
     keep.push(row);
   }
   return keep;
+}
+
+/**
+ * Accounts mode: a pull was started with one kind of token (ad_pulls.key_source) and that token is no
+ * longer there (the account removed its key, or a staff account lost staff), so it fails instead of
+ * being polled with someone else's.
+ */
+export const KEY_GONE_MESSAGE = "The Apify token this scrape was started with is no longer saved, so the result can't be collected. Pull again to start a new one.";
+
+/** Running pulls the watchdog reads in one run, and how many of one account's it follows in that run. */
+export const PULLS_PER_TICK = 200;
+export const PULLS_PER_USER = 10;
+
+export type PullKeySource = "account" | "platform" | null;
+export interface KeyedPull extends RunningPull { user_id: string; product_id: string; key_source?: PullKeySource }
+
+/** One account's pulls that are polled with the same kind of token, by workspace (product). */
+export interface PullGroup<T> { userId: string; keySource: PullKeySource; products: Map<string, T[]> }
+
+/**
+ * Groups running pulls by account, then by the kind of token they were started with, then by
+ * workspace, in the order given (oldest first), taking at most `perUser` of one account's pulls so one
+ * busy account never holds up the others. The rest wait for the next run.
+ */
+export function groupPulls<T extends KeyedPull>(rows: T[], perUser = PULLS_PER_USER): PullGroup<T>[] {
+  const groups = new Map<string, PullGroup<T>>();
+  const taken = new Map<string, number>();
+  for (const row of rows) {
+    const count = taken.get(row.user_id) ?? 0;
+    if (count >= perUser) continue;
+    taken.set(row.user_id, count + 1);
+    const source: PullKeySource = row.key_source === "account" || row.key_source === "platform" ? row.key_source : null;
+    const id = `${row.user_id}|${source ?? ""}`;
+    let group = groups.get(id);
+    if (!group) { group = { userId: row.user_id, keySource: source, products: new Map() }; groups.set(id, group); }
+    group.products.set(row.product_id, [...(group.products.get(row.product_id) ?? []), row]);
+  }
+  return [...groups.values()];
 }

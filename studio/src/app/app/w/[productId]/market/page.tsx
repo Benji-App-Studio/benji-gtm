@@ -1,10 +1,7 @@
-import { notFound } from "next/navigation";
-import { MarketView } from "@/components/market/market-view";
-import { UUID } from "@/lib/workspace-schema";
+import { redirectLegacy } from "@/lib/server/legacy-page";
 
-/** Market: competitors' apps on the App Store, the top charts, and the gaps their reviews show. */
-export default async function MarketPage({ params }: PageProps<"/app/w/[productId]/market">) {
+/** Old address: Market is Research › App Store now. */
+export default async function LegacyMarket({ params, searchParams }: PageProps<"/app/w/[productId]/market">) {
   const { productId } = await params;
-  if (!UUID.test(productId)) notFound();
-  return <MarketView productId={productId} />;
+  redirectLegacy(`/app/w/${productId}/market`, await searchParams);
 }

@@ -7,6 +7,10 @@
 // Everything in lib/formats is plain TypeScript with relative imports (no Next.js, no network), so
 // the server, the browser and the Node tests (scripts/creative-runner/tests/formats.test.ts) share it.
 import type { Platform } from "../types";
+import { m } from "../i18n/translate";
+
+/** A sentence for the screen: an English template marked with m() and its values, translated where it is shown. */
+export interface UiText { text: string; vars?: Record<string, string | number> }
 
 export type Source = "organic" | "paid";
 /** Paid ads come from ad libraries rather than a channel's feed. */
@@ -316,10 +320,10 @@ export interface Recipe {
   estCredits: number | null;
   notes: string[];
   /** Automatic checks: competitor names, their lines, ruled-out claims (each issue starts with its POLICY.md rule id). */
-  checks: { ok: boolean; issues: string[] };
+  checks: { ok: boolean; issues: string[]; /** The same issues as templates and values, for translating where they are shown. */ issueTexts?: UiText[] };
   /** POLICY.md rules a person must confirm before this runs (e.g. PR-3: the review quotes are real and on file). */
   needsHuman: string[];
 }
 
-export const POLICY_NOTE =
-  "Copy the format, never the asset. Their footage, script, voice and likeness stay theirs: reusing them invites copyright and IP reports, and Meta acts on those by rejecting ads and can restrict the ad account. These prompts keep only the structure, hook pattern and pacing, rewritten for your app, with an original presenter who never poses as a customer or an expert.";
+export const POLICY_NOTE = m(
+  "Copy the format, never the asset. Their footage, script, voice and likeness stay theirs: reusing them invites copyright and IP reports, and Meta acts on those by rejecting ads and can restrict the ad account. These prompts keep only the structure, hook pattern and pacing, rewritten for your app, with an original presenter who never poses as a customer or an expert.");

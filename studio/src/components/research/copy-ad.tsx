@@ -10,6 +10,7 @@ import { IconCheck, IconCopy, IconDownload } from "../icons";
 import { Button, Spinner } from "../ui";
 import { LockedNote, useLocked } from "./gates";
 import { VideoReading } from "./recreate-ad";
+import { useT } from "@/lib/i18n/client";
 
 /** "0:07": seconds as minutes and seconds. */
 export const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -93,6 +94,7 @@ type Done = "copied" | "failed" | null;
 export function CopyButton({ label, run, size = "sm", variant = "secondary", icon = "copy", className }: {
   label: string; run: () => Promise<void>; size?: "sm" | "md"; variant?: "secondary" | "ghost"; icon?: "copy" | "download"; className?: string;
 }) {
+  const { t } = useT();
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Done>(null);
   const go = async () => {
@@ -106,29 +108,30 @@ export function CopyButton({ label, run, size = "sm", variant = "secondary", ico
   return (
     <Button size={size} variant={variant} onClick={go} disabled={busy} className={className}>
       {busy ? <Spinner /> : done === "copied" ? <IconCheck className="size-3.5 text-win" /> : <Icon className="size-3.5" />}
-      {done === "copied" ? (icon === "download" ? "Saved" : "Copied") : done === "failed" ? "Couldn't" : label}
+      {done === "copied" ? (icon === "download" ? t("Saved") : t("Copied")) : done === "failed" ? t("Couldn't") : label}
     </Button>
   );
 }
 
 /** A static's take-away: copy or save each image, and copy its text. */
 export function StaticActions({ ad, images }: { ad: RankedAdRow; images: CreativeMedia[] }) {
+  const { t } = useT();
   const text = adText(ad);
   if (!images.length && !text) return null;
   return (
     <div className="grid gap-2">
-      <p className="eyebrow">Copy this static</p>
+      <p className="eyebrow">{t("Copy this static")}</p>
       <div className="flex flex-wrap gap-2">
         {images.length === 1 && <>
-          <CopyButton label="Copy image" run={() => copyImage(images[0].url).catch(() => downloadFile(images[0].url, fileName(ad)))} />
-          <CopyButton label="Download image" icon="download" run={() => downloadFile(images[0].url, fileName(ad))} />
+          <CopyButton label={t("Copy image")} run={() => copyImage(images[0].url).catch(() => downloadFile(images[0].url, fileName(ad)))} />
+          <CopyButton label={t("Download image")} icon="download" run={() => downloadFile(images[0].url, fileName(ad))} />
         </>}
         {images.length > 1 && images.map((m, i) => (
-          <CopyButton key={`${m.url}-${i}`} label={`Card ${i + 1}`} icon="download" run={() => downloadFile(m.url, fileName(ad, i + 1))} />
+          <CopyButton key={`${m.url}-${i}`} label={t("Card {n}", { n: i + 1 })} icon="download" run={() => downloadFile(m.url, fileName(ad, i + 1))} />
         ))}
-        {text && <CopyButton label="Copy text" run={() => navigator.clipboard.writeText(text)} />}
+        {text && <CopyButton label={t("Copy text")} run={() => navigator.clipboard.writeText(text)} />}
       </div>
-      <p className="text-xs text-muted">For reference and briefs: remake the format for your brand, never reuse their image or words as they are.</p>
+      <p className="text-xs text-muted">{t("For reference and briefs: remake the format for your brand, never reuse their image or words as they are.")}</p>
     </div>
   );
 }
@@ -138,6 +141,7 @@ export function StaticActions({ ad, images }: { ad: RankedAdRow; images: Creativ
  * then the hook, the shots and how it's made. Not read yet: one button reads it like Recreate's scan.
  */
 export function VideoBreakdown({ ad, preview, onScanned }: { ad: RankedAdRow; preview: CreativeMedia | null; onScanned: (scan: AdScan, scannedAt: string) => void }) {
+  const { t, intl } = useT();
   const stale = staleReads(ad).scan;
   const video = !stale ? ad.scan?.video ?? null : null;
   const [stage, setStage] = useState<string | null>(null);
@@ -149,17 +153,17 @@ export function VideoBreakdown({ ad, preview, onScanned }: { ad: RankedAdRow; pr
     // Key frames from the stored copy (null when the browser can't read it; the poster is read then).
     let grabbed: Awaited<ReturnType<typeof videoFrames>> = null;
     if (preview?.type === "video") {
-      setStage("Taking key frames…");
+      setStage(t("Taking key frames…"));
       grabbed = await videoFrames(preview.url).catch(() => null);
     }
-    setStage("Watching and listening…");
+    setStage(t("Watching and listening…"));
     const response = await fetch(`/api/research/ads/${ad.id}`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "scan", force: Boolean(ad.scan) || stale, ...(grabbed ? { frames: grabbed.frames, duration: grabbed.duration } : {}) }),
     }).catch(() => null);
     const data = await response?.json().catch(() => null) as { scan?: AdScan; scannedAt?: string; error?: string } | null;
     setStage(null);
-    if (!response?.ok || !data?.scan) return setError(data?.error ?? "Couldn't reach the scan. Try again.");
+    if (!response?.ok || !data?.scan) return setError(data?.error ?? t("Couldn't reach the scan. Try again."));
     onScanned(data.scan, data.scannedAt ?? new Date().toISOString());
   }
 
@@ -167,22 +171,22 @@ export function VideoBreakdown({ ad, preview, onScanned }: { ad: RankedAdRow; pr
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="eyebrow">Video breakdown</p>
+        <p className="eyebrow">{t("Video breakdown")}</p>
         {video && (
           <div className="flex flex-wrap gap-1.5">
-            {script && script.lines.length > 0 && <CopyButton variant="ghost" label="Copy script" run={() => navigator.clipboard.writeText(scriptText(script.lines))} />}
-            <CopyButton variant="ghost" label="Copy breakdown" run={() => navigator.clipboard.writeText(breakdownText(ad, video))} />
+            {script && script.lines.length > 0 && <CopyButton variant="ghost" label={t("Copy script")} run={() => navigator.clipboard.writeText(scriptText(script.lines))} />}
+            <CopyButton variant="ghost" label={t("Copy breakdown")} run={() => navigator.clipboard.writeText(breakdownText(ad, video))} />
           </div>
         )}
       </div>
       {!video ? (
         <div className="grid gap-2 rounded-inner border border-line bg-raised p-3">
-          <p className="text-sm">{stale ? "The ad was edited after its last read." : "See how it's made, shot by shot, and get its full script."}</p>
-          <p className="text-xs text-muted">Key frames are taken from the stored video and its sound is transcribed: one AI scan, the same one Recreate uses.</p>
+          <p className="text-sm">{stale ? t("The ad was edited after its last read.") : t("See how it's made, shot by shot, and get its full script.")}</p>
+          <p className="text-xs text-muted">{t("Key frames are taken from the stored video and its sound is transcribed: one AI scan, the same one Recreate uses.")}</p>
           <div className="flex items-center gap-3">
             {aiLocked
-              ? <LockedNote state={aiLocked}>Needs {aiLocked.missingKeys.join(" and ")}</LockedNote>
-              : <Button size="sm" variant="secondary" onClick={breakDown} disabled={Boolean(stage)}>{stage ? <><Spinner /> {stage}</> : stale ? "Break it down again" : "Break down this video"}</Button>}
+              ? <LockedNote state={aiLocked}>{t("Needs {keys}", { keys: new Intl.ListFormat(intl, { type: "conjunction" }).format(aiLocked.missingKeys) })}</LockedNote>
+              : <Button size="sm" variant="secondary" onClick={breakDown} disabled={Boolean(stage)}>{stage ? <><Spinner /> {stage}</> : stale ? t("Break it down again") : t("Break down this video")}</Button>}
           </div>
           {error && <p role="alert" className="text-xs text-warn">{error}</p>}
         </div>
@@ -190,7 +194,7 @@ export function VideoBreakdown({ ad, preview, onScanned }: { ad: RankedAdRow; pr
         <>
           <div className="rounded-inner border border-line bg-raised p-3">
             <p className="mb-2 text-xs font-medium text-label">
-              {script?.kind === "spoken" ? "Script: what's said" : script?.kind === "on_screen" ? "Script: on-screen text (nobody speaks)" : "Script"}
+              {script?.kind === "spoken" ? t("Script: what's said") : script?.kind === "on_screen" ? t("Script: on-screen text (nobody speaks)") : t("Script")}
             </p>
             {script && script.lines.length > 0 ? (
               <ol className="grid gap-1 text-sm">
@@ -201,11 +205,11 @@ export function VideoBreakdown({ ad, preview, onScanned }: { ad: RankedAdRow; pr
                   </li>
                 ))}
               </ol>
-            ) : <p className="text-sm text-muted">{video.transcript_note || "No words in this video: see the shots below."}</p>}
+            ) : <p className="text-sm text-muted">{video.transcript_note || t("No words in this video: see the shots below.")}</p>}
           </div>
           <VideoReading video={video} transcript="hidden" />
           <div className="flex items-center gap-3">
-            {!aiLocked && <Button size="sm" variant="ghost" onClick={breakDown} disabled={Boolean(stage)}>{stage ? <><Spinner /> {stage}</> : "Read it again"}</Button>}
+            {!aiLocked && <Button size="sm" variant="ghost" onClick={breakDown} disabled={Boolean(stage)}>{stage ? <><Spinner /> {stage}</> : t("Read it again")}</Button>}
             {error && <p role="alert" className="text-xs text-warn">{error}</p>}
           </div>
         </>

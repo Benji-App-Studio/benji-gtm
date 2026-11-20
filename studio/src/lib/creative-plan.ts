@@ -15,6 +15,7 @@ import type { TemplateRemakeSettings } from "./playground-templates-plan";
 import { cleanLogo, logoBriefLines, logoCandidates, logoParams, type LogoSettings } from "./logo-overlay";
 import { adStyleById } from "./ad-styles";
 import { forProvider, normalizeImageProvider, type ImageProvider, type ProviderJob } from "./image-provider";
+import { fill, m } from "./i18n/translate";
 
 export type { Aspect, PlacementId, AdFormatId };
 export { cleanMustAvoid, MUST_AVOID } from "./brand-rules";
@@ -28,15 +29,15 @@ export type PolicyProfile = "health" | "immigration_tax" | "general";
 
 export const KINDS: CreativeKind[] = ["ugc_video", "ai_video", "image", "reddit", "tweet"];
 export const ASPECTS: Aspect[] = ["9:16", "4:5", "1:1", "16:9"];
-export const KIND_LABEL: Record<CreativeKind, string> = { ugc_video: "AI UGC video", ai_video: "AI video", image: "Image ad", reddit: "Reddit-style post", tweet: "Tweet-style post" };
+export const KIND_LABEL: Record<CreativeKind, string> = { ugc_video: m("AI UGC video"), ai_video: m("AI video"), image: m("Image ad"), reddit: m("Reddit-style post"), tweet: m("Tweet-style post") };
 export const VIDEO_MODES: { id: VideoMode; label: string; hint: string }[] = [
-  { id: "ugc", label: "UGC", hint: "A presenter, phone-filmed feel" },
-  { id: "ugc_how_to", label: "How-to", hint: "A presenter shows how it works" },
-  { id: "product_review", label: "Product review", hint: "A presenter's take on the app" },
-  { id: "ugc_unboxing", label: "Unboxing", hint: "A first-look reveal" },
-  { id: "product_showcase", label: "Showcase", hint: "The product itself, polished" },
-  { id: "tv_spot", label: "TV spot", hint: "Broadcast-style commercial" },
-  { id: "wild_card", label: "Wild card", hint: "The model picks the vibe" },
+  { id: "ugc", label: "UGC", hint: m("A presenter, phone-filmed feel") },
+  { id: "ugc_how_to", label: m("How-to"), hint: m("A presenter shows how it works") },
+  { id: "product_review", label: m("Product review"), hint: m("A presenter's take on the app") },
+  { id: "ugc_unboxing", label: m("Unboxing"), hint: m("A first-look reveal") },
+  { id: "product_showcase", label: m("Showcase"), hint: m("The product itself, polished") },
+  { id: "tv_spot", label: m("TV spot"), hint: m("Broadcast-style commercial") },
+  { id: "wild_card", label: m("Wild card"), hint: m("The model picks the vibe") },
 ];
 /** Modes that take a Marketing Studio hook and setting. */
 export const SETUP_MODES: VideoMode[] = ["ugc", "ugc_how_to", "ugc_unboxing", "product_review"];
@@ -169,6 +170,23 @@ export interface BatchRequest {
    * `awareness_level`, and the batch and its creatives store it. Unset: no level.
    */
   awarenessLevel?: number | null;
+  /**
+   * The competitor ad a Research recreate ("Make this for your app", Recreate) was made from, saved in
+   * the batch's settings so Launch's Ads view can trace an ad back to it. Checked by cleanSourceAd.
+   */
+  sourceAd?: SourceAdRef | null;
+}
+
+/** A Research ad: paid_ads.id, its Ad Library id and the page (or competitor) that ran it. */
+export interface SourceAdRef { adId: string; libraryId: string; pageName: string }
+
+export function cleanSourceAd(value: unknown): SourceAdRef | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  const str = (x: unknown, max: number) => (typeof x === "string" ? x.trim().slice(0, max) : "");
+  const adId = str(v.adId, 64), libraryId = str(v.libraryId, 40);
+  if (!/^[0-9a-f-]{36}$/i.test(adId) && !/^\d{5,25}$/.test(libraryId)) return null;
+  return { adId: /^[0-9a-f-]{36}$/i.test(adId) ? adId : "", libraryId: /^\d{5,25}$/.test(libraryId) ? libraryId : "", pageName: str(v.pageName, 120) };
 }
 
 export const STYLE_REFERENCES = 4;
@@ -402,7 +420,11 @@ export function targetsOf(req: Pick<BatchRequest, "aspects" | "placements">): { 
   return ASPECTS.filter((a) => req.aspects.includes(a)).map((aspect) => ({ aspect }));
 }
 
-export function planBatch(req: BatchRequest, brand: { appName: string; screenshotUrls?: string[]; appStoreUrl?: string; forbiddenClaims?: string[] | null; profile?: ProductProfile | null; system?: BrandSystem | null }): Plan {
+/** Puts a plan's messages into words: English by default; the app passes its translator's `t`. */
+export type PlanWords = (text: string, vars?: Record<string, string | number>) => string;
+const englishWords: PlanWords = (text, vars) => fill(text, vars);
+
+export function planBatch(req: BatchRequest, brand: { appName: string; screenshotUrls?: string[]; appStoreUrl?: string; forbiddenClaims?: string[] | null; profile?: ProductProfile | null; system?: BrandSystem | null }, t: PlanWords = englishWords): Plan {
   const errors: string[] = [];
   const warnings: string[] = [];
   // The brand's rules (lib/brand-rules.ts): the look opens each prompt; the profile, the copy rules
@@ -427,23 +449,23 @@ export function planBatch(req: BatchRequest, brand: { appName: string; screensho
   const variants = clamp(Math.round(req.variants) || 1, 1, LIMITS.variants);
   const carousel = req.format === "carousel";
   const cards = clamp(Math.round(req.cards ?? CAROUSEL.defaultCards) || CAROUSEL.defaultCards, CAROUSEL.minCards, CAROUSEL.maxCards);
-  if (!kinds.length) errors.push("Pick at least one kind of creative.");
-  if (!targets.length) errors.push("Pick at least one placement.");
+  if (!kinds.length) errors.push(t("Pick at least one kind of creative."));
+  if (!targets.length) errors.push(t("Pick at least one placement."));
   const ai = kinds.some((k) => k === "ugc_video" || k === "ai_video" || k === "image");
-  if (ai && brief.length < 10) errors.push("Write a brief (or pick a format card) for the AI creatives.");
+  if (ai && brief.length < 10) errors.push(t("Write a brief (or pick a format card) for the AI creatives."));
 
   const jobs: PlannedJob[] = [];
   if (kinds.includes("ugc_video")) {
     const v = req.video;
     const duration = clamp(Math.round(v.duration) || 15, LIMITS.minDuration, LIMITS.maxDuration);
     const setup = SETUP_MODES.includes(v.mode);
-    if (!setup && (v.hookId || v.settingId)) warnings.push(`The ${v.mode.replace("_", " ")} mode ignores hooks and settings; they were left out.`);
-    if (aspects.includes("4:5")) warnings.push("Marketing Studio video has no 4:5; those videos are made in 3:4.");
+    if (!setup && (v.hookId || v.settingId)) warnings.push(t("The {mode} mode ignores hooks and settings; they were left out.", { mode: v.mode.replace("_", " ") }));
+    if (aspects.includes("4:5")) warnings.push(t("Marketing Studio video has no 4:5; those videos are made in 3:4."));
     let product = v.product;
-    if (product === "app_store" && !brand.appStoreUrl) { product = (brand.screenshotUrls?.length ? "screenshots" : "none"); warnings.push("No App Store link in the brand kit; the video uses the screenshots instead."); }
-    if (product === "screenshots" && !brand.screenshotUrls?.length) { product = "none"; warnings.push("No screenshots in the brand kit; the video is made from the brief alone."); }
-    if (carousel) warnings.push("Carousel cards are images; the videos are made as single ads.");
-    if (cleanStyleReferences(req.styleReferences).length) warnings.push(kinds.includes("ai_video") ? "Marketing Studio takes no reference images: only the AI videos follow the reference frames." : "Marketing Studio takes no reference images: the UGC videos are made from the brief alone (pick AI video to follow the reference).");
+    if (product === "app_store" && !brand.appStoreUrl) { product = (brand.screenshotUrls?.length ? "screenshots" : "none"); warnings.push(t("No App Store link in the brand kit; the video uses the screenshots instead.")); }
+    if (product === "screenshots" && !brand.screenshotUrls?.length) { product = "none"; warnings.push(t("No screenshots in the brand kit; the video is made from the brief alone.")); }
+    if (carousel) warnings.push(t("Carousel cards are images; the videos are made as single ads."));
+    if (cleanStyleReferences(req.styleReferences).length) warnings.push(kinds.includes("ai_video") ? t("Marketing Studio takes no reference images: only the AI videos follow the reference frames.") : t("Marketing Studio takes no reference images: the UGC videos are made from the brief alone (pick AI video to follow the reference)."));
     for (const { aspect, placement } of targets) {
       for (let variant = 1; variant <= variants; variant++) {
         const params: Record<string, unknown> = {
@@ -464,9 +486,9 @@ export function planBatch(req: BatchRequest, brand: { appName: string; screensho
     const framesLine = frames.length && !req.referencesInBrief ? `REFERENCE FRAMES: attached image${frames.length > 1 ? `s 1–${frames.length} are stills` : " 1 is a still"} from a reference video ad, in order: follow its shots, framing and pacing, and rebuild every brand-specific detail (people, product, screens, words, colours) as ours.` : "";
     const duration = clamp(Math.round(o.duration) || 10, LIMITS.minDuration, LIMITS.maxDuration);
     const screenshots = o.useScreenshots && Boolean(brand.screenshotUrls?.length);
-    if (carousel && !kinds.includes("ugc_video")) warnings.push("Carousel cards are images; the videos are made as single ads.");
-    if (aspects.includes("4:5")) warnings.push("Seedance has no 4:5; those AI videos are made in 3:4 (Meta trims them to 4:5).");
-    if (o.useScreenshots && !brand.screenshotUrls?.length) warnings.push("No screenshots in the brand kit; the AI videos are made from the brief alone.");
+    if (carousel && !kinds.includes("ugc_video")) warnings.push(t("Carousel cards are images; the videos are made as single ads."));
+    if (aspects.includes("4:5")) warnings.push(t("Seedance has no 4:5; those AI videos are made in 3:4 (Meta trims them to 4:5)."));
+    if (o.useScreenshots && !brand.screenshotUrls?.length) warnings.push(t("No screenshots in the brand kit; the AI videos are made from the brief alone."));
     for (const { aspect, placement } of targets) {
       for (let variant = 1; variant <= variants; variant++) {
         const params: Record<string, unknown> = {
@@ -484,41 +506,41 @@ export function planBatch(req: BatchRequest, brand: { appName: string; screensho
     const o = req.image;
     // Who makes them: GPT Image 2.5 via Higgsfield (default) or via OpenAI; Marketing Studio Image only via Higgsfield.
     const provider = o.model === "gpt_image_2_5" ? normalizeImageProvider(o.provider) : "higgsfield";
-    if (o.model !== "gpt_image_2_5" && normalizeImageProvider(o.provider) === "openai") warnings.push("Marketing Studio Image is Higgsfield's own model: it's made via Higgsfield.");
+    if (o.model !== "gpt_image_2_5" && normalizeImageProvider(o.provider) === "openai") warnings.push(t("Marketing Studio Image is Higgsfield's own model: it's made via Higgsfield."));
     const shots = o.useScreenshots ? brand.screenshotUrls?.length ?? 0 : 0;
     const push = (job: PlannedJob) => jobs.push(forProvider(job, provider, shots));
-    if (aspects.includes("4:5") && provider === "higgsfield") warnings.push("On the Higgsfield API, 4:5 images are made in 3:4 (Meta trims them to 4:5); the desktop runner makes 4:5.");
+    if (aspects.includes("4:5") && provider === "higgsfield") warnings.push(t("On the Higgsfield API, 4:5 images are made in 3:4 (Meta trims them to 4:5); the desktop runner makes 4:5."));
     const imageTargets = carousel ? targets.filter((t) => !t.placement || CAROUSEL_PLACEMENTS.includes(t.placement.id)) : targets;
-    if (carousel && imageTargets.length < targets.length) warnings.push("Carousel cards are square or 4:5; the other placements were left out of the image cards.");
-    if (carousel && !imageTargets.length) errors.push("A carousel needs the Square or Feed · vertical placement.");
+    if (carousel && imageTargets.length < targets.length) warnings.push(t("Carousel cards are square or 4:5; the other placements were left out of the image cards."));
+    if (carousel && !imageTargets.length) errors.push(t("A carousel needs the Square or Feed · vertical placement."));
     // Our logo goes right after the competitor's image(s), so it stays inside the desktop runner's 4 images.
     const logo = cleanLogo(req.logo);
     const styles = cleanStyleReferences(req.styleReferences).slice(0, logo?.reference ? STYLE_REFERENCES - 1 : STYLE_REFERENCES);
     const logoLine = logo && !logo.inBrief ? logoBriefLines(logo, logo.reference ? styles.length + 1 : 0) : "";
-    if (provider === "higgsfield" && logo?.reference && styles.length + 1 + ours.length > 4) warnings.push("The desktop runner sends at most 4 reference images (their ad, our logo, then your picks): the last of your picked images is left out there; the Higgsfield API sends them all.");
+    if (provider === "higgsfield" && logo?.reference && styles.length + 1 + ours.length > 4) warnings.push(t("The desktop runner sends at most 4 reference images (their ad, our logo, then your picks): the last of your picked images is left out there; the Higgsfield API sends them all."));
     // Composed ads: text-free plates, the copy set afterwards in the brand's fonts.
     const composedCopy = o.composed && !carousel ? cleanCopy(o.composed.copy) : null;
     const composedLayout = composedCopy ? layoutById(o.composed!.layout) : null;
-    if (o.composed && carousel) warnings.push("Composed ads are single images; the carousel cards are made the usual way.");
-    if (o.composed && !carousel && !composedCopy) errors.push("Write the headline for the composed ads.");
+    if (o.composed && carousel) warnings.push(t("Composed ads are single images; the carousel cards are made the usual way."));
+    if (o.composed && !carousel && !composedCopy) errors.push(t("Write the headline for the composed ads."));
     if (composedCopy?.offer) {
       const allowed = rules.offers?.allowed ?? [];
-      if (allowed.length && !allowed.some((a) => a.toLowerCase() === composedCopy.offer!.toLowerCase())) errors.push(`"${composedCopy.offer}" isn't one of your offers (Brand page): pick one from the list.`);
+      if (allowed.length && !allowed.some((a) => a.toLowerCase() === composedCopy.offer!.toLowerCase())) errors.push(t("\"{offer}\" isn't one of your offers (Brand page): pick one from the list.", { offer: composedCopy.offer }));
     }
     // Copy the layout has no slot for would silently be left off; copy that won't fit fails at compose
     // time, after the plates are paid for: both are said now, before credits are spent.
     if (composedCopy && composedLayout) {
       const unplaced = unplacedCopy(composedCopy, composedLayout);
-      if (unplaced.length) warnings.push(unplacedNote(composedLayout, unplaced));
+      if (unplaced.length) warnings.push(unplacedNote(composedLayout, unplaced, t));
       const aspects = [...new Set(imageTargets.map((t) => t.aspect))].filter((a) => COMPOSED_ASPECTS.includes(a));
-      for (const problem of fitProblems(composedCopy, composedLayout, aspects)) warnings.push(`May not fit: ${problem} (or pick another layout)`);
+      for (const problem of fitProblems(composedCopy, composedLayout, aspects, t)) warnings.push(t("May not fit: {problem} (or pick another layout)", { problem }));
     }
     // Composed ads place our real logo in their layout's logo slot, and the product's cut-out in its product box.
     const composedProduct = composedCopy ? cleanComposedProduct(o.composed?.product) : null;
-    if (o.composed?.product && composedCopy && !composedProduct) warnings.push("The real product's cut-out isn't a usable link: the model draws the product instead.");
+    if (o.composed?.product && composedCopy && !composedProduct) warnings.push(t("The real product's cut-out isn't a usable link: the model draws the product instead."));
     for (const { aspect, placement } of imageTargets) {
       const composing = Boolean(composedCopy && composedLayout && COMPOSED_ASPECTS.includes(aspect));
-      if (composedCopy && !composing) warnings.push(`Composed layouts cover 4:5, 1:1 and 9:16; the ${aspect} images are made the usual way.`);
+      if (composedCopy && !composing) warnings.push(t("Composed layouts cover 4:5, 1:1 and 9:16; the {aspect} images are made the usual way.", { aspect }));
       for (let variant = 1; variant <= variants; variant++) {
         if (composing) {
           const params: Record<string, unknown> = {
@@ -561,7 +583,7 @@ export function planBatch(req: BatchRequest, brand: { appName: string; screensho
   for (const kind of ["reddit", "tweet"] as const) {
     if (!kinds.includes(kind)) continue;
     const copies = (kind === "reddit" ? req.reddit : req.tweets).map((c) => ({ title: c.title?.trim().slice(0, 300) || undefined, body: c.body.trim().slice(0, 1200) })).filter((c) => c.body);
-    if (!copies.length) { errors.push(`Write the copy for the ${KIND_LABEL[kind].toLowerCase()}s (separate posts with a line of three dashes).`); continue; }
+    if (!copies.length) { errors.push(kind === "reddit" ? t("Write the copy for the reddit-style posts (separate posts with a line of three dashes).") : t("Write the copy for the tweet-style posts (separate posts with a line of three dashes).")); continue; }
     copies.slice(0, LIMITS.variants * 2).forEach((copy, i) => {
       for (const aspect of aspects.filter((a) => a !== "16:9")) {
         jobs.push({ kind, model: `template:${kind}`, prompt: [copy.title, copy.body].filter(Boolean).join("\n\n"), params: { copy, ...(kind === "reddit" && req.community ? { community: req.community.trim().slice(0, 60) } : {}) }, aspect, variant: i + 1, backend: "template", costEstimate: 0 });
@@ -570,8 +592,8 @@ export function planBatch(req: BatchRequest, brand: { appName: string; screensho
   }
 
   const aiJobs = jobs.filter((j) => j.backend !== "template").length;
-  if (aiJobs > LIMITS.aiJobs) errors.push(`That's ${aiJobs} AI jobs; keep a batch to ${LIMITS.aiJobs} (fewer variants or ratios).`);
-  if (jobs.length > LIMITS.jobs) errors.push(`That's ${jobs.length} creatives; keep a batch to ${LIMITS.jobs}.`);
+  if (aiJobs > LIMITS.aiJobs) errors.push(t("That's {n} AI jobs; keep a batch to {max} (fewer variants or ratios).", { n: String(aiJobs), max: String(LIMITS.aiJobs) }));
+  if (jobs.length > LIMITS.jobs) errors.push(t("That's {n} creatives; keep a batch to {max}.", { n: String(jobs.length), max: String(LIMITS.jobs) }));
   // Every job carries the level, so the creatives it makes store it too.
   const leveled = awareness ? jobs.map((job) => ({ ...job, params: { ...job.params, awareness_level: awareness } })) : jobs;
   return { ...totals(leveled), warnings, errors, qa: rules.qa };

@@ -1,6 +1,6 @@
-# Market: see what's working in the app stores
+# App stores research: see what's working in the app stores
 
-> **What this file is for:** using the **Market** page to research the apps you'd compete with: which
+> **What this file is for:** using the **Research › App stores** tab to research the apps you'd compete with: which
 > apps win in your category, how your competitors' apps are rated and priced, how often they ship,
 > and what their users love and hate.
 >
@@ -11,7 +11,7 @@
 ## Before you start
 
 - Benji GTM running (`bash start.command`), signed in, with your app added.
-- Optional: your **OpenAI key** in **Settings > API keys** ([how](keys/openai.md)). It writes the
+- Optional: your **OpenAI key** in **Settings > Your keys** ([how](keys/openai.md)). It writes the
   review summaries and the chart reads. Each one costs a few cents.
 - Optional: your **Apify token** ([how](keys/apify.md)), only for Google Play apps. Google Play has
   no free official API, so its reviews come from an Apify actor: about $0.02 per refresh, from your
@@ -19,7 +19,7 @@
 
 ## Find what wins in your category
 
-1. Open your app, then **Market** in the sidebar, then the **Top charts** tab.
+1. Open your app, then **Research** in the sidebar, then the **App stores** tab, then **Top charts**.
 2. Pick **Top grossing**, your category (for example **Health & Fitness**) and your country.
    Top grossing shows what people pay for; Top free shows what people download.
 3. Read the list: each app's rating, how many people rated it, its price and when it was last updated.
@@ -35,7 +35,7 @@ pricing and openings.
 2. Type the app's name, or paste its App Store link (from the App Store's **Share** button), pick the
    store country and click **Find**. Click **Track** on the right app. You can also click **Track**
    on any row in **Top charts**.
-3. If your competitor list (on the Research page) already has names, click **Find their apps** to
+3. If your competitor list (on Research › Ads) already has names, click **Find their apps** to
    track their App Store apps in one go.
 4. Click a tracked app to open it: rating, version, how often it ships, the reviews by stars, its
    releases and its newest reviews.

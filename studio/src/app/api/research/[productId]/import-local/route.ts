@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getTranslator } from "@/lib/i18n/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { readNewAds, research } from "@/lib/server/research";
 
@@ -35,21 +36,22 @@ async function readBody(request: NextRequest): Promise<string | null> {
 export async function POST(request: NextRequest, ctx: RouteContext<"/api/research/[productId]/import-local">) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const { productId } = await ctx.params;
   let text: string | null;
   try {
     text = await readBody(request);
   } catch {
-    return Response.json({ error: "Couldn't read the upload. Try again." }, { status: 400 });
+    return Response.json({ error: t("Couldn't read the upload. Try again.") }, { status: 400 });
   }
-  if (text === null) return Response.json({ error: "That upload is over 10 MB. Reload the page (a current Research page sends a big file in parts) and import it again." }, { status: 413 });
+  if (text === null) return Response.json({ error: t("That upload is over 10 MB. Reload the page (a current Research page sends a big file in parts) and import it again.") }, { status: 413 });
   let input: Record<string, unknown>;
   try {
     input = JSON.parse(text);
   } catch {
-    return Response.json({ error: "That isn't a JSON file." }, { status: 400 });
+    return Response.json({ error: t("That isn't a JSON file.") }, { status: 400 });
   }
-  if (!input?.file || typeof input.file !== "object") return Response.json({ error: "Choose the scraper's .json file." }, { status: 400 });
+  if (!input?.file || typeof input.file !== "object") return Response.json({ error: t("Choose the scraper's .json file.") }, { status: 400 });
   const result = await research(session, "import-local", {
     productId,
     watchId: typeof input.watchId === "string" ? input.watchId : undefined,
@@ -58,9 +60,9 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/researc
     holdId: typeof input.holdId === "string" ? input.holdId : undefined,
     file: input.file,
     batch: input.batch && typeof input.batch === "object" ? input.batch : undefined,
-  });
+  }, undefined, t);
   // Once the whole file is in, its new ads are read in the background.
   const last = !input.batch || (result.data as { batch?: { last?: boolean } }).batch?.last === true;
-  if (result.ok && last) await readNewAds(session, productId);
+  if (result.ok && last) await readNewAds(session, productId, t);
   return Response.json(result.data, { status: result.ok ? 200 : result.status });
 }

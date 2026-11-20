@@ -1,3 +1,4 @@
+import { getTranslator } from "@/lib/i18n/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { bundledMigration } from "@/lib/server/bundled-migrations";
 import { callFunction, relay } from "@/lib/server/functions";
@@ -12,10 +13,13 @@ import { updateCheck } from "@/lib/install/update-needed";
 export async function GET() {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const result = await callFunction<InstallState>("install", session, "capabilities", {
-    messages: { notDeployed: "The install backend isn't deployed yet. Open /setup and run the update." },
+    messages: { notDeployed: t("The install backend isn't deployed yet. Open /setup and run the update.") },
   });
   if (!result.ok) return relay(result);
   const { schemaVersion, ...state } = result.data;
-  return relay({ ...result, data: { ...state, ...updateCheck(schemaVersion, bundledMigration(), state.owned) } });
+  // Accounts mode: updates are ours to apply, never an account's; only staff are told one is due.
+  const nagged = state.mode === "accounts" ? Boolean(state.plan?.staff) : state.owned;
+  return relay({ ...result, data: { ...state, ...updateCheck(schemaVersion, bundledMigration(), nagged) } });
 }

@@ -15,6 +15,8 @@ import { BatchError, createBatch } from "@/lib/server/creative-batches";
 import { research } from "@/lib/server/research";
 import { WORKSPACE_BUCKET } from "@/lib/workspace";
 import { logCaught, logDbError } from "@/lib/server/errors";
+import { getTranslator } from "@/lib/i18n/server";
+import { m } from "@/lib/i18n/translate";
 
 // A product's own Playground template library (contract: lib/playground-templates.ts). Every query is
 // scoped to this product, and the product must be the signed-in user's: nothing here is global.
@@ -34,8 +36,8 @@ const ANALYZE_STALE_MS = 6 * 60_000;
 type JobRow = { id: string; batch_id: string; status: "queued" | "running" | "finalizing" | "done" | "failed" | "cancelled"; error: string | null };
 type CreativeRow = { id: string; batch_id: string; url: string; thumbnail_url: string | null; storage_path: string; poster_path: string | null; created_at: string; qa_status: string; qa: { checks?: { verdict: string; label: string; reason: string }[] } | null };
 
-const notFound = () => Response.json({ error: "This workspace doesn't exist." }, { status: 404 });
-const noTemplate = () => Response.json({ error: "This template doesn't exist." }, { status: 404 });
+const notFound = async () => Response.json({ error: (await getTranslator()).t("This workspace doesn't exist.") }, { status: 404 });
+const noTemplate = async () => Response.json({ error: (await getTranslator()).t("This template doesn't exist.") }, { status: 404 });
 const bad = (error: string, status = 400) => Response.json({ error }, { status });
 
 /** The signed-in user and this product, only if it's theirs. */
@@ -89,8 +91,9 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/playgrou
   const { session, productId } = scoped;
   if (request.nextUrl.searchParams.get("scope") === "others") return others(session, productId);
   const { supabase } = session;
+  const { t } = await getTranslator();
   const { data, error } = await supabase.from("product_templates").select(TEMPLATE_COLUMNS).eq("product_id", productId).order("created_at", { ascending: false }).limit(200).returns<TemplateRow[]>();
-  if (error) return Response.json({ templates: [], error: "The template library isn't in the database yet (migrations 20261003800000 and 20261005800000)." });
+  if (error) return Response.json({ templates: [], error: t("The template library isn't in the database yet (migrations {first} and {second}).", { first: "20261003800000", second: "20261005800000" }) });
   let rows = data ?? [];
   // A library that has never had anything starts with every starter style (the ready-made formats), so
   // a new product isn't empty; removing them later is the person's choice and they don't come back.
@@ -117,7 +120,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/playgrou
   for (const row of generating) {
     let patch: Partial<TemplateRow> | null = null;
     if (!row.batch_id) {
-      patch = { status: "failed", error: "The remake was removed. Make it again." };
+      patch = { status: "failed", error: m("The remake was removed. Make it again.") };
     } else {
       const outcome = remakeOutcome((creatives.data ?? []).filter((c) => c.batch_id === row.batch_id));
       const made = outcome && "use" in outcome ? (creatives.data ?? []).find((c) => c.id === outcome.use) : undefined;
@@ -131,7 +134,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/playgrou
         };
       } else if (!outcome && (!batchJobs.length || batchJobs.every((j) => j.status === "failed" || j.status === "cancelled" || j.status === "done"))) {
         const failed = batchJobs.find((j) => j.error);
-        patch = { status: "failed", error: (failed?.error ?? (batchJobs.some((j) => j.status === "cancelled") ? "The remake was cancelled." : "The remake made nothing. Try again.")).slice(0, 400) };
+        patch = { status: "failed", error: (failed?.error ?? (batchJobs.some((j) => j.status === "cancelled") ? m("The remake was cancelled.") : m("The remake made nothing. Try again."))).slice(0, 400) };
       }
     }
     if (patch) {
@@ -141,7 +144,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/playgrou
   }
   const stale = rows.filter((r) => r.status === "analyzing" && Date.now() - Date.parse(r.updated_at) > ANALYZE_STALE_MS);
   for (const row of stale) {
-    const { row: updated } = await updateTemplate(session, productId, row.id, { status: "failed", error: "Reading the image didn't finish. Try again." }, { status: "analyzing" });
+    const { row: updated } = await updateTemplate(session, productId, row.id, { status: "failed", error: m("Reading the image didn't finish. Try again.") }, { status: "analyzing" });
     if (updated) settled.set(row.id, updated);
   }
 
@@ -152,10 +155,11 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/playgrou
 /** The person's other products and their ready templates (each marked when this product already has it). */
 async function others(session: Session, productId: string) {
   const { supabase } = session;
+  const { t } = await getTranslator();
   // All the person's products (this one too, so a copy that came from here is named); importGroups skips this one.
   const { data: products, error } = await supabase.from("products").select("id, name").eq("user_id", session.user.id)
     .order("is_primary", { ascending: false }).order("created_at").returns<{ id: string; name: string }[]>();
-  if (error) return Response.json({ groups: [], error: "Couldn't load your other products." }, { status: 500 });
+  if (error) return Response.json({ groups: [], error: t("Couldn't load your other products.") }, { status: 500 });
   const otherIds = (products ?? []).filter((p) => p.id !== productId).map((p) => p.id);
   if (!otherIds.length) return Response.json({ groups: [] });
   const [theirs, ours] = await Promise.all([
@@ -163,7 +167,7 @@ async function others(session: Session, productId: string) {
       .order("created_at", { ascending: false }).limit(500).returns<TemplateRow[]>(),
     supabase.from("product_templates").select(TEMPLATE_COLUMNS).eq("product_id", productId).limit(200).returns<TemplateRow[]>(),
   ]);
-  if (theirs.error || ours.error) return Response.json({ groups: [], error: "Couldn't load the templates of your other products." }, { status: 500 });
+  if (theirs.error || ours.error) return Response.json({ groups: [], error: t("Couldn't load the templates of your other products.") }, { status: 500 });
   const groups = importGroups(products ?? [], theirs.data ?? [], productId, ours.data ?? []);
   return Response.json({ groups });
 }
@@ -180,11 +184,12 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/playgro
   const scoped = await scope(ctx);
   if (isResponse(scoped)) return scoped;
   const { session, productId } = scoped;
+  const { t } = await getTranslator();
 
   if ((request.headers.get("content-type") ?? "").toLowerCase().startsWith("multipart/form-data")) {
     const form = await request.formData().catch(() => null);
-    if (!form) return bad("Couldn't read the upload.");
-    if ((form.get("action") ?? "upload") !== "upload") return bad("Unknown action.");
+    if (!form) return bad(t("Couldn't read the upload."));
+    if ((form.get("action") ?? "upload") !== "upload") return bad(t("Unknown action."));
     return upload(session, productId, form.get("file"));
   }
 
@@ -196,13 +201,14 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/playgro
     case "plan-remake": return planRemake(session, productId, body.templateId, body.provider);
     case "remake": return remake(session, productId, body.templateId, body.confirmedCredits, body.provider, body.confirmedUsd);
     case "import": return importTemplate(session, productId, body.templateId);
-    default: return bad("Unknown action.");
+    default: return bad(t("Unknown action."));
   }
 }
 
 async function addStarter(session: Session, productId: string, starterId: unknown) {
+  const { t } = await getTranslator();
   const style = typeof starterId === "string" ? AD_STYLES.find((s) => s.id === starterId) : undefined;
-  if (!style) return bad("That style isn't in the Style Library.");
+  if (!style) return bad(t("That style isn't in the Style Library."));
   const existing = async () => (await session.supabase.from("product_templates").select(TEMPLATE_COLUMNS).eq("product_id", productId).eq("starter_id", style.id).maybeSingle<TemplateRow>()).data;
   const found = await existing();
   if (found) return Response.json({ template: templateFromRow(found) });
@@ -214,7 +220,7 @@ async function addStarter(session: Session, productId: string, starterId: unknow
     // Added at the same moment from another tab: the unique (product, starter) index kept one.
     const again = error.code === "23505" ? await existing() : null;
     if (again) return Response.json({ template: templateFromRow(again) });
-    return bad(logDbError("template add starter", error, "Couldn't add it. Try again."), 500);
+    return bad(logDbError("template add starter", error, t("Couldn't add it. Try again."), t), 500);
   }
   return Response.json({ template: templateFromRow(data) });
 }
@@ -226,6 +232,7 @@ async function addStarter(session: Session, productId: string, starterId: unknow
  */
 async function importTemplate(session: Session, productId: string, templateId: unknown) {
   if (!isUuid(templateId)) return noTemplate();
+  const { t } = await getTranslator();
   const { supabase } = session;
   // Any product of the person's: the row must be theirs, and its product too.
   const { data: source } = await supabase.from("product_templates").select(TEMPLATE_COLUMNS).eq("id", templateId).eq("user_id", session.user.id).maybeSingle<TemplateRow>();
@@ -233,37 +240,38 @@ async function importTemplate(session: Session, productId: string, templateId: u
   const { data: from } = await supabase.from("products").select("id, name").eq("id", source.product_id).eq("user_id", session.user.id).maybeSingle<{ id: string; name: string }>();
   if (!from) return noTemplate();
   const problem = importProblem(source, productId);
-  if (problem) return bad(problem, 409);
+  if (problem) return bad(t(problem), 409);
   if (source.kind === "starter") return addStarter(session, productId, source.starter_id);
 
   const { data: current } = await supabase.from("product_templates").select(TEMPLATE_COLUMNS).eq("product_id", productId).limit(200).returns<TemplateRow[]>();
   const existing = findImported(source, current ?? []);
   if (existing) return Response.json({ template: (await named(session, [existing]))[0] });
-  if ((current ?? []).filter((r) => r.kind === "custom").length >= MAX_CUSTOM_TEMPLATES) return bad(`This product already has ${MAX_CUSTOM_TEMPLATES} of your own templates. Delete one first.`, 409);
+  if ((current ?? []).filter((r) => r.kind === "custom").length >= MAX_CUSTOM_TEMPLATES) return bad(t("This product already has {n} of your own templates. Delete one first.", { n: MAX_CUSTOM_TEMPLATES }), 409);
 
   const { data, error } = await supabase.from("product_templates").insert(importedRow(source, productId)).select(TEMPLATE_COLUMNS).single<TemplateRow>();
-  if (error || !data) return bad(logDbError("template import", error, "Couldn't import it. Try again."), 500);
+  if (error || !data) return bad(logDbError("template import", error, t("Couldn't import it. Try again."), t), 500);
   return Response.json({ template: templateFromRow(data, new Map([[from.id, from.name]])) });
 }
 
 async function upload(session: Session, productId: string, file: FormDataEntryValue | null) {
-  if (!file || typeof file === "string") return bad("Choose an image to upload.");
+  const { t } = await getTranslator();
+  if (!file || typeof file === "string") return bad(t("Choose an image to upload."));
   const problem = templateUploadProblem(file);
-  if (problem) return bad(problem);
+  if (problem) return bad(t(problem));
   const { supabase } = session;
   const { count } = await supabase.from("product_templates").select("id", { count: "exact", head: true }).eq("product_id", productId).eq("kind", "custom");
-  if ((count ?? 0) >= MAX_CUSTOM_TEMPLATES) return bad(`This product already has ${MAX_CUSTOM_TEMPLATES} uploaded templates. Delete one first.`, 409);
+  if ((count ?? 0) >= MAX_CUSTOM_TEMPLATES) return bad(t("This product already has {n} uploaded templates. Delete one first.", { n: MAX_CUSTOM_TEMPLATES }), 409);
 
   const full = await refuseWhenFull(session, "upload", { fileBytes: file.size });
   if (full) return full;
   const bytes = new Uint8Array(await file.arrayBuffer());
   const sniffed = templateUploadProblem({ type: file.type, size: bytes.byteLength }, bytes.subarray(0, 16));
-  if (sniffed) return bad(sniffed);
+  if (sniffed) return bad(t(sniffed));
   const type = file.type;
   const path = `${session.user.id}/${productId}/playground/templates/${crypto.randomUUID()}.${TEMPLATE_UPLOAD_TYPES[type]}`;
   const bucket = supabase.storage.from(WORKSPACE_BUCKET);
   const { error: uploadError } = await bucket.upload(path, bytes, { contentType: type, upsert: false });
-  if (uploadError) return bad(uploadErrorText(uploadError), 500);
+  if (uploadError) return bad(uploadErrorText(uploadError, undefined, t), 500);
   const sourceUrl = bucket.getPublicUrl(path).data.publicUrl;
 
   const { data: row, error } = await supabase.from("product_templates").insert({
@@ -271,7 +279,7 @@ async function upload(session: Session, productId: string, file: FormDataEntryVa
   }).select(TEMPLATE_COLUMNS).single<TemplateRow>();
   if (error || !row) {
     await bucket.remove([path]);
-    return bad(logDbError("template upload row", error, "Couldn't add it. Try again."), 500);
+    return bad(logDbError("template upload row", error, t("Couldn't add it. Try again."), t), 500);
   }
   return Response.json({ template: templateFromRow(await startAnalysis(session, productId, row)) });
 }
@@ -280,7 +288,7 @@ async function upload(session: Session, productId: string, file: FormDataEntryVa
 async function startAnalysis(session: Session, productId: string, row: TemplateRow): Promise<TemplateRow> {
   const started = await research<{ status?: string; error?: string }>(session, "template-analyze", { productId, templateId: row.id }, 20_000);
   if (started.ok) return (await loadTemplate(session, productId, row.id)) ?? row;
-  const message = String(started.data?.error ?? "Couldn't start reading the image.").slice(0, 400);
+  const message = String(started.data?.error ?? m("Couldn't start reading the image.")).slice(0, 400);
   const { row: failed } = await updateTemplate(session, productId, row.id, { status: "failed", error: message }, { status: "analyzing" });
   return failed ?? (await loadTemplate(session, productId, row.id)) ?? row;
 }
@@ -288,40 +296,43 @@ async function startAnalysis(session: Session, productId: string, row: TemplateR
 async function analyze(session: Session, productId: string, templateId: unknown) {
   const row = await loadTemplate(session, productId, templateId);
   if (!row) return noTemplate();
-  if (row.kind !== "custom" || !isHttpsUrl(row.source_url)) return bad("Only an uploaded ad can be read.");
-  if (row.status === "generating" || row.status === "ready" || row.status === "analyzing") return bad(row.status === "analyzing" ? "It's already being read." : "It's already being made or made.", 409);
+  const { t } = await getTranslator();
+  if (row.kind !== "custom" || !isHttpsUrl(row.source_url)) return bad(t("Only an uploaded ad can be read."));
+  if (row.status === "generating" || row.status === "ready" || row.status === "analyzing") return bad(row.status === "analyzing" ? t("It's already being read.") : t("It's already being made or made."), 409);
   const { row: claimed } = await updateTemplate(session, productId, row.id, { status: "analyzing", error: null }, { status: row.status });
-  if (!claimed) return bad("It changed meanwhile; reload and try again.", 409);
+  if (!claimed) return bad(t("It changed meanwhile; reload and try again."), 409);
   return Response.json({ template: templateFromRow(await startAnalysis(session, productId, claimed)) });
 }
 
 async function planRemake(session: Session, productId: string, templateId: unknown, provider: unknown) {
   const row = await loadTemplate(session, productId, templateId);
   if (!row) return noTemplate();
+  const { t } = await getTranslator();
   const template = templateFromRow(row);
   const problem = remakeProblem(template);
-  if (problem) return bad(problem, 409);
+  if (problem) return bad(t(problem), 409);
   const settings = templateRemakeSettings(template, provider);
   const plan = planTemplateRemake(settings);
-  return Response.json({ credits: plan.credits, usd: plan.usd ?? 0, provider: settings.provider, warnings: plan.warnings, errors: plan.errors, jobs: plan.jobs.length, backend: plan.jobs[0]?.backend ?? "auto", prompt: plan.jobs[0]?.prompt ?? "" });
+  return Response.json({ credits: plan.credits, usd: plan.usd ?? 0, provider: settings.provider, warnings: plan.warnings.map((w) => t(w)), errors: plan.errors.map((e) => t(e)), jobs: plan.jobs.length, backend: plan.jobs[0]?.backend ?? "auto", prompt: plan.jobs[0]?.prompt ?? "" });
 }
 
 async function remake(session: Session, productId: string, templateId: unknown, confirmed: unknown, provider: unknown, confirmedUsd: unknown) {
   // Never spend without the price the person saw and confirmed.
+  const { t } = await getTranslator();
   const confirmedCredits = confirmedCreditsOf(confirmed);
-  if (confirmedCredits === undefined) return bad("Confirm the estimated cost first.");
+  if (confirmedCredits === undefined) return bad(t("Confirm the estimated cost first."));
   const row = await loadTemplate(session, productId, templateId);
   if (!row) return noTemplate();
   const template = templateFromRow(row);
   const problem = remakeProblem(template);
-  if (problem) return bad(problem, 409);
+  if (problem) return bad(t(problem), 409);
 
   // Claim it first, so two clicks can't start two paid remakes.
   const { row: claimed } = await updateTemplate(session, productId, row.id, { status: "generating", error: null }, { status: row.status });
-  if (!claimed) return bad("It changed meanwhile; reload and try again.", 409);
+  if (!claimed) return bad(t("It changed meanwhile; reload and try again."), 409);
   const revert = (error: string | null) => updateTemplate(session, productId, row.id, { status: row.status, error }, { status: "generating" });
   try {
-    const started = await createBatch(session, productId, templateRemakeRequest(templateRemakeSettings(template, provider)), { confirmedCredits, confirmedUsd: confirmedCreditsOf(confirmedUsd) });
+    const started = await createBatch(session, productId, templateRemakeRequest(templateRemakeSettings(template, provider)), { confirmedCredits, confirmedUsd: confirmedCreditsOf(confirmedUsd), t });
     const { row: linked } = await updateTemplate(session, productId, row.id, { batch_id: started.batchId, status: "generating", error: null });
     // An earlier remake that failed made nothing worth keeping: its batch goes.
     if (row.batch_id && row.batch_id !== started.batchId) await removeRemake(session, productId, row.batch_id);
@@ -329,7 +340,7 @@ async function remake(session: Session, productId: string, templateId: unknown, 
   } catch (error) {
     await revert(row.error);
     if (error instanceof BatchError) return Response.json({ error: error.message, credits: error.plan?.credits }, { status: error.status });
-    return bad(logCaught("template remake", error, "Couldn't start. Try again."), 500);
+    return bad(logCaught("template remake", error, t("Couldn't start. Try again."), t), 500);
   }
 }
 
@@ -339,13 +350,14 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/playgr
   if (isResponse(scoped)) return scoped;
   const { session, productId } = scoped;
   const body = await request.json().catch(() => ({}));
-  const cleaned = cleanTemplateName(body?.name);
+  const { t } = await getTranslator();
+  const cleaned = cleanTemplateName(body?.name, t);
   if ("error" in cleaned) return bad(cleaned.error);
   const { name } = cleaned;
   const row = await loadTemplate(session, productId, body?.templateId);
   if (!row) return noTemplate();
   const { row: updated, error } = await updateTemplate(session, productId, row.id, { name });
-  if (error || !updated) return bad(logDbError("template rename", error, "Couldn't rename it. Try again."), 500);
+  if (error || !updated) return bad(logDbError("template rename", error, t("Couldn't rename it. Try again."), t), 500);
   return Response.json({ template: (await named(session, [updated]))[0] });
 }
 
@@ -357,16 +369,17 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/playgr
  */
 async function removeRemake(session: Session, productId: string, batchId: string, keepFiles = false): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const { supabase } = session;
+  const { t } = await getTranslator();
   const { data: batch } = await supabase.from("creative_batches").select("id").eq("id", batchId).eq("product_id", productId).eq("settings->>source", TEMPLATE_SOURCE).maybeSingle();
   if (!batch) return { ok: true };
   await supabase.from("creative_jobs").update({ status: "cancelled" }).eq("batch_id", batch.id).eq("product_id", productId).eq("status", "queued");
   const { count: running } = await supabase.from("creative_jobs").select("id", { count: "exact", head: true }).eq("batch_id", batch.id).in("status", ["running", "finalizing"]);
-  if (running) return { ok: false, error: "It's being made right now; delete it once it's done.", status: 409 };
+  if (running) return { ok: false, error: t("It's being made right now; delete it once it's done."), status: 409 };
   const { data: made } = await supabase.from("creatives").select("id, storage_path, poster_path").eq("batch_id", batch.id).eq("product_id", productId)
     .returns<{ id: string; storage_path: string; poster_path: string | null }[]>();
   if (made?.length) {
     const { error } = await supabase.from("creatives").delete().in("id", made.map((c) => c.id));
-    if (error) return { ok: false, error: logDbError("template delete remake", error, "Couldn't delete the remake. Try again."), status: 500 };
+    if (error) return { ok: false, error: logDbError("template delete remake", error, t("Couldn't delete the remake. Try again."), t), status: 500 };
     const files = made.flatMap((c) => [c.storage_path, c.poster_path]).filter((p): p is string => Boolean(p) && p!.startsWith(`${productId}/`) && !p!.includes(".."));
     if (files.length && !keepFiles) await supabase.storage.from(CREATIVES_BUCKET).remove(files);
   }
@@ -384,6 +397,7 @@ export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/playg
   if (isResponse(scoped)) return scoped;
   const { session, productId } = scoped;
   const { supabase } = session;
+  const { t } = await getTranslator();
   const body = await request.json().catch(() => ({}));
   const row = await loadTemplate(session, productId, body?.templateId);
   if (!row) return noTemplate();
@@ -404,7 +418,7 @@ export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/playg
   }
 
   const { error } = await supabase.from("product_templates").delete().eq("id", row.id).eq("product_id", productId);
-  if (error) return bad(logDbError("template delete", error, "Couldn't delete it. Try again."), 500);
+  if (error) return bad(logDbError("template delete", error, t("Couldn't delete it. Try again."), t), 500);
   const ownFolder = `${session.user.id}/${productId}/playground/templates/`;
   if (remove.source && row.source_path && row.source_path.startsWith(ownFolder) && !row.source_path.includes("..")) await supabase.storage.from(WORKSPACE_BUCKET).remove([row.source_path]);
   return Response.json({ ok: true });

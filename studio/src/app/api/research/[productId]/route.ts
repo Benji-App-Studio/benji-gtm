@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getTranslator } from "@/lib/i18n/server";
 import type { ProjectRow } from "@/lib/db";
 import { ASSET_COLUMNS, type ProductAsset } from "@/lib/product-assets";
 import { competitorSuggestions } from "@/lib/competitors";
@@ -26,6 +27,7 @@ export const maxDuration = 150;
 export async function GET(request: NextRequest, ctx: RouteContext<"/api/research/[productId]">) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const { productId } = await ctx.params;
   // `?adsFrom=N`: just the next slice of ads (the page asks for them after the first answer). The workspace check
   // runs alongside the reads (RLS keeps them to the user's rows) and nothing goes out before it passes.
@@ -33,7 +35,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/research
   if (Number.isInteger(adsFrom) && adsFrom > 0) {
     const [workspace, slice, stored] = await Promise.all([loadWorkspace(productId), adsSlice(session, productId, adsFrom), storedMedia(session, productId)]);
     if (isResponse(workspace)) return workspace;
-    if (slice.error) return dbFailure("research ads slice", slice.error, "Couldn't load more ads. Try again.");
+    if (slice.error) return dbFailure("research ads slice", slice.error, t("Couldn't load more ads. Try again."), 500, {}, t);
     return Response.json({ ads: slice.rows.map((ad) => lean(withStoredMedia(ad, stored))), adsNext: slice.next } satisfies Pick<ResearchData, "ads" | "adsNext">);
   }
 
@@ -55,15 +57,15 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/research
     supabase.from("projects").select("candidates").eq("product_id", productId).eq("type", "competitors").returns<Pick<ProjectRow, "candidates">[]>(),
     supabase.from("products").select("insight").eq("id", productId).maybeSingle<{ insight: ProductInsight | null }>(),
     // Status and media counts are extras: a slow (cold) function doesn't hold the ads up.
-    research<ResearchHealth>(session, "health", undefined, 4000),
+    research<ResearchHealth>(session, "health", undefined, 4000, t),
     storedMedia(session, productId),
-    research<MediaStatus>(session, "media-status", { productId }, 4000),
+    research<MediaStatus>(session, "media-status", { productId }, 4000, t),
     supabase.from("product_assets").select(ASSET_COLUMNS).eq("product_id", productId).eq("hidden", false).order("created_at", { ascending: false }).limit(120).returns<ProductAsset[]>(),
     // The merged brand (lib/server/brand.ts): Recreate prefills from it and checks against every forbidden claim.
     brandFor(session, productId),
   ]);
   if (ads.error && /paid_ads|relation/.test(ads.error.message)) {
-    return Response.json({ error: "Paid-ads research isn't set up in the database yet (migration 20261002300000_paid_ads)." }, { status: 503 });
+    return Response.json({ error: t("Paid-ads research isn't set up in the database yet (migration 20261002300000_paid_ads).") }, { status: 503 });
   }
 
   // The watchlist is the product's one competitor list; suggestions are names not on it yet (analysis
@@ -105,14 +107,15 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/research
 export async function POST(request: NextRequest, ctx: RouteContext<"/api/research/[productId]">) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const { productId } = await ctx.params;
   const input = await request.json().catch(() => ({}));
   const action = String(input?.action ?? "");
   if (action === "decode-new") {
-    const result = await readNewAds(session, productId);
+    const result = await readNewAds(session, productId, t);
     return Response.json(result.data, { status: result.ok ? 200 : result.status });
   }
-  if (!["plan", "pull", "poll", "import", "media-status", "media-clear"].includes(action)) return Response.json({ error: "Unknown action." }, { status: 400 });
+  if (!["plan", "pull", "poll", "import", "media-status", "media-clear"].includes(action)) return Response.json({ error: t("Unknown action.") }, { status: 400 });
   // `watchIds`: collect (or plan) for these competitors only; every followed one without it.
   const watchIds = Array.isArray(input.watchIds) ? input.watchIds.filter((id: unknown) => typeof id === "string").slice(0, 200) : undefined;
   // Collecting saves ads and their media: refused while storage is full (nothing is paid for at Apify).
@@ -125,10 +128,10 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/researc
     : action === "import" ? { productId, payload: input.payload, countries: input.countries, watchId: input.watchId }
     : action === "media-clear" ? { productId, pageId: typeof input.pageId === "string" ? input.pageId : undefined }
     : { productId };
-  const result = await research(session, action, payload, action === "media-clear" ? 140_000 : undefined);
+  const result = await research(session, action, payload, action === "media-clear" ? 140_000 : undefined, t);
   // New ads landed (a pull's free sources, an import, or the last scrape finishing): read them.
   const landed = action === "pull" || action === "import" || (action === "poll" && (result.data as { running?: number }).running === 0);
-  if (result.ok && landed) await readNewAds(session, productId);
+  if (result.ok && landed) await readNewAds(session, productId, t);
   return Response.json(result.data, { status: result.ok ? 200 : result.status });
 }
 

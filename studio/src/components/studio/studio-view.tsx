@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 import { notice } from "../dialog";
 import { StudioSkeleton } from "../page-skeletons";
 import { ErrorNote, Page, SectionHeader } from "../ui";
+import { useT } from "@/lib/i18n/client";
 import { ProductPageHeader } from "../workspace/product-header";
 import { PlaybookTips } from "../playbook-tip";
 import { SendToMeta } from "../launch/send-sheet";
@@ -47,6 +48,7 @@ function ReviewLink({ onReview }: { onReview: (id: string) => void }) {
 }
 
 export function StudioView({ productId }: { productId: string }) {
+  const { t } = useT();
   const url = `/api/studio/${productId}`;
   const [overview, reload] = useCached<StudioOverview & { error?: string }>(url);
   // Realtime rows layered over the cached overview: whichever copy of a row is newer wins.
@@ -72,9 +74,9 @@ export function StudioView({ productId }: { productId: string }) {
     supabase.from("creatives").select(CREATIVE_COLUMNS).eq("id", missing).eq("product_id", productId).maybeSingle<CreativeView>().then(({ data }) => {
       if (data) return setLiveCreatives((live) => ({ ...live, [data.id]: data }));
       setOpenId(null);
-      notice("That creative isn't in this product any more.", "Not found").catch(() => {});
+      notice(t("That creative isn't in this product any more."), t("Not found")).catch(() => {});
     });
-  }, [missing, supabase, productId]);
+  }, [missing, supabase, productId, t]);
 
   const reloadSoon = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleReload = useCallback(() => {
@@ -127,7 +129,7 @@ export function StudioView({ productId }: { productId: string }) {
 
   if (!overview) return <StudioSkeleton />;
   if (!overview.workspace) {
-    return <Page><ProductPageHeader productId={productId} page="Studio" /><ErrorNote>{overview.error ?? "This product doesn't exist."}</ErrorNote></Page>;
+    return <Page><ProductPageHeader productId={productId} page="Studio" /><ErrorNote>{overview.error ?? t("This product doesn't exist.")}</ErrorNote></Page>;
   }
   const { workspace, backend } = overview;
   const approved = creatives.filter((c) => c.approval === "approved").length;
@@ -140,15 +142,15 @@ export function StudioView({ productId }: { productId: string }) {
     <Page>
       <Suspense fallback={null}><ReviewLink onReview={onReview} /></Suspense>
       <ProductPageHeader productId={productId} page="Studio" name={workspace.name}
-        subtitle={`Turn a brief, a winning format or a competitor's ad into UGC videos, image ads and post-style ads. Each creative is checked against the policy; you approve what Launch may use. ${approved} approved so far.`}
+        subtitle={t("Turn a brief, a winning format or a competitor's ad into videos and image ads. Each one is checked against your brand's rules, and only the ones you approve can launch. {n} approved so far.", { n: approved })}
         actions={<CapabilityPills features={features} backend={backend} />} />
       {overview.error && <ErrorNote>{overview.error}</ErrorNote>}
 
       <section className="mb-10">
-        <SectionHeader title="New batch" action={<button type="button" className="rounded-xs text-xs text-muted transition-colors hover:text-ink" onClick={() => setShowForm(!showForm)} aria-expanded={showForm}>{showForm ? "Hide" : "Show"}</button>} />
+        <SectionHeader title={t("New batch")} action={<button type="button" className="rounded-xs text-xs text-muted transition-colors hover:text-ink" onClick={() => setShowForm(!showForm)} aria-expanded={showForm}>{showForm ? t("Hide") : t("Show")}</button>} />
         {showForm && (
           <details className="group mb-3 text-xs">
-            <summary className="w-fit cursor-pointer list-none text-muted hover:text-ink">Tips for a batch that tests well <span aria-hidden className="inline-block transition-transform group-open:rotate-90">›</span></summary>
+            <summary className="w-fit cursor-pointer list-none text-muted hover:text-ink">{t("Tips for a batch that tests well")} <span aria-hidden className="inline-block transition-transform group-open:rotate-90">›</span></summary>
             <PlaybookTips ids={["different-concepts", "variations-vs-concepts", "hook-and-sound-off", "creative-is-targeting"]} className="mt-2" />
           </details>
         )}
@@ -160,12 +162,12 @@ export function StudioView({ productId }: { productId: string }) {
       </section>
 
       <section className="mb-10">
-        <SectionHeader title="Jobs" />
+        <SectionHeader title={t("Jobs")} />
         <JobList batches={overview.batches} jobs={jobs} features={features} onChanged={() => { reload().catch(() => {}); }} launchableByBatch={launchableByBatch} onSendToMeta={setSendIds} />
       </section>
 
       <section>
-        <SectionHeader title="Creatives" />
+        <SectionHeader title={t("Creatives")} />
         <PlaybookTips ids={["fatigue"]} className="mb-3" />
         <CreativeGallery productId={productId} features={features} creatives={creatives} batches={overview.batches} playgroundBatchIds={batchIds.playground} openId={openId} onOpen={setOpenId}
           waiting={waiting} failures={failures} onRetryWork={retryWork} onChanged={() => { reload().catch(() => {}); }} onSendToMeta={setSendIds} />

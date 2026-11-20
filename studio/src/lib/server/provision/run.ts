@@ -29,6 +29,8 @@ export interface ProvisionInput {
   owner?: { email: string; password: string };
   /** The address the app runs on, e.g. http://localhost:3000. */
   appOrigin?: string;
+  /** Where a deployed copy is reachable from the internet; left out, read from the environment. */
+  publicOrigin?: string | null;
   functions?: readonly string[];
   workspaceName?: string;
 }
@@ -111,7 +113,7 @@ export async function provision(input: ProvisionInput, deps: ProvisionDeps, onEv
     owner: async () => {
       if (!input.owner) { emit({ step: "owner", status: "skipped", message: "No account details were given, so no account was created." }); return; }
       const { plan: detected } = await needProject(false);
-      const owner = await createOwner(api, await projectClient(), ref, { ...input.owner, appOrigin, limits: limitsFor(detected), workspaceName: input.workspaceName }, emit);
+      const owner = await createOwner(api, await projectClient(), ref, { ...input.owner, appOrigin, ...(input.publicOrigin !== undefined ? { publicOrigin: input.publicOrigin } : {}), limits: limitsFor(detected), workspaceName: input.workspaceName }, emit);
       result.ownerUserId = owner.userId;
     },
     storage: async () => {

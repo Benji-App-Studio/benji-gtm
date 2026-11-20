@@ -23,7 +23,7 @@ export const isAllowed = (email: string | null | undefined, raw: string | undefi
  * neither may not; `legacy` (an install with no owner) falls back to the email list.
  */
 export const mayMeasure = (role: InstallRole, email: string | null | undefined, raw: string | undefined) =>
-  role === "legacy" ? isAllowed(email, raw) : role === "owner" || role === "member";
+  role === "legacy" ? isAllowed(email, raw) : role === "owner" || role === "member" || role === "account";
 
 /**
  * The owners (user ids) whose workspaces the scheduled sync may pull. With `roleOf`, the install's
@@ -49,4 +49,24 @@ export async function allowedOwners(
     if (isAllowed(email, raw)) out.add(id);
   }
   return out;
+}
+
+/** How many workspaces one scheduled sync pulls (each pulls up to three sources), so a run stays inside the time limit. */
+export const SYNC_PAGE = 50;
+
+/**
+ * The next page of workspaces for the scheduled sync: those never synced first, then the ones whose
+ * newest sync (any source, measure_sync.synced_at) is oldest; ties by id. Each run's syncs write new
+ * times, so successive runs move on through every workspace.
+ */
+export function nextPage<T extends { id: string }>(rows: T[], synced: { product_id: string; synced_at: string | null }[], size = SYNC_PAGE): T[] {
+  const newest = new Map<string, string>();
+  for (const s of synced) {
+    if (!s.synced_at) continue;
+    const seen = newest.get(s.product_id);
+    if (!seen || s.synced_at > seen) newest.set(s.product_id, s.synced_at);
+  }
+  return [...rows]
+    .sort((a, b) => (newest.get(a.id) ?? "").localeCompare(newest.get(b.id) ?? "") || a.id.localeCompare(b.id))
+    .slice(0, Math.max(0, size));
 }

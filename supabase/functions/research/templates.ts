@@ -56,7 +56,7 @@ export const TEMPLATE_SYSTEM = [
   "group: social (looks like an organic post, chat, notes app, comment or story), proof (built on stats, reviews, ratings, before/after or badges), or hero (the product itself is the focus).",
   "The next four say what the format is for, so someone can tell whether it suits their product before using it. Be honest and specific; never a brand.",
   "bestFor: one sentence on the products this format suits best and why (e.g. \"Physical products with a price advantage over a premium rival: dupes, generics, value brands.\").",
-  `angle: the persuasion mechanism in a few words, lower case; one of ${TEMPLATE_ANGLES.map((a) => `"${a}"`).join(", ")} when one fits.`,
+  `angle: the persuasion mechanism in a few words, lower case; one of ${TEMPLATE_ANGLES.map((a) => `"${a}"`).join(", ")} when one fits, written exactly as listed (in English, whatever language the rest is in).`,
   "fits: the product kinds it suits best, 1 to 3 of physical (a physical product), app (an app or software), service (a service), offer (promo- or discount-led: the deal is the message). Only those the format really works for as it is.",
   "adaptTip: one sentence on adapting it to a product kind it doesn't naturally fit (e.g. \"For an app, replace the product shots with two phone screens and compare plans instead of prices.\").",
 ].join("\n");

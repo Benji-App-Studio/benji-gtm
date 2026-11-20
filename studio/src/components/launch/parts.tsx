@@ -1,5 +1,6 @@
 "use client";
 import type { ReactNode } from "react";
+import { formatMoney } from "@/lib/i18n/format";
 
 /** Draft statuses that are still on their way to Meta. */
 export const IN_PROGRESS = new Set(["queued", "processing", "creating"]);
@@ -20,10 +21,9 @@ export function Section({ id, title, hint, action, children }: { id?: string; ti
   );
 }
 
-export function money(n: number | null | undefined, currency = "USD") {
-  if (n == null || !Number.isFinite(n)) return "–";
-  try { return new Intl.NumberFormat("en", { style: "currency", currency, maximumFractionDigits: n < 100 ? 2 : 0 }).format(n); }
-  catch { return `${Math.round(n)} ${currency}`; }
+/** An amount in the currency; pass the translator's `intl` for the page's locale (English otherwise). */
+export function money(n: number | null | undefined, currency = "USD", intl = "en") {
+  return formatMoney(intl, n, currency);
 }
 
 /** Posts JSON and returns the answer, throwing the server's error message. */

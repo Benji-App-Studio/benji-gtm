@@ -4,6 +4,7 @@
 // page, which shows a full-window overlay while a file is dragged over it. Both hand the files to the
 // page, which runs them through the same import as the file picker.
 import { useEffect, useEffectEvent, useId, useRef, useState, type DragEvent as ReactDragEvent } from "react";
+import { useT } from "@/lib/i18n/client";
 import { IconUpload } from "../icons";
 import { PanelPortal } from "../panel-portal";
 import { cx, Spinner } from "../ui";
@@ -32,11 +33,12 @@ export interface DropMessage { tone: "error" | "note"; text: string }
  * The visible drop zone: a button that opens the file picker (click, Enter or Space), and takes a file
  * dropped on it. Highlights while a file is dragged over it.
  */
-export function ScrapeDropZone({ onFiles, onChoose, busy, busyText = "Importing…", message, ours = false }: {
+export function ScrapeDropZone({ onFiles, onChoose, busy, busyText, message, ours = false }: {
   onFiles: (files: File[]) => void; onChoose: () => void; busy: boolean; busyText?: string; message: DropMessage | null;
   /** On the "Our ads" side the files are our own Pages', not competitors'. */
   ours?: boolean;
 }) {
+  const { t } = useT();
   const [over, setOver] = useState(false);
   const depth = useRef(0);
   const id = useId();
@@ -68,9 +70,9 @@ export function ScrapeDropZone({ onFiles, onChoose, busy, busyText = "Importing�
         </span>
         <span className="min-w-0">
           <span id={`${id}-title`} className="block text-ink">
-            {busy ? busyText : over ? "Drop to import" : <>Drop ads files here, or <span className="font-medium text-accent">choose files</span></>}
+            {busy ? (busyText ?? t("Importing…")) : over ? t("Drop to import") : <>{t("Drop ads files here, or")} <span className="font-medium text-accent">{t("choose files")}</span></>}
           </span>
-          <span id={`${id}-hint`} className="block text-xs text-muted">The .json files the Ad Library extension saves: one per {ours ? "Page" : "competitor"}, as many as you like at once.</span>
+          <span id={`${id}-hint`} className="block text-xs text-muted">{ours ? t("The .json files the Ad Library extension saves: one per Page, as many as you like at once.") : t("The .json files the Ad Library extension saves: one per competitor, as many as you like at once.")}</span>
         </span>
       </button>
       {/* Importing saves the ads' images and videos: at 95% of storage, say so first (the import's own check leaves out what won't fit). */}
@@ -153,6 +155,7 @@ export function usePageFileDrop({ enabled, onFiles }: { enabled: boolean; onFile
 
 /** The full-window target while a file is dragged over the page. It doesn't take pointer events, so the drop lands on the page below. */
 export function PageDropOverlay({ shown }: { shown: boolean }) {
+  const { t } = useT();
   if (!shown) return null;
   return (
     <PanelPortal modal={false}>
@@ -161,8 +164,8 @@ export function PageDropOverlay({ shown }: { shown: boolean }) {
           <div className="flex items-center gap-3 rounded-card border border-line bg-raised px-4 py-3 shadow-pop">
             <span className="grid size-6 place-items-center rounded-md bg-accent-soft text-accent"><IconUpload className="size-3.5" /></span>
             <span>
-              <span className="block text-sm font-medium text-ink">Drop to import ads</span>
-              <span className="block text-xs text-muted">One or many .json files the Ad Library extension saved</span>
+              <span className="block text-sm font-medium text-ink">{t("Drop to import ads")}</span>
+              <span className="block text-xs text-muted">{t("One or many .json files the Ad Library extension saved")}</span>
             </span>
           </div>
         </div>

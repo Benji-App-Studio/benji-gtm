@@ -1,3 +1,4 @@
+import { getTranslator } from "@/lib/i18n/server";
 import type { NextRequest } from "next/server";
 import type { RunRow } from "@/lib/db";
 import { isResponse, requireUser } from "@/lib/server/auth";
@@ -9,7 +10,7 @@ export async function GET(_request: NextRequest, ctx: RouteContext<"/api/runs/[i
   if (isResponse(session)) return session;
   const { id } = await ctx.params;
   const { data: run } = await session.supabase.from("runs").select("*").eq("id", id).maybeSingle<RunRow>();
-  if (!run) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!run) return Response.json({ error: (await getTranslator()).t("That wasn't found. Reload the page and try again.") }, { status: 404 });
   const { data: saved } = run.status === "done" ? await session.supabase.from("run_reports").select("report").eq("run_id", id).maybeSingle() : { data: null };
   return Response.json({ ...run, report: saved?.report ?? null }, { headers: { "Cache-Control": "no-store" } });
 }
@@ -20,8 +21,8 @@ export async function DELETE(_request: NextRequest, ctx: RouteContext<"/api/runs
   if (isResponse(session)) return session;
   const { id } = await ctx.params;
   const { data: run } = await session.supabase.from("runs").select("id, status").eq("id", id).maybeSingle();
-  if (!run) return Response.json({ error: "Not found" }, { status: 404 });
-  if (run.status === "running") return Response.json({ error: "This run is still going. Stop it first." }, { status: 409 });
+  if (!run) return Response.json({ error: (await getTranslator()).t("That wasn't found. Reload the page and try again.") }, { status: 404 });
+  if (run.status === "running") return Response.json({ error: (await getTranslator()).t("This run is still going. Stop it first.") }, { status: 409 });
   const deleted = await radar(session, "delete-run", { runId: id });
   if (!deleted.ok) return Response.json({ error: deleted.data.error ?? "Couldn't delete the run." }, { status: deleted.status });
   const folder = `${session.user.id}/${id}`;

@@ -4,6 +4,7 @@ import { ASSET_COLUMNS, type ProductAsset } from "@/lib/product-assets";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { brandFor } from "@/lib/server/brand";
 import { zip, type ZipEntry } from "@/lib/zip";
+import { getTranslator } from "@/lib/i18n/server";
 
 const MAX_FILE = 15 * 1024 * 1024;
 const MAX_TOTAL = 60 * 1024 * 1024;
@@ -18,9 +19,10 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
 export async function GET(_request: NextRequest, ctx: RouteContext<"/api/products/[id]/brand-kit">) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const { id } = await ctx.params;
   const { data: product } = await session.supabase.from("products").select("id, name").eq("id", id).maybeSingle<{ id: string; name: string }>();
-  if (!product) return Response.json({ error: "This app doesn't exist." }, { status: 404 });
+  if (!product) return Response.json({ error: t("This app doesn't exist.") }, { status: 404 });
   const [merged, assets] = await Promise.all([
     brandFor(session, id),
     session.supabase.from("product_assets").select(ASSET_COLUMNS).eq("product_id", id).eq("hidden", false).in("kind", ["logo", "app_screen"]).limit(20).returns<ProductAsset[]>(),

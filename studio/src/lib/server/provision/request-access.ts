@@ -3,7 +3,10 @@ import "server-only";
 // share: where the app's files are and how the local config is written.
 import { getInstallConfig, projectRef, writeInstallConfig } from "@/lib/install/config";
 import { isLocalMode, startedLocalOnly } from "@/lib/install/local-auth";
+import { accountsMode } from "@/lib/install/mode";
+import type { InstallState } from "@/lib/install/types";
 import { isResponse, requireUser } from "@/lib/server/auth";
+import { callFunction } from "@/lib/server/functions";
 import { appOriginOf, decideSetupAccess, isLocalRequest, type RequestOrigin } from "./guard";
 import { isProjectRef } from "./management-api";
 import { findRepoRoot, nodeFiles } from "./node-files";
@@ -48,15 +51,21 @@ export async function setupCaller(request: Request): Promise<SetupCaller | Respo
   const config = getInstallConfig();
   let signedIn = false;
   let role: string | null = null;
+  let accounts: { staff: boolean } | undefined;
   if (config) {
     const session = await requireUser();
     if (!isResponse(session)) {
       signedIn = true;
       const { data } = await session.supabase.from("install_members").select("role").eq("user_id", session.user.id).maybeSingle<{ role: string }>();
       role = data?.role ?? null;
+      // Accounts mode: staff only, whatever install_members says (as /setup itself: lib/install/setup-access.ts).
+      if (await accountsMode(config)) {
+        const capabilities = await callFunction<InstallState>("install", session, "capabilities");
+        accounts = { staff: capabilities.ok && Boolean(capabilities.data.plan?.staff) };
+      }
     }
   }
-  const access = decideSetupAccess({ configured: Boolean(config), local, signedIn, role });
+  const access = decideSetupAccess({ configured: Boolean(config), local, signedIn, role, accounts });
   if (!access.allowed) return refuse(access.status, access.reason);
   return { mode: access.mode, appOrigin: local ? appOriginOf(from) : null, connectedRef: config ? projectRef(config.supabaseUrl) : null };
 }

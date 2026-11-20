@@ -1,3 +1,4 @@
+import { getTranslator } from "@/lib/i18n/server";
 import { writeStoredOwner } from "@/lib/install/config";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { changeOwnPassword } from "@/lib/server/owner-flows";
@@ -10,11 +11,12 @@ import { NO_STORE, localModeRequest, refuse } from "@/lib/server/provision/reque
 export async function POST(request: Request) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   // Browsers send Origin on this POST: it must be this app, so another site can't change the password.
   const origin = request.headers.get("origin");
   const host = request.headers.get("host");
   if (origin && host) {
-    try { if (new URL(origin).host !== host) return refuse(403, "Open Settings in the app and try again."); } catch { return refuse(403, "Open Settings in the app and try again."); }
+    try { if (new URL(origin).host !== host) return refuse(403, t("Open Settings in the app and try again.")); } catch { return refuse(403, t("Open Settings in the app and try again.")); }
   }
   const body = (await request.json().catch(() => null)) as { password?: unknown } | null;
   const password = typeof body?.password === "string" ? body.password : "";

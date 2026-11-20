@@ -1,14 +1,32 @@
 import type { Metadata } from "next";
-import { ProductForm } from "@/components/product-form";
+import { OnboardingFlow, type OnboardingDraft } from "@/components/onboarding/onboarding-flow";
+import { getTranslator } from "@/lib/i18n/server";
+import { readUiState } from "@/lib/server/ui-state";
+import { createClient } from "@/lib/supabase/server";
+import { DRAFT_KEY } from "@/lib/ui-state";
 
-export const metadata: Metadata = { title: "Set up your first app" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("Set up your first app") };
+}
 
-export default function Onboarding() {
-  return (
-    <div className="px-4 pt-8 pb-10 sm:px-12 sm:pt-12">
-      <h1 className="text-display font-semibold">Tell us about your product</h1>
-      <p className="mt-1 mb-8 max-w-xl text-sm text-muted">This becomes your first app&apos;s profile. Every competitor search and analysis starts from it, and you can change it any time.</p>
-      <ProductForm />
-    </div>
-  );
+/**
+ * The first run in three steps (components/onboarding). The app an earlier visit of this first run saved
+ * (profiles.ui_state "onboarding.draft") picks up at the key step; before that column exists, the
+ * person's own first app does. The layout sends anyone who has finished to their apps.
+ */
+export default async function Onboarding() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  let draft: OnboardingDraft | null = null;
+  if (user) {
+    const { state, stored } = await readUiState({ supabase, user });
+    const query = supabase.from("products").select("id, name, website, links").eq("user_id", user.id);
+    const { data } = stored
+      ? (state[DRAFT_KEY] ? await query.eq("id", state[DRAFT_KEY]).limit(1) : { data: null })
+      : await query.order("created_at").limit(1);
+    const row = data?.[0];
+    if (row) draft = { id: row.id, name: row.name, link: (row.links as string[] | null)?.[0] ?? row.website ?? "" };
+  }
+  return <OnboardingFlow draft={draft} />;
 }

@@ -3,12 +3,14 @@
 // the zip and chrome-extension/manifest.json carries the name and version (a test keeps all of them in step).
 export const EXTENSION_NAME = "Ad Library Collector";
 /** The version in the zip (chrome-extension/manifest.json). */
-export const EXTENSION_VERSION = "0.5.1";
+export const EXTENSION_VERSION = "0.6.0";
 /** The folder the zip unpacks to: the one to choose in Chrome's "Load unpacked". */
 export const EXTENSION_FOLDER = "ad-library-extension";
 export const EXTENSION_ZIP_NAME = `${EXTENSION_FOLDER}.zip`;
 /** The download link (a file in studio/public/downloads). */
 export const EXTENSION_ZIP = `/downloads/${EXTENSION_ZIP_NAME}`;
+/** The same zip with this dashboard's address already in it (app/api/extension/route.ts): Research's "Get ads" panel links here. */
+export const EXTENSION_ZIP_PERSONAL = "/api/extension";
 /** Collected files land in ~/Downloads/<this>/. */
 export const EXTENSION_DOWNLOADS_FOLDER = "Ad Library";
 /** The step-by-step guide (Settings → Ad Library extension). */

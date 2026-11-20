@@ -1,19 +1,16 @@
-"use client";
-import { useRouter } from "next/navigation";
-import { ProductForm } from "@/components/product-form";
-import { columnClass, Page, PageHeader } from "@/components/ui";
-import { refresh } from "@/lib/client-cache";
-import { workspaceHref } from "@/lib/workspace-schema";
+import type { Metadata } from "next";
+import { NewAppFlow } from "@/components/onboarding/new-app";
+import { getTranslator } from "@/lib/i18n/server";
 
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("New app") };
+}
+
+/**
+ * New app: the same three steps as the first run (app link, AI key when none is connected, competitors),
+ * after a check of the plan's app limit. The full profile is on the new app's App settings › Profile.
+ */
 export default function NewProduct() {
-  const router = useRouter();
-  return (
-    <Page className={columnClass}>
-      <PageHeader crumbs={[{ label: "Home", href: "/app" }, { label: "New app" }]} title="Add an app"
-        subtitle="Each app keeps its own profile, brand, competitors and creatives. You can change every answer later." />
-      {/* Lands on the new app's Home (its setup list and next step), like the first app does. `replace`, so Back
-          doesn't return to an empty copy of this form; the sidebar's list of apps is refreshed on the way. */}
-      <ProductForm onDone={(row) => { refresh("/api/products").catch(() => {}); refresh("/api/workspaces").catch(() => {}); router.replace(workspaceHref(row.id)); }} />
-    </Page>
-  );
+  return <NewAppFlow />;
 }

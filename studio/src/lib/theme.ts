@@ -10,7 +10,8 @@ export type Theme = (typeof THEMES)[number];
  * (lib/storage-keys.ts), which also finds a choice saved under the cookie's earlier name.
  */
 export const THEME_COOKIE = THEME_KEY;
-export const DEFAULT_THEME: Theme = "light";
+// A visitor who hasn't chosen follows the OS (light or dark); a saved choice always wins.
+export const DEFAULT_THEME: Theme = "system";
 
 export const parseTheme = (value: string | null | undefined): Theme =>
   THEMES.includes(value as Theme) ? (value as Theme) : DEFAULT_THEME;

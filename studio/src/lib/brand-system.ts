@@ -17,6 +17,7 @@
 //   that copy may cite), positioning.
 // Filled by "Import a brand guide" (lib/brand-import.ts reads a pasted guide, a file or a brand folder) or by
 // hand on the Brand page. Pure TypeScript: the browser, the server and the Node tests share it.
+import { m } from "./i18n/translate";
 
 export interface BrandAvatar {
   id: string;
@@ -46,10 +47,10 @@ export interface FactSource {
   verifiedAt?: string;
 }
 export const FACT_SOURCE_KINDS: { id: FactSourceKind; label: string }[] = [
-  { id: "live_ad", label: "Live ad" },
+  { id: "live_ad", label: m("Live ad") },
   { id: "app_store", label: "App Store" },
-  { id: "website", label: "Website" },
-  { id: "manual", label: "Our own records" },
+  { id: "website", label: m("Website") },
+  { id: "manual", label: m("Our own records") },
 ];
 
 /** A verified number or statement a creative may show as written ("App Store rating": "4.9★ · 13,000+ ratings"). */

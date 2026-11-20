@@ -3,6 +3,7 @@
 import type { ApprovedCreative } from "@/lib/creatives";
 import type { Suggestion, Thresholds } from "./promotion";
 import type { ScalingAdvice } from "./scaling";
+import { m } from "../i18n/translate";
 
 export type Objective = "app_promotion" | "website_traffic";
 
@@ -113,19 +114,19 @@ export interface LaunchOverview {
 
 export const CTA_OPTIONS: Record<Objective, { value: string; label: string }[]> = {
   app_promotion: [
-    { value: "INSTALL_MOBILE_APP", label: "Install now" },
-    { value: "DOWNLOAD", label: "Download" },
-    { value: "USE_APP", label: "Use app" },
-    { value: "SIGN_UP", label: "Sign up" },
-    { value: "SUBSCRIBE", label: "Subscribe" },
-    { value: "LEARN_MORE", label: "Learn more" },
+    { value: "INSTALL_MOBILE_APP", label: m("Install now") },
+    { value: "DOWNLOAD", label: m("Download") },
+    { value: "USE_APP", label: m("Use app") },
+    { value: "SIGN_UP", label: m("Sign up") },
+    { value: "SUBSCRIBE", label: m("Subscribe") },
+    { value: "LEARN_MORE", label: m("Learn more") },
   ],
   website_traffic: [
-    { value: "LEARN_MORE", label: "Learn more" },
-    { value: "SIGN_UP", label: "Sign up" },
-    { value: "DOWNLOAD", label: "Download" },
-    { value: "SUBSCRIBE", label: "Subscribe" },
-    { value: "GET_OFFER", label: "Get offer" },
+    { value: "LEARN_MORE", label: m("Learn more") },
+    { value: "SIGN_UP", label: m("Sign up") },
+    { value: "DOWNLOAD", label: m("Download") },
+    { value: "SUBSCRIBE", label: m("Subscribe") },
+    { value: "GET_OFFER", label: m("Get offer") },
   ],
 };
 

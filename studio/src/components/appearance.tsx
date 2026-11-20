@@ -2,13 +2,15 @@
 // Appearance: Light / Dark / System. Applies at once by swapping data-theme on <html> (every colour
 // is a CSS variable), and remembers the choice in a cookie and localStorage.
 import { useSyncExternalStore } from "react";
+import { useT } from "@/lib/i18n/client";
+import { m } from "@/lib/i18n/translate";
 import { applyTheme, parseTheme, type Theme } from "@/lib/theme";
 import { Segmented } from "./ui";
 
 export const THEME_OPTIONS: { value: Theme; label: string }[] = [
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-  { value: "system", label: "System" },
+  { value: "light", label: m("Light") },
+  { value: "dark", label: m("Dark") },
+  { value: "system", label: m("System") },
 ];
 
 // The current choice is read from <html data-theme> itself, so it stays right even when a page comes
@@ -26,6 +28,7 @@ export function useTheme(initial?: Theme): Theme | undefined {
 }
 
 export function Appearance({ initial }: { initial: Theme }) {
+  const { t } = useT();
   const theme = useTheme(initial) ?? initial;
-  return <Segmented label="Theme" options={THEME_OPTIONS} value={theme} onChange={applyTheme} />;
+  return <Segmented label={t("Theme")} options={THEME_OPTIONS.map((option) => ({ value: option.value, label: t(option.label) }))} value={theme} onChange={applyTheme} />;
 }

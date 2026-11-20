@@ -50,7 +50,7 @@ You need:
 
 ### Part 3: Paste both into Benji GTM
 
-8. In Benji GTM, open **Settings > API keys**.
+8. In Benji GTM, open **Settings > Your keys**.
 9. Find **TikTok research client key**, click **Add**, paste the client key and click **Save and
    check**. It says it's waiting for the secret. That's expected.
 10. Find **TikTok research client secret**, click **Add**, paste the client secret and click **Save

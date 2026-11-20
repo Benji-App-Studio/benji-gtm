@@ -4,6 +4,7 @@
 import type { Post, Report } from "../types";
 import { FAMILIES, familyOf, HOOK_PATTERN } from "./families";
 import type { Beat, CardPlatform, FormatCard, Line, Medium, PaidAd, PaidAdSeedRow, Winner } from "./types";
+import { m } from "../i18n/translate";
 
 const NO_FORMAT = "no_clear_format";
 /** A post must score at least this to count as a winner (the report's 0–100 best-content score). */
@@ -76,11 +77,13 @@ export function winnersFromPaidAds(ads: PaidAd[]): Winner[] {
 
 /** Paid-ad format names (the research engine's AD_FORMATS), for seeds that only carry the id. */
 const AD_FORMAT_NAME: Record<string, string> = {
-  hook_demo: "hook + app/product demo", static_benefit: "static image: benefit headline", reddit_style: "Reddit-style post",
-  tweet_style: "tweet-style screenshot", ai_ugc: "AI / actor UGC", before_after: "before / after", us_vs_them: "us vs them comparison",
-  quiz_funnel: "quiz / result reveal", testimonial_review: "reviews / social proof", green_screen: "green screen over proof",
-  founder_story: "founder / expert to camera",
+  hook_demo: m("hook + app/product demo"), static_benefit: m("static image: benefit headline"), reddit_style: m("Reddit-style post"),
+  tweet_style: m("tweet-style screenshot"), ai_ugc: m("AI / actor UGC"), before_after: m("before / after"), us_vs_them: m("us vs them comparison"),
+  quiz_funnel: m("quiz / result reveal"), testimonial_review: m("reviews / social proof"), green_screen: m("green screen over proof"),
+  founder_story: m("founder / expert to camera"),
 };
+/** The format names above (our own m()-marked labels): a screen translates a card's formatName only when it is one of these. */
+export const AD_FORMAT_NAMES: ReadonlySet<string> = new Set(Object.values(AD_FORMAT_NAME));
 
 /**
  * Ads someone sent to the library from Research → Ads (`paid_ads` rows with `sent_to_library_at`),

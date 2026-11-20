@@ -94,10 +94,11 @@ export function openAiImageUsd(o: { aspect: string; resolution: string; quality:
   return Math.round(usd * 10_000) / 10_000;
 }
 
-/** "$0.05", "$0.006", "$1.20". */
-export function fmtUsd(usd: number): string {
-  if (!Number.isFinite(usd) || usd <= 0) return "$0";
-  return usd >= 0.1 ? `$${usd.toFixed(2)}` : `$${usd.toFixed(usd >= 0.01 ? 3 : 4).replace(/0+$/, "")}`;
+/** "$0.05", "$0.006", "$1.20" ("US$0.05" in Chinese and Korean when given the translator's `intl`). */
+export function fmtUsd(usd: number, intl = "en-US"): string {
+  const money = (n: number, decimals: number) => new Intl.NumberFormat(intl, { style: "currency", currency: "USD", minimumFractionDigits: Math.min(2, decimals), maximumFractionDigits: decimals }).format(n);
+  if (!Number.isFinite(usd) || usd <= 0) return money(0, 0);
+  return money(usd, usd >= 0.1 ? 2 : usd >= 0.01 ? 3 : 4);
 }
 
 const fmtCredits = (n: number) => (n % 1 === 0 ? String(n) : n.toFixed(2));

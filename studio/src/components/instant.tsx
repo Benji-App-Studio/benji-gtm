@@ -1,18 +1,17 @@
 "use client";
-// The main views (dashboard, accounts, campaigns) switch in the browser: the link
+// The views that read only the client cache (All apps, All analyses, one analysis) switch in the browser: the link
 // updates the URL with the History API (which Next.js keeps in sync) and the view renders straight
 // from the client cache, so switching never waits on the server.
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, type ComponentProps, type MouseEvent, type ReactNode } from "react";
-import { Dashboard } from "./dashboard";
-import { WorkflowPage } from "./project-list";
+import { AllApps } from "./all-apps";
+import { AllAnalyses } from "./social-posts";
 import { ProjectView } from "./project-view";
 
 const VIEWS: Record<string, () => ReactNode> = {
-  "/app": () => <Dashboard />,
-  "/app/accounts": () => <WorkflowPage type="account" />,
-  "/app/campaigns": () => <WorkflowPage type="campaign" />,
+  "/app/apps": () => <AllApps />,
+  "/app/analyses": () => <AllAnalyses />,
 };
 
 const PROJECT = /^\/app\/p\/([0-9a-f-]{36})$/;

@@ -13,14 +13,16 @@
 //
 // Apple's endpoints are free and keyless (market_core.ts says what each gives). Calls are spaced out,
 // batched (100 ids per lookup) and retried with a pause on 403/429/503. Google Play has no free
-// official API: its reviews come from one Apify actor, only with the install's Apify token.
+// official API: its reviews come from one Apify actor, only with the caller's Apify token. Keys, settings and
+// limits are the caller's tenant's (_shared/tenant.ts): the install's, or in accounts mode the account's own.
 // The studio reads the tables itself (row-level security); these routes write them with the service role.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { HttpError } from "../_shared/auth.ts";
 import { keyRefusal } from "../_shared/ai/judge.ts";
 import { modelOverrides, resolveModels } from "../_shared/ai/models.ts";
 import { addKeyMessage } from "../_shared/keys.ts";
-import { resolveLimits, withinWallClock } from "../_shared/limits.ts";
+import { savedLocale, toUiLocale, withLanguage } from "../_shared/language.ts";
+import { type InstallLimits, withinWallClock } from "../_shared/limits.ts";
 import {
   bestMatch, CHART_KINDS, CHART_SUMMARY_SCHEMA, CHART_SUMMARY_SYSTEM, chartPrompt, chartUrl, chunks, cleanChartSummary, cleanCountry, cleanGenre,
   cleanSummary, LOOKUP_BATCH, lookupBundleUrl, lookupUrl, mergeReviews, nameKey, parseChart, parseFindInput, parseLookup, parseReviewPage, PLAY_ACTOR, playActorInput,
@@ -28,11 +30,17 @@ import {
   type ChartKind, type MarketReview, type StoreApp, type Store,
 } from "./market_core.ts";
 
+/** What Market needs of a user's tenant (_shared/tenant.ts Tenant fits). */
+export interface MarketTenant {
+  keys: { get(name: string): Promise<string | undefined> };
+  settings?: Record<string, unknown>;
+  limits: Pick<InstallLimits, "wallClockSec">;
+}
+
 export interface MarketDeps {
   db: SupabaseClient;
-  keys: { get(name: string): Promise<string | undefined> };
-  install: () => Promise<{ settings?: Record<string, unknown> } | null>;
-  env?: (name: string) => string | undefined;
+  /** The keys, settings and limits the user's work runs with. */
+  tenant: (userId: string) => Promise<MarketTenant>;
   fetch?: typeof fetch;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
@@ -60,7 +68,6 @@ export function createMarket(deps: MarketDeps) {
   const doFetch = deps.fetch ?? fetch;
   const now = deps.now ?? (() => new Date());
   const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
-  const env = deps.env ?? ((name: string) => Deno.env.get(name));
   const paceMs = deps.paceMs ?? 300;
   let lastApple = 0;
 
@@ -135,7 +142,7 @@ export function createMarket(deps: MarketDeps) {
     return data;
   }
 
-  const limits = async () => resolveLimits(await deps.install(), env);
+  const keysOf = async (user: string) => (await deps.tenant(user)).keys;
 
   // MARK: Routes
 
@@ -159,7 +166,7 @@ export function createMarket(deps: MarketDeps) {
     const tracked = await trackedIds(p.id);
     return {
       country,
-      play: find.kind === "google_play" ? { pkg: find.pkg, available: Boolean(await deps.keys.get("APIFY_TOKEN")) } : null,
+      play: find.kind === "google_play" ? { pkg: find.pkg, available: Boolean(await (await keysOf(user)).get("APIFY_TOKEN")) } : null,
       results: results.map((app) => ({ ...publicApp(app), trackedId: tracked.get(`${app.store}:${app.storeId}`) ?? null })),
     };
   }
@@ -211,7 +218,7 @@ export function createMarket(deps: MarketDeps) {
       if (!app) throw bad("The App Store doesn't list this app in that country. Check the link, or pick another country.");
       row = appColumns(app);
     } else {
-      if (!(await deps.keys.get("APIFY_TOKEN"))) throw bad(`Google Play reviews are read through Apify. ${addKeyMessage("APIFY_TOKEN")}`);
+      if (!(await (await keysOf(user)).get("APIFY_TOKEN"))) throw bad(`Google Play reviews are read through Apify. ${addKeyMessage("APIFY_TOKEN")}`);
       const name = typeof input.name === "string" && input.name.trim() ? input.name.trim().slice(0, 200) : competitor ?? storeId;
       row = appColumns(playApp(storeId, name));
     }
@@ -239,7 +246,8 @@ export function createMarket(deps: MarketDeps) {
   /** Reads one tracked app again: its listing, its newest reviews, today's snapshot and the releases they show. */
   async function refreshRow(app: AppRow) {
     const startedAt = Date.now();
-    const wall = (await limits()).wallClockSec * 1000;
+    const tenant = await deps.tenant(app.user_id);
+    const wall = tenant.limits.wallClockSec * 1000;
     const deadline = startedAt + Math.max(20_000, wall / 2);
     const today = now();
     let listing: StoreApp | null = null;
@@ -251,9 +259,9 @@ export function createMarket(deps: MarketDeps) {
       if (!listing) note = "The App Store no longer lists this app here. Its reviews are kept.";
       reviews = await appStoreReviews(app.store_id, app.country, deadline);
     } else {
-      const token = await deps.keys.get("APIFY_TOKEN");
+      const token = await tenant.keys.get("APIFY_TOKEN");
       if (!token) throw bad(`Google Play reviews are read through Apify. ${addKeyMessage("APIFY_TOKEN")}`);
-      const seconds = Math.max(30, Math.floor(withinWallClock(await limits(), 120_000, Date.now() - startedAt) / 1000) - 5);
+      const seconds = Math.max(30, Math.floor(withinWallClock(tenant.limits, 120_000, Date.now() - startedAt) / 1000) - 5);
       const response = await doFetch(`https://api.apify.com/v2/acts/${PLAY_ACTOR}/run-sync-get-dataset-items?timeout=${seconds}&maxItems=150`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -355,7 +363,7 @@ export function createMarket(deps: MarketDeps) {
     if (reviews.length < MIN_REVIEWS_TO_SUMMARIZE) throw bad(`Only ${reviews.length} review${reviews.length === 1 ? "" : "s"} so far: too few to summarize. Refresh the app first, or try one with more reviews.`);
     const prompt = reviewPrompt({ name: app.name, store: app.store }, reviews);
     const read = reviews.slice(0, prompt.used);
-    const { answer, model } = await ask(REVIEW_SUMMARY_SYSTEM, prompt.text, REVIEW_SUMMARY_SCHEMA, "review_summary", startedAt);
+    const { answer, model } = await ask(user, REVIEW_SUMMARY_SYSTEM, prompt.text, REVIEW_SUMMARY_SCHEMA, "review_summary", startedAt, input.locale);
     const result = cleanSummary(answer, read);
     const row = { user_id: p.user_id, product_id: p.id, app_id: app.id, kind: "app", scope: app.id, summary: result, review_count: read.length, model, created_at: now().toISOString() };
     const { error: saveError } = await db.from("market_summaries").upsert(row, { onConflict: "product_id,kind,scope" });
@@ -366,11 +374,11 @@ export function createMarket(deps: MarketDeps) {
   async function chartSummary(user: string, input: Record<string, unknown>) {
     const startedAt = Date.now();
     const p = await product(user, input.productId);
-    if (!(await deps.keys.get("OPENAI_API_KEY"))) throw bad(`The AI summary needs an OpenAI key. ${addKeyMessage("OPENAI_API_KEY")}`);
+    if (!(await (await keysOf(user)).get("OPENAI_API_KEY"))) throw bad(`The AI summary needs an OpenAI key. ${addKeyMessage("OPENAI_API_KEY")}`);
     const chart = await readChart({ ...input, limit: 50 });
     if (!chart.rows.length) throw bad("This chart came back empty. Try another category or country.");
     const text = chartPrompt({ kind: chart.kind, genreName: chart.genreName, country: chart.country }, chart.rows, chart.descriptions);
-    const { answer, model } = await ask(CHART_SUMMARY_SYSTEM, text, CHART_SUMMARY_SCHEMA, "chart_summary", startedAt);
+    const { answer, model } = await ask(user, CHART_SUMMARY_SYSTEM, text, CHART_SUMMARY_SCHEMA, "chart_summary", startedAt, input.locale);
     const result = cleanChartSummary(answer, chart.rows.map((r) => r.name));
     const scope = `${chart.kind}:${chart.genre ?? "all"}:${chart.country}`;
     const { error } = await db.from("market_summaries").upsert({
@@ -382,18 +390,20 @@ export function createMarket(deps: MarketDeps) {
 
   // MARK: OpenAI
 
-  async function ask(system: string, text: string, schema: unknown, name: string, startedAt: number): Promise<{ answer: Record<string, any>; model: string }> {
-    const key = await deps.keys.get("OPENAI_API_KEY");
+  /** `locale`: the request's language (the studio's header, put in the input by index.ts), else the account's saved one. */
+  async function ask(user: string, system: string, text: string, schema: unknown, name: string, startedAt: number, locale?: unknown): Promise<{ answer: Record<string, any>; model: string }> {
+    const tenant = await deps.tenant(user);
+    const language = toUiLocale(locale) ?? await savedLocale(db, user);
+    const key = await tenant.keys.get("OPENAI_API_KEY");
     if (!key) throw bad(`The AI summary needs an OpenAI key. ${addKeyMessage("OPENAI_API_KEY")}`);
-    const install = await deps.install();
-    const model = resolveModels(install?.settings?.models, await modelOverrides(deps.keys)).text;
-    const timeout = withinWallClock(resolveLimits(install, env), 180_000, Date.now() - startedAt);
+    const model = resolveModels(tenant.settings?.models, await modelOverrides(tenant.keys)).text;
+    const timeout = withinWallClock(tenant.limits, 180_000, Date.now() - startedAt);
     const response = await doFetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model, reasoning: { effort: "low" },
-        input: [{ role: "system", content: system }, { role: "user", content: [{ type: "input_text", text }] }],
+        input: [{ role: "system", content: withLanguage(system, language) }, { role: "user", content: [{ type: "input_text", text }] }],
         text: { format: { type: "json_schema", name, strict: true, schema } },
       }),
       signal: AbortSignal.timeout(timeout),

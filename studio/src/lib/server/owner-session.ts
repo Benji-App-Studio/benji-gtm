@@ -7,7 +7,7 @@ import { classifySignInError, isLocalMode, startedLocalOnly, type SignInErrorLik
 import { createClient } from "@/lib/supabase/server";
 
 /** Signs in through the server client, so the session cookies are set on this response. */
-export async function serverSignIn(email: string, password: string): Promise<{ ok: true } | { ok: false; error: SignInErrorLike; reason: "signin" | "unreachable" }> {
+export async function serverSignIn(email: string, password: string): Promise<{ ok: true } | { ok: false; error: SignInErrorLike; reason: "signin" | "unreachable" | "captcha" }> {
   try {
     const supabase = await createClient();
     const { error } = await supabase.auth.signInWithPassword({ email, password });

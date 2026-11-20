@@ -8,6 +8,7 @@ import { brandFor } from "@/lib/server/brand";
 import { loadWorkspace } from "@/lib/server/workspaces";
 import { readImageProvider } from "@/lib/server/image-provider";
 import { readOpenAiImagePlan } from "@/lib/image-provider";
+import { getTranslator } from "@/lib/i18n/server";
 
 /**
  * Batches other features own (lib/studio-sources.ts): the Playground's jobs and template remakes stay out of
@@ -25,10 +26,11 @@ const withoutOtherBatch = <T extends { other_batch?: unknown }>(rows: T[] | null
 
 /** Everything the studio page shows: the workspace, recent batches, jobs, creatives, and pickers. */
 export async function GET(_request: NextRequest, ctx: RouteContext<"/api/studio/[productId]">) {
+  const { t } = await getTranslator();
   const session = await requireUser();
   if (isResponse(session)) return session;
   const { productId } = await ctx.params;
-  if (!/^[0-9a-f-]{36}$/i.test(productId)) return Response.json({ error: "This workspace doesn't exist." }, { status: 404 });
+  if (!/^[0-9a-f-]{36}$/i.test(productId)) return Response.json({ error: t("This workspace doesn't exist.") }, { status: 404 });
   const workspace = await loadWorkspace(productId);
   if (isResponse(workspace)) return workspace;
   const { supabase } = session;
@@ -70,7 +72,7 @@ export async function GET(_request: NextRequest, ctx: RouteContext<"/api/studio/
       wallClockSec: typeof health.data.wallClockSec === "number" && Number.isFinite(health.data.wallClockSec) ? health.data.wallClockSec : null,
       openaiImagePlan: readOpenAiImagePlan(health.data.openaiImagePlan, health.data.wallClockSec),
     } : null,
-    ...(jobs.error ? { error: "The creative studio's tables aren't in the database yet (migration 20261002500000)." } : {}),
+    ...(jobs.error ? { error: t("The creative studio's tables aren't in the database yet (migration 20261002500000).") } : {}),
   };
   return Response.json(body);
 }

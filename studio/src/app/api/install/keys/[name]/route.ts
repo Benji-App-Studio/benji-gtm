@@ -1,3 +1,4 @@
+import { getTranslator } from "@/lib/i18n/server";
 import type { NextRequest } from "next/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { callFunction, relay } from "@/lib/server/functions";
@@ -9,7 +10,7 @@ export async function PUT(request: NextRequest, ctx: RouteContext<"/api/install/
   if (isResponse(session)) return session;
   const { name } = await ctx.params;
   const body = (await request.json().catch(() => null)) as { value?: unknown } | null;
-  if (typeof body?.value !== "string" || !body.value.trim()) return Response.json({ error: "Paste the key first." }, { status: 400 });
+  if (typeof body?.value !== "string" || !body.value.trim()) return Response.json({ error: (await getTranslator()).t("Paste the key first.") }, { status: 400 });
   return relay(await callFunction<{ key: KeyState }>("install", session, "keys/put", { body: { name, value: body.value }, timeoutMs: 45_000 }));
 }
 

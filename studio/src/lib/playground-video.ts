@@ -4,14 +4,16 @@
 // often blocks innocent clips (a face being washed at a sink came back "nsfw"); the words that tend to
 // trip it are a bathroom setting, water "dripping", someone "leaning over", and "body".
 
+import { m } from "./i18n/translate";
+
 /** What a blocked video's card says. */
-export const SAFETY_BLOCK_MESSAGE =
-  "The model's safety filter blocked this (often a false positive). Try: name a setting other than 'bathroom' (e.g. vanity sink, skincare routine), say the person is fully dressed, frame from the shoulders up, avoid words like 'dripping', 'leans over', 'body'.";
+export const SAFETY_BLOCK_MESSAGE = m(
+  "The model's safety filter blocked this (often a false positive). Try: name a setting other than 'bathroom' (e.g. vanity sink, skincare routine), say the person is fully dressed, frame from the shoulders up, avoid words like 'dripping', 'leans over', 'body'.");
 
 /** The tips under the prompt field in video mode. */
 export const VIDEO_PROMPT_TIPS = [
-  "If the camera is a phone propped up, describe the camera position ('low static camera on the counter, looking up') rather than saying 'phone' — otherwise the model may also draw a phone in the scene.",
-  "Credits are refunded when a generation is blocked.",
+  m("If the camera is a phone propped up, describe the camera position ('low static camera on the counter, looking up') rather than saying 'phone' — otherwise the model may also draw a phone in the scene."),
+  m("Credits are refunded when a generation is blocked."),
 ];
 
 /**

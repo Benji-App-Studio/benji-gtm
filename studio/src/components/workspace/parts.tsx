@@ -1,6 +1,7 @@
 "use client";
 // Small pieces the workspace pages share: the app icon, a connection's status, the workspace data.
 import { useCached } from "@/lib/client-cache";
+import { useT } from "@/lib/i18n/client";
 import type { ConnectionStatus, WorkspaceView } from "@/lib/workspace-schema";
 import { Badge, cx } from "../ui";
 
@@ -20,9 +21,10 @@ export function WorkspaceIcon({ name, url, className }: { name: string; url?: st
 }
 
 export function ConnectionBadge({ status }: { status: ConnectionStatus }) {
-  if (status.state === "verified") return <Badge tone="win">Verified</Badge>;
-  if (status.state === "set") return status.failed ? <Badge tone="warn">Check failed</Badge> : <Badge tone="accent">Set</Badge>;
-  return <Badge>Not set</Badge>;
+  const { t } = useT();
+  if (status.state === "verified") return <Badge tone="win">{t("Verified")}</Badge>;
+  if (status.state === "set") return status.failed ? <Badge tone="warn">{t("Check failed")}</Badge> : <Badge tone="accent">{t("Set")}</Badge>;
+  return <Badge>{t("Not set")}</Badge>;
 }
 
 /** A dot for compact lists: green verified, accent set, faint not set. */

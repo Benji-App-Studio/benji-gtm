@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getTranslator } from "@/lib/i18n/server";
 import { daysRunning, PAID_AD_COLUMNS, type PaidAdRow } from "@/lib/research";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { listCards, resolveProduct } from "@/lib/server/formats";
@@ -19,23 +20,24 @@ export const maxDuration = 150;
 export async function POST(request: NextRequest, ctx: RouteContext<"/api/research/ads/[adId]">) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const { adId } = await ctx.params;
   const input = await request.json().catch(() => ({}));
   const action = String(input?.action ?? "");
   if (action === "decode") {
-    const result = await research(session, "decode", { adId });
+    const result = await research(session, "decode", { adId }, undefined, t);
     return Response.json(result.data, { status: result.ok ? 200 : result.status });
   }
   if (action === "scan") {
     // Video ads: key frames the browser took from the stored copy (lib/video-frames.ts) and the video's length.
     const frames = Array.isArray(input?.frames) ? input.frames.slice(0, 10) : undefined;
     const duration = typeof input?.duration === "number" ? input.duration : undefined;
-    const result = await research(session, "scan", { adId, force: input?.force === true, frames, duration }, 140_000);
+    const result = await research(session, "scan", { adId, force: input?.force === true, frames, duration }, 140_000, t);
     return Response.json(result.data, { status: result.ok ? 200 : result.status });
   }
   if (action === "send") {
     const { data: ad } = await session.supabase.from("paid_ads").select(`${PAID_AD_COLUMNS.replace(", decode_error", "")}, library_seed`).eq("id", adId).maybeSingle<PaidAdRow & { library_seed: unknown }>();
-    if (!ad) return Response.json({ error: "Not found" }, { status: 404 });
+    if (!ad) return Response.json({ error: t("Not found") }, { status: 404 });
     // Without a decode the seed is the ad's own facts; a decode adds the format, hook and structure.
     const seed = ad.library_seed ?? {
       kind: "paid_ad", adId: ad.ad_id, network: ad.network, competitor: ad.competitor ?? ad.page_name,
@@ -45,13 +47,13 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/researc
     };
     const sentAt = new Date().toISOString();
     const { error } = await session.supabase.from("paid_ads").update({ library_seed: seed, sent_to_library_at: sentAt }).eq("id", adId);
-    if (error) return dbFailure("research ad send-to-library", error, "Couldn't send the ad to the library. Try again.", 400);
+    if (error) return dbFailure("research ad send-to-library", error, t("Couldn't send the ad to the library. Try again."), 400, {}, t);
     // The library keeps its cards once built, so rebuild them now or the ad wouldn't appear in Formats.
     const product = await resolveProduct(session, ad.product_id);
     const rebuilt = product ? await listCards(session, product, { rebuild: true }).then(() => true, () => false) : false;
     return Response.json({ sent: true, sentAt, seed, rebuilt });
   }
-  return Response.json({ error: "Unknown action." }, { status: 400 });
+  return Response.json({ error: t("Unknown action.") }, { status: 400 });
 }
 
 /**
@@ -61,9 +63,10 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/researc
 export async function DELETE(_request: NextRequest, ctx: RouteContext<"/api/research/ads/[adId]">) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const { adId } = await ctx.params;
   const { data, error } = await session.supabase.from("paid_ads").update({ hidden: true }).eq("id", adId).select("id");
-  if (error) return dbFailure("research ad hide", error, "Couldn't hide the ad. Try again.", 400);
-  if (!data?.length) return Response.json({ error: "Not found" }, { status: 404 });
+  if (error) return dbFailure("research ad hide", error, t("Couldn't hide the ad. Try again."), 400, {}, t);
+  if (!data?.length) return Response.json({ error: t("Not found") }, { status: 404 });
   return Response.json({ hidden: true, deleted: true });
 }

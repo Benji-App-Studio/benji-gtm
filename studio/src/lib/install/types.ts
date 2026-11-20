@@ -2,7 +2,10 @@
 // The `install` edge function answers this (route `capabilities`); the studio relays it at GET /api/install.
 // Never contains a key's value.
 
-export type InstallRole = "owner" | "member" | "legacy";
+/** `account`: accounts mode, where every signed-in account is its own (its own keys, settings and storage). */
+export type InstallRole = "owner" | "member" | "legacy" | "account";
+/** accounts: separate accounts (public sign-up). install: an owner and members. legacy: neither. */
+export type InstallMode = "accounts" | "install" | "legacy";
 export type AiProvider = "openai" | "typesafe";
 export type KeyStatus = "ok" | "failed" | "unverified";
 
@@ -14,8 +17,22 @@ export interface KeyState {
   status: KeyStatus;
   /** Why the last check failed, in plain words. */
   message: string | null;
-  /** `env`: set as an edge function secret on the project (it can't be changed from the app). */
-  source: "vault" | "env" | null;
+  /**
+   * `env`: set as an edge function secret on the project (it can't be changed from the app).
+   * `platform`: accounts mode, a staff account without its own key uses the platform's.
+   */
+  source: "vault" | "env" | "platform" | null;
+}
+
+/** Accounts mode: the caller's plan, what it allows and what is used of it. */
+export interface PlanState {
+  id: string;
+  name: string;
+  staff: boolean;
+  limits: { maxApps: number; storageGb: number; monthlyGenerations: number; jobConcurrency: number; maxOpenJobs: number };
+  usage: { apps: number; storageBytes: number; generationsThisMonth: number };
+  /** Staff only: the whole project's storage against its safety net (platform.settings.safetyStorageGb). */
+  platform?: { usedBytes: number; safetyBytes: number };
 }
 
 export interface InstallModels { text: string; vision: string; transcribe: string; image: string }
@@ -28,6 +45,10 @@ export interface InstallResearch {
 
 export interface InstallState {
   role: InstallRole;
+  /** Absent on an older backend (install or legacy, told apart by `owned`). */
+  mode?: InstallMode;
+  /** Accounts mode only: the caller's plan and usage. */
+  plan?: PlanState | null;
   /** False on an install from before setup existed: no owner, keys come from the environment. */
   owned: boolean;
   name: string | null;
@@ -59,3 +80,7 @@ export interface InstallMember { userId: string; email: string | null; role: "ow
 export const EMPTY_KEY: KeyState = { set: false, last4: null, verifiedAt: null, status: "unverified", message: null, source: null };
 export const keyState = (install: InstallState | null | undefined, name: string): KeyState => install?.keys[name] ?? EMPTY_KEY;
 export const hasKey = (install: InstallState | null | undefined, name: string): boolean => keyState(install, name).set;
+/** True on a database that hosts separate accounts (each signed-in person manages their own keys). */
+export const isAccountsMode = (install: InstallState | null | undefined): boolean => install?.mode === "accounts";
+/** Accounts mode, our own staff (top limits, may use the platform's keys). */
+export const isStaff = (install: InstallState | null | undefined): boolean => Boolean(install?.plan?.staff);

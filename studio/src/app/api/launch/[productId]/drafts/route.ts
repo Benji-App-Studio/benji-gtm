@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getTranslator } from "@/lib/i18n/server";
 import { DRAFT_COLUMNS } from "@/lib/launch/types";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { launch } from "@/lib/server/launch";
@@ -24,7 +25,10 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/launch/
   const { productId } = await ctx.params;
   const body = await request.json().catch(() => ({}));
   const picks = Array.isArray(body.items) ? (body.items as { creativeId?: unknown; primaryText?: unknown; headline?: unknown; description?: unknown; cta?: unknown; aiDisclosure?: unknown }[]) : [];
-  if (!picks.length) return Response.json({ error: "Pick at least one creative." }, { status: 400 });
+  if (!picks.length) {
+    const { t } = await getTranslator();
+    return Response.json({ error: t("Pick at least one creative.") }, { status: 400 });
+  }
   const text = (v: unknown) => (typeof v === "string" ? v : undefined);
   const items = picks.map((pick) => ({
     creativeId: String(pick?.creativeId ?? ""), primaryText: text(pick?.primaryText), headline: text(pick?.headline), description: text(pick?.description), cta: text(pick?.cta),

@@ -1,18 +1,28 @@
 "use client";
-// The command menu (⌘K, or the search button): type to jump to a page, an app, one of an app's pages,
-// a settings page or an analysis, or to run a small action (new app, switch theme). ↑ ↓ move, Enter
-// runs, Escape closes. Open it from anywhere with openCommandMenu().
+// The command menu (⌘K, or the search button): type to jump to an app, one of its pages or tabs, a
+// settings page or an analysis, or to run a small action (new app, switch theme, help). ↑ ↓ move, Enter
+// runs, Escape closes. Open it from anywhere with openCommandMenu(). It follows the sidebar's structure
+// (lib/nav-model.ts) and still answers to the old page names (Market, Playground, Brand, Accounts…),
+// in English whatever the language.
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { preloadProject, useCached } from "@/lib/client-cache";
+import { useT } from "@/lib/i18n/client";
+import { useInstall } from "@/lib/install/use-install";
+import {
+  ALL_APPS_HREF, ANALYSES_HREF, APP_SECTIONS, APP_SETTINGS_TABS, appHref, appSettingsHref, commandMatches, destinationKeywords, guideHref, NEW_APP_HREF,
+  newAnalysisHref, RESEARCH_TABS, researchHref, STUDIO_TABS, studioHref,
+} from "@/lib/nav-model";
 import { applyTheme } from "@/lib/theme";
-import { WORKSPACE_MODULES, workspaceHref } from "@/lib/workspace-schema";
 import { THEME_OPTIONS } from "../appearance";
 import { useLayer } from "../layers";
-import { IconChart, IconHome, IconLayers, IconMegaphone, IconMonitor, IconMoon, IconPlus, IconSearch, IconSettings, IconSun, IconUser } from "../icons";
+import { IconChart, IconGrid, IconHelp, IconLayers, IconMonitor, IconMoon, IconPlus, IconSearch, IconSettings, IconSparkles, IconSun } from "../icons";
 import type { ProjectSummary } from "../project-list";
-import { appSettingsHref, SETTINGS_PAGES } from "../settings/pages";
+import { visibleSettingsPages } from "../settings/pages";
+import { useSettingsLabels } from "../settings/settings-nav";
 import { cx, Kbd } from "../ui";
+import { openHelp } from "./help-panel";
+import { useNavLabels } from "./nav-labels";
 import { useWorkspaces, WorkspaceMark } from "./workspaces";
 
 // MARK: Open state, shared by the button, the shortcut and the menu itself
@@ -40,11 +50,15 @@ export function CommandMenu() {
 }
 
 const THEME_ICONS = { light: <IconSun />, dark: <IconMoon />, system: <IconMonitor /> };
-const THEME_COMMAND = { light: "Use the light theme", dark: "Use the dark theme", system: "Match the device's theme" };
 
 function CommandDialog() {
+  const { t, locale } = useT();
+  const kw = useCallback((key: string) => destinationKeywords(key, locale), [locale]);
   const router = useRouter();
-  const { products } = useWorkspaces();
+  const labels = useNavLabels();
+  const settingsLabels = useSettingsLabels();
+  const { products, id: currentId } = useWorkspaces();
+  const { install } = useInstall();
   const [projectList] = useCached<ProjectSummary[]>("/api/projects");
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
@@ -57,28 +71,44 @@ function CommandDialog() {
 
   const commands = useMemo<Command[]>(() => {
     const apps = products ?? [];
-    const modules = WORKSPACE_MODULES.filter((m) => !m.hidden);
+    // The app being worked on comes first, so its pages are the short list's.
+    const ordered = [...apps].sort((a, b) => Number(b.id === currentId) - Number(a.id === currentId));
     const projects = Array.isArray(projectList) ? projectList : [];
+    const themeCommand = { light: t("Use the light theme"), dark: t("Use the dark theme"), system: t("Match the device's theme") };
+    const goTo = t("Go to");
+    const appCommands = ordered.flatMap((app, i) => {
+      const mark = <WorkspaceMark name={app.name} />;
+      const group = apps.length > 1 ? app.name : goTo;
+      // Only the current app's main pages show before a search; everything else is found by typing.
+      const deep = i > 0;
+      return [
+        ...APP_SECTIONS.map((section) => ({ id: `${app.id}-${section}`, group, label: labels.section[section], icon: mark, href: appHref(app.id, section), keywords: `${app.name} ${kw(section)}`, deep })),
+        ...RESEARCH_TABS.map((tab) => ({ id: `${app.id}-research-${tab}`, group, label: labels.research[tab], hint: `${labels.section.research}`, icon: mark, href: researchHref(app.id, tab), keywords: `${app.name} ${kw(`research:${tab}`)}`, deep: true })),
+        ...STUDIO_TABS.map((tab) => ({ id: `${app.id}-studio-${tab}`, group, label: labels.studio[tab], hint: `${labels.section.studio}`, icon: mark, href: studioHref(app.id, tab), keywords: `${app.name} ${kw(`studio:${tab}`)}`, deep: true })),
+        { id: `${app.id}-launch-ads`, group, label: t("Ads and results"), hint: `${labels.section.launch}`, icon: mark, href: `${appHref(app.id, "launch")}/ads`, keywords: `${app.name} ${kw("launch:ads")}`, deep: true },
+        ...APP_SETTINGS_TABS.map((tab) => ({ id: `${app.id}-settings-${tab}`, group, label: labels.appSettings[tab], hint: `${labels.section.settings}`, icon: mark, href: appSettingsHref(app.id, tab), keywords: `${app.name} ${kw(`settings:${tab}`)}`, deep: true })),
+      ];
+    });
     return [
-      { id: "home", group: "Go to", label: "Home", icon: <IconHome />, href: "/app" },
-      { id: "accounts", group: "Go to", label: "Accounts", icon: <IconUser />, href: "/app/accounts" },
-      { id: "campaigns", group: "Go to", label: "Campaigns", icon: <IconMegaphone />, href: "/app/campaigns" },
-      { id: "new-analysis", group: "Go to", label: "New analysis", icon: <IconPlus />, href: "/app/new", keywords: "create start competitor" },
-      ...apps.map((app) => ({ id: `app-${app.id}`, group: "Apps", label: app.name, hint: "Home", icon: <WorkspaceMark name={app.name} />, href: workspaceHref(app.id), keywords: "app" })),
-      ...apps.flatMap((app) => modules.map((m) => ({ id: `app-${app.id}-${m.key}`, group: "Apps", label: m.label, hint: app.name, icon: <WorkspaceMark name={app.name} />, href: workspaceHref(app.id, m.key), keywords: app.name, deep: true }))),
-      ...SETTINGS_PAGES.map((page) => ({ id: `settings-${page.key}`, group: "Settings", label: page.label, hint: "Settings", icon: <IconSettings />, href: page.href, keywords: "settings preferences" })),
-      ...apps.map((app) => ({ id: `settings-app-${app.id}`, group: "Settings", label: `${app.name} connections`, hint: "Settings", icon: <IconSettings />, href: appSettingsHref(app.id), keywords: "settings meta revenuecat appstack storage delete", deep: true })),
-      { id: "new-app", group: "Actions", label: "New app", icon: <IconLayers />, href: "/app/product/new", keywords: "create add product" },
-      ...THEME_OPTIONS.map((option) => ({ id: `theme-${option.value}`, group: "Actions", label: THEME_COMMAND[option.value], icon: THEME_ICONS[option.value], run: () => applyTheme(option.value), keywords: "appearance theme mode" })),
-      ...projects.map((p) => ({ id: `analysis-${p.id}`, group: "Analyses", label: p.name, icon: <IconChart />, href: `/app/p/${p.id}`, projectId: p.id, keywords: "analysis report", deep: true })),
+      ...appCommands,
+      { id: "all-apps", group: goTo, label: labels.allApps, icon: <IconGrid />, href: ALL_APPS_HREF, keywords: kw("all-apps") },
+      { id: "analyses", group: goTo, label: labels.analyses, icon: <IconChart />, href: ANALYSES_HREF, keywords: kw("analyses") },
+      ...visibleSettingsPages(install).map((page) => ({ id: `settings-${page.key}`, group: t("Settings"), label: settingsLabels.page[page.key], hint: t("Settings"), icon: <IconSettings />, href: page.href,
+        // The old names too: "API keys" is Your keys now, "General" holds the plan.
+        keywords: `settings preferences ${page.label} ${page.key === "keys" ? "api keys tokens" : page.key === "general" ? "general plan usage billing" : page.key === "language" ? "language locale translate" : ""}`, deep: true })),
+      { id: "new-app", group: t("Actions"), label: t("New app"), icon: <IconLayers />, href: NEW_APP_HREF, keywords: kw("new-app") },
+      { id: "new-analysis", group: t("Actions"), label: t("New analysis of social posts"), icon: <IconPlus />, href: newAnalysisHref(currentId), keywords: kw("new-analysis"), deep: true },
+      { id: "guide", group: t("Actions"), label: t("Get started"), icon: <IconSparkles />, href: guideHref(currentId), keywords: kw("guide"), deep: true },
+      { id: "help", group: t("Actions"), label: t("Help"), icon: <IconHelp />, run: openHelp, keywords: kw("help"), deep: true },
+      ...THEME_OPTIONS.map((option) => ({ id: `theme-${option.value}`, group: t("Actions"), label: themeCommand[option.value], icon: THEME_ICONS[option.value], run: () => applyTheme(option.value), keywords: "appearance theme mode", deep: true })),
+      ...projects.map((p) => ({ id: `analysis-${p.id}`, group: t("Analyses"), label: p.name, icon: <IconChart />, href: `/app/p/${p.id}`, projectId: p.id, keywords: "analysis report social posts", deep: true })),
     ];
-  }, [products, projectList]);
+  }, [products, currentId, projectList, install, labels, settingsLabels, t, kw]);
 
-  // Nothing typed: the short list. Typing searches everything (each word must appear in the label or its keywords).
+  // Nothing typed: the short list. Typing searches everything (each word must appear in the label, hint or keywords).
   const results = useMemo(() => {
-    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    if (!words.length) return commands.filter((c) => !c.deep);
-    return commands.filter((c) => { const text = `${c.label} ${c.hint ?? ""} ${c.keywords ?? ""} ${c.group}`.toLowerCase(); return words.every((w) => text.includes(w)); }).slice(0, 40);
+    if (!query.trim()) return commands.filter((c) => !c.deep);
+    return commands.filter((c) => commandMatches(c, query)).slice(0, 40);
   }, [commands, query]);
   const active = Math.min(index, Math.max(0, results.length - 1));
 
@@ -94,10 +124,10 @@ function CommandDialog() {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center bg-scrim/25 px-3 pt-[12vh] max-sm:pt-3" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
-      <div ref={boxRef} role="dialog" aria-modal="true" aria-label="Search and commands" className="page-in flex max-h-[min(460px,calc(100dvh-24px))] w-full max-w-[560px] flex-col overflow-hidden rounded-dialog border border-hairline bg-raised shadow-pop">
+      <div ref={boxRef} role="dialog" aria-modal="true" aria-label={t("Search and commands")} className="page-in flex max-h-[min(460px,calc(100dvh-24px))] w-full max-w-[560px] flex-col overflow-hidden rounded-dialog border border-hairline bg-raised shadow-pop">
         <div className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-4">
           <IconSearch className="size-3.5 shrink-0 text-muted" />
-          <input autoFocus value={query} aria-label="Search pages, apps and analyses" placeholder="Search pages, apps and analyses" role="combobox" aria-expanded aria-controls={`${id}-list`} aria-autocomplete="list"
+          <input autoFocus value={query} aria-label={t("Search pages, apps and analyses")} placeholder={t("Search pages, apps and analyses")} role="combobox" aria-expanded aria-controls={`${id}-list`} aria-autocomplete="list"
             aria-activedescendant={results[active] ? `${id}-${results[active].id}` : undefined}
             onChange={(event) => { setQuery(event.target.value); setIndex(0); }}
             onKeyDown={(event) => {
@@ -113,23 +143,23 @@ function CommandDialog() {
             className="h-full min-w-0 flex-1 bg-transparent text-lg text-ink outline-none placeholder:text-faint" />
           <Kbd>Esc</Kbd>
         </div>
-        <div ref={listRef} id={`${id}-list`} role="listbox" aria-label="Results" className="min-h-0 flex-1 overflow-y-auto p-1.5">
-          {results.length === 0 && <p className="px-2 py-6 text-center text-sm text-muted">Nothing matches &ldquo;{query.trim()}&rdquo;.</p>}
+        <div ref={listRef} id={`${id}-list`} role="listbox" aria-label={t("Results")} className="min-h-0 flex-1 overflow-y-auto p-1.5">
+          {results.length === 0 && <p className="px-2 py-6 text-center text-sm text-muted">{t("Nothing matches “{query}”.", { query: query.trim() })}</p>}
           {results.map((command, i) => (
             <div key={command.id}>
-              {(i === 0 || results[i - 1].group !== command.group) && <p className={cx("px-2 pb-1 text-xs text-muted", i === 0 ? "pt-1" : "pt-2.5")}>{command.group}</p>}
+              {(i === 0 || results[i - 1].group !== command.group) && <p className={cx("truncate px-2 pb-1 text-xs text-muted", i === 0 ? "pt-1" : "pt-2.5")}>{command.group}</p>}
               <div id={`${id}-${command.id}`} role="option" aria-selected={i === active} onMouseMove={() => { if (i !== active) setIndex(i); }} onMouseDown={(event) => event.preventDefault()} onClick={() => run(command)}
                 className={cx("flex h-9 cursor-default items-center gap-2.5 rounded-control px-2 text-sm", i === active ? "bg-active text-ink" : "text-label")}>
                 <span className="grid size-[18px] shrink-0 place-items-center text-muted [&>svg]:size-3.5">{command.icon}</span>
                 <span className="min-w-0 flex-1 truncate">{command.label}</span>
-                {command.hint && <span className="shrink-0 truncate text-xs text-faint">{command.hint}</span>}
+                {command.hint && <span className="max-w-[45%] min-w-0 truncate text-xs text-faint">{command.hint}</span>}
               </div>
             </div>
           ))}
         </div>
         <div className="flex h-8 shrink-0 items-center gap-3 border-t border-line px-3 text-xs text-faint max-sm:hidden">
-          <span className="flex items-center gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd>to move</span>
-          <span className="flex items-center gap-1"><Kbd>↵</Kbd>to open</span>
+          <span className="flex items-center gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd>{t("to move")}</span>
+          <span className="flex items-center gap-1"><Kbd>↵</Kbd>{t("to open")}</span>
         </div>
       </div>
     </div>

@@ -6,7 +6,7 @@ import { productsIn, type BrandSystem } from "@/lib/brand-system";
 import { competitorNames, CREATIVES_BUCKET } from "@/lib/creatives";
 import { brandRules } from "@/lib/brand-rules";
 import { cleanAwareness } from "@/lib/awareness";
-import { cleanMustAvoid, planBatch, qaContext, qaV2Context, requestFromJob, type BatchRequest, type CreativeJobInput, type Plan, type PostCopy } from "@/lib/creative-plan";
+import { cleanMustAvoid, planBatch, qaContext, qaV2Context, requestFromJob, type BatchRequest, type CreativeJobInput, type Plan, type PlanWords, type PostCopy } from "@/lib/creative-plan";
 import type { ProductProfile } from "@/lib/product-insight";
 import { PLAYGROUND_SOURCE } from "@/lib/playground";
 import { planPlayground } from "@/lib/playground-plan";
@@ -19,6 +19,7 @@ import { renderPost } from "./creative-render";
 import { creativesBackend } from "./creatives-backend";
 import { fmtUsd } from "@/lib/image-provider";
 import { refuseWhenFull } from "./storage";
+import { fill } from "@/lib/i18n/translate";
 
 export interface BatchStarted { batchId: string; jobIds: string[]; credits: number; usd?: number; rendered: number; warnings: string[] }
 
@@ -34,10 +35,11 @@ const storagePath = (productId: string, createdAt: string, jobId: string, file: 
  * template remakes have their own planners and prompts; every planner takes the brand's rules from
  * lib/brand-rules.ts and returns them as Plan.qa, which createBatch freezes as the QA context.
  */
-export function planFor(request: BatchRequest, workspace: Workspace, profile: ProductProfile | null = null, system: BrandSystem | null = null): Plan {
-  if (request.source === PLAYGROUND_SOURCE && request.playground) return planPlayground(request.playground, request.playground.options, { ...workspace.brandKit, system });
+/** `t` words a Studio plan's warnings and errors in the request's language (English without it). */
+export function planFor(request: BatchRequest, workspace: Workspace, profile: ProductProfile | null = null, system: BrandSystem | null = null, t?: PlanWords): Plan {
+  if (request.source === PLAYGROUND_SOURCE && request.playground) return planPlayground(request.playground, request.playground.options, { ...workspace.brandKit, system }, t);
   if (request.source === TEMPLATE_SOURCE && request.template) return planTemplateRemake(request.template);
-  return planBatch(request, { ...workspace.brandKit, profile, system });
+  return planBatch(request, { ...workspace.brandKit, profile, system }, t);
 }
 
 /** The brand rules QA checks a batch against: the plan's (what its prompts said), else worked out the same way. */
@@ -60,10 +62,12 @@ async function withNamedProductImages(session: Session, productId: string, reque
   return refs.length ? { ...request, productReferences: refs } : request;
 }
 
-export async function createBatch(session: Session, productId: string, requestIn: BatchRequest, o: { confirmedCredits?: number; confirmedUsd?: number } = {}): Promise<BatchStarted> {
+export async function createBatch(session: Session, productId: string, requestIn: BatchRequest, o: { confirmedCredits?: number; confirmedUsd?: number; t?: PlanWords } = {}): Promise<BatchStarted> {
   const { supabase } = session;
+  // The request's language for what the person reads (the route's translator; English without one).
+  const t: PlanWords = o.t ?? ((text, vars) => fill(text, vars));
   const { data: product } = await supabase.from("products").select("id, name, description, category_label").eq("id", productId).maybeSingle<{ id: string; name: string; description: string; category_label: string | null }>();
-  if (!product) throw new BatchError("This workspace doesn't exist.", 404);
+  if (!product) throw new BatchError(t("This workspace doesn't exist."), 404);
   // Storage full: nothing is queued or paid for, since the results couldn't be saved.
   const full = await refuseWhenFull(session, "generate");
   if (full) throw new BatchError(((await full.json()) as { error: string }).error, 507);
@@ -73,15 +77,18 @@ export async function createBatch(session: Session, productId: string, requestIn
   const brand = merged.kit;
   const { profile, system } = merged;
   const request = await withNamedProductImages(session, productId, requestIn, system);
+  // The plan that's saved and queued is worded in English (its warnings are stored with the batch); the
+  // person reads the same plan in their language (identical jobs and prices: only the words differ).
   const plan = planFor(request, workspace, profile, system);
-  if (plan.errors.length) throw new BatchError(plan.errors[0], 400, plan);
+  const said = o.t ? planFor(request, workspace, profile, system, t) : plan;
+  if (said.errors.length) throw new BatchError(said.errors[0], 400, said);
   // The price shown in the confirm dialog is the price charged: refuse if it moved.
   if (o.confirmedCredits !== undefined && plan.credits > o.confirmedCredits + 0.01) {
-    throw new BatchError(`The estimate changed to ${plan.credits} credits; check it and confirm again.`, 409, plan);
+    throw new BatchError(t("The estimate changed to {credits} credits; check it and confirm again.", { credits: plan.credits }), 409, said);
   }
   // OpenAI jobs are priced in dollars: those were confirmed too (a batch with any must say what it confirmed).
   if (plan.usd && (o.confirmedUsd === undefined || plan.usd > o.confirmedUsd + 0.0005)) {
-    throw new BatchError(o.confirmedUsd === undefined ? "Confirm the estimated OpenAI cost first." : `The OpenAI estimate changed to ${fmtUsd(plan.usd)}; check it and confirm again.`, 409, plan);
+    throw new BatchError(o.confirmedUsd === undefined ? t("Confirm the estimated OpenAI cost first.") : t("The OpenAI estimate changed to {usd}; check it and confirm again.", { usd: fmtUsd(plan.usd) }), 409, said);
   }
 
   // QA checks exactly the brand rules the prompts were built with (every source: Studio, Playground, Recreate, remakes),
@@ -114,9 +121,11 @@ export async function createBatch(session: Session, productId: string, requestIn
       ...(request.playground ? { playground: request.playground } : {}),
       ...(request.template ? { template: request.template } : {}),
       ...(awareness ? { awarenessLevel: awareness } : {}),
+      // The competitor ad it was made from: Launch traces each ad back to it (lib/launch/tracking.ts).
+      ...(request.sourceAd ? { sourceAd: request.sourceAd } : {}),
     },
   }).select("id, created_at").single<{ id: string; created_at: string }>();
-  if (error || !batch) throw new BatchError(error?.message ?? "Couldn't start the batch.", 500);
+  if (error || !batch) throw new BatchError(error?.message ?? t("Couldn't start the batch."), 500);
 
   const { data: jobs, error: jobError } = await supabase.from("creative_jobs").insert(plan.jobs.map((job) => ({
     product_id: productId, batch_id: batch.id, format_card_id: request.formatCardId ?? null, kind: job.kind, model: job.model,
@@ -124,7 +133,7 @@ export async function createBatch(session: Session, productId: string, requestIn
   }))).select("id, kind, aspect, variant, params, created_at, backend").returns<{ id: string; kind: string; aspect: string; variant: number; params: Record<string, unknown>; created_at: string; backend: string }[]>();
   if (jobError || !jobs) {
     await supabase.from("creative_batches").delete().eq("id", batch.id);
-    throw new BatchError(jobError?.message ?? "Couldn't queue the jobs.", 500);
+    throw new BatchError(jobError?.message ?? t("Couldn't queue the jobs."), 500);
   }
 
   // Posts: render, store, record; then the backend marks their jobs done and runs QA.
@@ -146,7 +155,7 @@ export async function createBatch(session: Session, productId: string, requestIn
         title: `${kind === "reddit" ? "Reddit post" : "Tweet"} ${job.aspect} v${job.variant}`, headline: copy.title ?? null, primary_text: copy.body,
         format_slug: request.formatCardId ?? null,
         model: `template:${kind}`, prompt: [copy.title, copy.body].filter(Boolean).join("\n\n"),
-        copy: { headline: copy.title, body: copy.body, author: brand.appName, community: job.params.community, minTextFrac: out.minTextFrac, contrast: out.contrast, truncated: out.truncated },
+        copy: { headline: copy.title, body: copy.body, author: brand.appName, community: job.params.community, minTextFrac: out.minTextFrac, contrast: out.contrast, truncated: out.truncated, ...(out.warnings.length ? { warnings: out.warnings } : {}) },
         ...level,
       });
       if (rowError) throw new Error(rowError.message);
@@ -157,10 +166,10 @@ export async function createBatch(session: Session, productId: string, requestIn
   }
   // The backend marks the posts' jobs done (or failed) and runs QA. If it doesn't answer, the jobs stay
   // queued until the queue expires them (30 min for posts, creatives_requeue_stale) and the batch says so.
-  const warnings = [...plan.warnings];
+  const warnings = [...said.warnings];
   if (templates.length) {
     const done = await creativesBackend<{ done?: number; failed?: number }>(session, "templates", { jobIds: templates.map((j) => j.id), failures });
-    if (!done.ok) warnings.push(`The posts were rendered, but the creatives backend didn't confirm them (${done.data.error ?? `it answered ${done.status}`}), so they aren't checked yet. If they stay queued, start the batch again.`);
+    if (!done.ok) warnings.push(t("The posts were rendered, but the creatives backend didn't confirm them ({reason}), so they aren't checked yet. If they stay queued, start the batch again.", { reason: done.data.error ?? `HTTP ${done.status}` }));
   }
 
   return { batchId: batch.id, jobIds: jobs.map((j) => j.id), credits: plan.credits, ...(plan.usd ? { usd: plan.usd } : {}), rendered, warnings };

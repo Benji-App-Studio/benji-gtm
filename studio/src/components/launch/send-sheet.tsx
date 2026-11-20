@@ -8,6 +8,8 @@
 // PAUSED and nothing spends until someone publishes it in Ads Manager.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useCached } from "@/lib/client-cache";
+import { useT } from "@/lib/i18n/client";
+import { m } from "@/lib/i18n/translate";
 import type { ApprovedCreative } from "@/lib/creatives";
 import { adSetName, appCode, campaignName, day, slug, type Stage } from "@/lib/launch/naming";
 import {
@@ -15,7 +17,7 @@ import {
   destinationsFor, goalsFor, type MetaObjective, OBJECTIVE_INFO, objectiveFromSettings, type ParentCampaign, type TargetingSpec,
   UNSUPPORTED_AD_DESTINATIONS, validateAd, validateAdSet, validateCampaign,
 } from "@/lib/launch/rules";
-import { type AdSetRow, type CampaignRow, type Connections, metaCall, MetaCallError, type SendPlan, type SendResult } from "@/lib/launch/send";
+import { type AdSetRow, type CampaignRow, type Connections, metaCall, MetaCallError, sendBody, type SendPlan, type SendResult } from "@/lib/launch/send";
 import type { LaunchDraft, LaunchOverview } from "@/lib/launch/types";
 import { IconRocket, IconX } from "../icons";
 import { MODAL, MODAL_OVERLAY, PanelPortal } from "../panel-portal";
@@ -29,13 +31,14 @@ import { Problems } from "./send-parts";
 import { Results, Review } from "./send-review";
 
 type StepId = "destination" | "campaign" | "adset" | "ads" | "review";
-const STEP_LABEL: Record<StepId, string> = { destination: "Destination", campaign: "Campaign", adset: "Ad set", ads: "Ads", review: "Review" };
+const STEP_LABEL: Record<StepId, string> = { destination: m("Destination"), campaign: m("Campaign"), adset: m("Ad set"), ads: m("Ads"), review: m("Review") };
 
 /** The sheet, opened from the Launch page, the Studio's approved creatives and its job list. */
 export function SendToMeta({ productId, open, onClose, initialIds = [] }: { productId: string; open: boolean; onClose: () => void; initialIds?: string[] }) {
   const [overview] = useCached<LaunchOverview & { error?: string }>(`/api/launch/${productId}`);
   // Opened from Studio too: without the Meta keys and this app's ad account and Page, it says what to connect.
   const lock = useFeatures(productId).locked("launch");
+  const { t } = useT();
   if (!open) return null;
   return (
     <PanelPortal onClose={onClose}>
@@ -44,15 +47,15 @@ export function SendToMeta({ productId, open, onClose, initialIds = [] }: { prod
           {lock && !overview?.status?.mock
             ? (
               <div className="relative">
-                <h2 id="send-to-meta-title" className="sr-only">Send to Meta</h2>
-                <IconButton label="Close" onClick={onClose} className="absolute top-3 right-3"><IconX /></IconButton>
-                <ConnectState icon={<IconRocket />} title={lock.title} body={`${lock.body} Everything Launch creates is paused: nothing spends until you publish it in Ads Manager.`} href={lock.href} action={lock.action} className="py-12" />
+                <h2 id="send-to-meta-title" className="sr-only">{t("Send to Meta")}</h2>
+                <IconButton label={t("Close")} onClick={onClose} className="absolute top-3 right-3"><IconX /></IconButton>
+                <ConnectState icon={<IconRocket />} title={lock.title} body={`${lock.body} ${t("Everything Launch creates is paused: nothing spends until you publish it in Ads Manager.")}`} href={lock.href} action={lock.action} className="py-12" />
               </div>
             )
             : !overview
             ? <div className="grid place-items-center p-12"><Spinner /></div>
             : overview.error
-              ? <div className="p-4"><Problems title="Couldn't open Launch" list={[overview.error]} /><Button className="mt-4" variant="secondary" onClick={onClose}>Close</Button></div>
+              ? <div className="p-4"><Problems title={t("Couldn't open Launch")} list={[overview.error]} /><Button className="mt-4" variant="secondary" onClick={onClose}>{t("Close")}</Button></div>
               : <SendSheet productId={productId} overview={overview} initialIds={initialIds} onClose={onClose} />}
         </div>
       </div>
@@ -68,6 +71,7 @@ function audienceSlug(t: TargetingSpec) {
 }
 
 function SendSheet({ productId, overview, initialIds, onClose }: { productId: string; overview: LaunchOverview; initialIds: string[]; onClose: () => void }) {
+  const { t, tn } = useT();
   const settings = overview.settings ?? overview.defaults;
   const currency = overview.status.account?.currency ?? "USD";
   const app = appCode(settings.meta.appName ?? overview.workspace.appName ?? "App", settings.app_code);
@@ -81,7 +85,7 @@ function SendSheet({ productId, overview, initialIds, onClose }: { productId: st
     testingBudget: settings.testing_daily_budget, scalingBudget: settings.scaling_daily_budget, appName: settings.meta.appName ?? overview.workspace.appName,
   }), [settings, overview.workspace.appName]);
   const nameCampaign = (objective: MetaObjective, stage: Stage) => campaignName({ app, stage, objective: slug(OBJECTIVE_INFO[objective].label), date });
-  const nameAdSet = (t: TargetingSpec, stage: Stage) => adSetName({ app, stage, audience: audienceSlug(t), date });
+  const nameAdSet = (tg: TargetingSpec, stage: Stage) => adSetName({ app, stage, audience: audienceSlug(tg), date });
   const linkFor = (objective: MetaObjective) => (objective === "OUTCOME_APP_PROMOTION" ? settings.meta.appStoreUrl : settings.meta.websiteUrl) ?? "";
 
   const [stage, setStage] = useState<Stage>("TEST");
@@ -195,22 +199,22 @@ function SendSheet({ productId, overview, initialIds, onClose }: { productId: st
     switch (id) {
       case "destination": {
         if (mode === "new-campaign") return [];
-        if (!campaignRow) return ["Pick a campaign."];
-        if (!campaignRow.supported) return [`That campaign uses an older objective (${campaignRow.objective}) the API can't add to. Pick another or make a new one.`];
-        if (mode === "existing" && !adSetRow) return ["Pick an ad set."];
+        if (!campaignRow) return [t("Pick a campaign.")];
+        if (!campaignRow.supported) return [t("That campaign uses an older objective ({objective}) the API can't add to. Pick another or make a new one.", { objective: campaignRow.objective })];
+        if (mode === "existing" && !adSetRow) return [t("Pick an ad set.")];
         if (mode === "existing" && adSetRow?.destinationType && UNSUPPORTED_AD_DESTINATIONS[adSetRow.destinationType]) return [UNSUPPORTED_AD_DESTINATIONS[adSetRow.destinationType]];
-        if (mode === "existing" && adSetRow && adSetRow.ads >= 50) return ["That ad set already holds 50 ads, Meta's limit."];
+        if (mode === "existing" && adSetRow && adSetRow.ads >= 50) return [t("That ad set already holds 50 ads, Meta's limit.")];
         return [];
       }
       case "campaign": {
         const out = validateCampaign(campaign);
-        if (cap != null && campaign.budgetMode === "CBO" && campaign.dailyBudget != null && campaign.dailyBudget > cap) out.push(`The daily budget is over the ${cap} ${currency} guardrail in Launch settings.`);
+        if (cap != null && campaign.budgetMode === "CBO" && campaign.dailyBudget != null && campaign.dailyBudget > cap) out.push(t("The daily budget is over the {cap} {currency} guardrail in Launch settings.", { cap, currency }));
         return out;
       }
       case "adset": {
-        if (!parent) return ["Pick the campaign first."];
+        if (!parent) return [t("Pick the campaign first.")];
         const out = validateAdSet(adSet, parent);
-        if (cap != null && parent.budgetMode === "ABO" && adSet.dailyBudget != null && adSet.dailyBudget > cap) out.push(`The daily budget is over the ${cap} ${currency} guardrail in Launch settings.`);
+        if (cap != null && parent.budgetMode === "ABO" && adSet.dailyBudget != null && adSet.dailyBudget > cap) out.push(t("The daily budget is over the {cap} {currency} guardrail in Launch settings.", { cap, currency }));
         return out;
       }
       case "ads":
@@ -220,15 +224,7 @@ function SendSheet({ productId, overview, initialIds, onClose }: { productId: st
     }
   }
 
-  function body(confirm: boolean) {
-    return {
-      stage,
-      campaign: mode === "new-campaign" ? { create: campaign } : { id: campaignRow?.id },
-      adSet: mode === "existing" ? { id: adSetRow?.id } : { create: adSet },
-      ad: { ...adSpec, creativeIds: picked },
-      confirm,
-    };
-  }
+  const body = (confirm: boolean) => sendBody({ stage, mode, campaign, campaignId: campaignRow?.id, adSet, adSetId: adSetRow?.id, ad: adSpec, creativeIds: picked, confirm });
 
   async function next() {
     const list = check(step);
@@ -261,7 +257,7 @@ function SendSheet({ productId, overview, initialIds, onClose }: { productId: st
       setProblems(list);
       // A campaign that was made before something failed is kept (Launch never deletes): use it next time.
       const kept = e instanceof MetaCallError ? (e.extra.created as SendResult["created"] | undefined) : undefined;
-      if (kept?.campaign) setProblems([...list, `The campaign "${kept.campaign.name}" was created (paused). Pick it under "A new ad set in an existing campaign" to try again.`]);
+      if (kept?.campaign) setProblems([...list, t("The campaign “{name}” was created (paused). Pick it under “A new ad set in an existing campaign” to try again.", { name: kept.campaign.name })]);
     } finally {
       setBusy(false);
     }
@@ -274,17 +270,17 @@ function SendSheet({ productId, overview, initialIds, onClose }: { productId: st
       <div className="sticky top-0 z-10 border-b border-line bg-card">
       <header className="flex items-start justify-between gap-4 px-4 pt-3 pb-2">
         <div className="min-w-0">
-          <h2 id="send-to-meta-title" className="text-sm font-medium">Send to Meta</h2>
-          <p className="text-xs text-muted">{overview.status.account ? `${overview.status.account.name} · ${currency}` : settings.meta.adAccountId ? `Ad account ${settings.meta.adAccountId}` : "No ad account yet"} · everything is created paused</p>
+          <h2 id="send-to-meta-title" className="text-sm font-medium">{t("Send to Meta")}</h2>
+          <p className="text-xs text-muted">{overview.status.account ? `${overview.status.account.name} · ${currency}` : settings.meta.adAccountId ? t("Ad account {id}", { id: settings.meta.adAccountId }) : t("No ad account yet")} · {t("everything is created paused")}</p>
         </div>
-        <IconButton label="Close" onClick={onClose}><IconX /></IconButton>
+        <IconButton label={t("Close")} onClick={onClose}><IconX /></IconButton>
       </header>
       {!result && (
-        <nav aria-label="Steps" className={cx("no-scrollbar overflow-x-auto px-4 pb-2.5", segmentTrackClass)}>
+        <nav aria-label={t("Steps")} className={cx("no-scrollbar overflow-x-auto px-4 pb-2.5", segmentTrackClass)}>
           {steps.map((s, i) => (
             <button key={s} type="button" disabled={i > index} onClick={() => { setProblems([]); setStep(s); }}
               className={cx(segmentClass(s === step), s !== step && i < index && "text-ink", i > index && "text-faint hover:bg-transparent hover:text-faint")}>
-              {i + 1}. {STEP_LABEL[s]}
+              {i + 1}. {t(STEP_LABEL[s])}
             </button>
           ))}
         </nav>
@@ -293,8 +289,8 @@ function SendSheet({ productId, overview, initialIds, onClose }: { productId: st
 
       <div className="px-4 py-4">
         <div className="grid gap-4">
-          {!overview.status.connected && <Problems title="Meta isn't connected" list={["Add the Meta system user token and app secret in Settings > API keys, then this app's ad account and Page in its connections."]} />}
-          {connectionsError && <Problems title="Couldn't read the ad account" list={[connectionsError]} />}
+          {!overview.status.connected && <Problems title={t("Meta isn't connected")} list={[t("Add the Meta system user token and app secret in Settings › Your keys, then this app's ad account and Page in its connections.")]} />}
+          {connectionsError && <Problems title={t("Couldn't read the ad account")} list={[connectionsError]} />}
           {result ? (
             <Results productId={productId} result={result} drafts={drafts ?? []} adAccountId={settings.meta.adAccountId} />
           ) : step === "destination" ? (
@@ -317,16 +313,16 @@ function SendSheet({ productId, overview, initialIds, onClose }: { productId: st
       <footer className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-line bg-card px-4 py-2.5">
         {result ? (
           <>
-            <span className="text-xs text-muted">{result.note}</span>
-            <Button onClick={onClose}>Done</Button>
+            <span className="text-xs text-muted">{t(result.note)}</span>
+            <Button onClick={onClose}>{t("Done")}</Button>
           </>
         ) : (
           <>
-            <Button variant="ghost" disabled={index === 0 || busy} onClick={() => { setProblems([]); setStep(steps[index - 1]); }}>Back</Button>
-            <span className="hidden text-xs text-muted @md:block">{step === "review" ? "Everything is created paused. Nothing spends until you publish it in Ads Manager." : `${picked.length} creative${picked.length === 1 ? "" : "s"} picked`}</span>
+            <Button variant="ghost" disabled={index === 0 || busy} onClick={() => { setProblems([]); setStep(steps[index - 1]); }}>{t("Back")}</Button>
+            <span className="hidden text-xs text-muted @md:block">{step === "review" ? t("Everything is created paused. Nothing spends until you publish it in Ads Manager.") : tn(picked.length, "{n} creative picked", "{n} creatives picked")}</span>
             {step === "review"
-              ? <Button disabled={busy || !overview.status.connected} onClick={create}>{busy && <Spinner className="size-3.5" />}Create paused in Meta</Button>
-              : <Button disabled={busy} onClick={next}>{busy && <Spinner className="size-3.5" />}{steps[index + 1] === "review" ? "Review" : "Next"}</Button>}
+              ? <Button disabled={busy || !overview.status.connected} onClick={create}>{busy && <Spinner className="size-3.5" />}{t("Create paused in Meta")}</Button>
+              : <Button disabled={busy} onClick={next}>{busy && <Spinner className="size-3.5" />}{steps[index + 1] === "review" ? t("Review") : t("Next")}</Button>}
           </>
         )}
       </footer>

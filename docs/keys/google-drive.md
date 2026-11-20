@@ -73,7 +73,7 @@ If you see "Service account key creation is disabled" instead, read "If it doesn
 
 15. In Finder, right-click the downloaded `.json` file and choose **Open With > TextEdit**.
 16. Press **Command-A** to select everything, then **Command-C** to copy.
-17. In Benji GTM, open **Settings > API keys**.
+17. In Benji GTM, open **Settings > Your keys**.
 18. Find the **Google Drive service account** row and click **Add**.
 19. Paste everything into the box (it's several lines long) and click **Save and check**.
 

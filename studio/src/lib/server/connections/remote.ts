@@ -5,7 +5,7 @@ import "server-only";
 import { metricsFunction } from "@/lib/server/measure";
 import type { VerifyContext, VerifyResult } from "./verifier";
 
-export async function verifyRemote(ctx: VerifyContext, connection: "meta" | "revenuecat" | "appstack", provider: string): Promise<VerifyResult> {
+export async function verifyRemote(ctx: VerifyContext, connection: "meta" | "revenuecat" | "appstack" | "mixpanel" | "superwall", provider: string): Promise<VerifyResult> {
   const session = { supabase: ctx.supabase, user: { id: ctx.userId } };
   const result = await metricsFunction<VerifyResult>(session, "verify", { productId: ctx.workspace.id, connection }, 45_000);
   const data = result.data;

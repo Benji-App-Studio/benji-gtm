@@ -37,14 +37,18 @@ You need:
 
 ### Part 2: Paste the key into Benji GTM
 
-10. In Benji GTM, open **Settings > API keys**.
+10. In Benji GTM, open **Settings > Your keys**.
 11. Find the **RevenueCat** row and click **Add**.
 12. Paste the key and click **Save and check**.
 
 ✅ **Checkpoint:** the row says **Saved. The key was checked and works.**
 
-If you skipped **Project configuration** in step 7, the row says RevenueCat knows the key but it may
-not list projects. That's fine: Part 3's **Verify** checks it properly.
+If you skipped **Project configuration** in step 7, the row says RevenueCat knows the key but it can't
+list projects. That's fine: Part 3's **Verify** checks it properly.
+
+**More than one app?** A RevenueCat secret key reads one project only. If your apps are in different
+RevenueCat projects, paste each project's own key on that app's **RevenueCat** card (with its Project
+ID filled in): it is saved for that app only, and the other apps keep theirs.
 
 ### Part 3: Add the project ID to your app
 

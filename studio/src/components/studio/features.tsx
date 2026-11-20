@@ -9,11 +9,15 @@ import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 import { featureState, type Feature, type FeatureState } from "@/lib/capabilities";
 import { useCached } from "@/lib/client-cache";
+import { useT } from "@/lib/i18n/client";
+import { m } from "@/lib/i18n/translate";
+import { runnerOffered } from "@/lib/install/setup-access";
 import { hasKey, type InstallState } from "@/lib/install/types";
 import { useInstall } from "@/lib/install/use-install";
 import type { ImageProvider } from "@/lib/image-provider";
 import { readConnections, type WorkspaceConnections } from "@/lib/workspace-schema";
-import { Locked, StatusPill } from "../ui";
+import { IconLock } from "../icons";
+import { cx, Locked, StatusPill } from "../ui";
 
 /** Settings > Desktop runner: where the runner's secret is made and the commands that start it are. */
 export const RUNNER_HREF = "/app/settings/runner";
@@ -30,25 +34,31 @@ export interface Features {
   locked: (feature: Feature) => FeatureState | null;
   /** Whether the desktop runner has a secret (so jobs for it can be picked up). null when unknown. */
   runner: boolean | null;
+  /**
+   * Whether the desktop runner is this person's to set up: false for an account other than staff in
+   * accounts mode (the runner is the platform's there), so nothing asks them to set it up.
+   */
+  runnerOffered: boolean;
   /** Who can make GPT Image pictures here. null when unknown: then both are offered. */
   imageProviders: Record<ImageProvider, boolean> | null;
 }
 
 export function useFeatures(productId: string): Features {
+  const { t, intl } = useT();
   const { install } = useInstall();
   const [workspace] = useCached<{ id?: string; connections?: unknown; error?: string }>(`/api/workspaces/${productId}`);
   const loaded = Boolean(workspace && !workspace.error && workspace.id);
   const connections = workspace?.connections;
   return useMemo(() => {
     const app = loaded ? { id: productId, connections: readConnections(connections) } : undefined;
-    const state = (feature: Feature) => featureState(feature, install, app);
+    const state = (feature: Feature) => featureState(feature, install, app, { t, intl });
     const runner = install ? featureState("studio.runner", install).ok : null;
     return {
-      install, app, state, runner,
+      install, app, state, runner, runnerOffered: runnerOffered(install),
       locked: (feature) => { const s = state(feature); return s.ok ? null : s; },
       imageProviders: imageProvidersOf(install),
     };
-  }, [install, loaded, connections, productId]);
+  }, [install, loaded, connections, productId, t, intl]);
 }
 
 /**
@@ -62,14 +72,29 @@ export function imageProvidersOf(install: InstallState | null | undefined): Reco
 
 /** A locked feature, inline, in the registry's words: "Connect Higgsfield to generate images · Add the key". */
 export function FeatureLock({ state, children, className }: { state: FeatureState; children?: ReactNode; className?: string }) {
+  const { t } = useT();
   // Images can be made with either key; the registry's title names the first way only.
-  const title = state.feature === "studio.images" && state.missingKeys.length ? "Connect Higgsfield or OpenAI to generate images" : state.title;
-  return <Locked href={state.href} action={state.action} className={className}>{children ?? title}</Locked>;
+  const title = state.feature === "studio.images" && state.missingKeys.length ? t("Connect Higgsfield or OpenAI to generate images") : t(state.title);
+  return <Locked href={state.href} action={t(state.action)} className={className}>{children ?? title}</Locked>;
 }
 
-/** Something only the desktop runner can make, where it isn't set up. */
-export function RunnerLock({ children = "Needs the desktop runner", className }: { children?: ReactNode; className?: string }) {
-  return <Locked href={RUNNER_HREF} action="Set it up" className={className}>{children}</Locked>;
+export { runnerOffered };
+
+/**
+ * Something only the desktop runner can make, where it isn't set up. An account that can't set the
+ * runner up (accounts mode, not staff) is told it isn't on their plan, with no link to a page they don't have.
+ */
+export function RunnerLock({ children, className }: { children?: ReactNode; className?: string }) {
+  const { t } = useT();
+  const { install } = useInstall();
+  if (!runnerOffered(install)) {
+    return (
+      <span className={cx("inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-control border border-hairline px-2 py-1 text-xs text-muted", className)}>
+        <IconLock className="size-3.5 shrink-0" />{t("Not available on your plan yet")}
+      </span>
+    );
+  }
+  return <Locked href={RUNNER_HREF} action={t("Set it up")} className={className}>{children ?? t("Needs the desktop runner")}</Locked>;
 }
 
 /** The provider a generation will really use: the one asked for when it has a key (or nothing is known), else the other. */
@@ -87,23 +112,25 @@ export interface BackendFlags { typesafe?: boolean; higgsfieldApi?: boolean; run
  * desktop runner (optional) set up. One that isn't ready links to where it is set.
  */
 export function CapabilityPills({ features, backend }: { features: Features; backend: BackendFlags | null | undefined }) {
+  const { t } = useT();
   const known = Boolean(features.install);
-  if (!known && !backend) return backend === null ? <StatusPill tone="warn">Can&apos;t reach the backend</StatusPill> : null;
+  if (!known && !backend) return backend === null ? <StatusPill tone="warn">{t("Can't reach the backend")}</StatusPill> : null;
   const runner = known ? Boolean(features.runner) : Boolean(backend?.runner);
   const rows: { label: string; ok: boolean; href: string; optional?: boolean }[] = [
-    { label: "Images", ok: runner || (known ? features.state("studio.images").ok : Boolean(backend?.higgsfieldApi || backend?.openaiImages)), href: KEYS_HREF },
-    { label: "Videos", ok: runner || (known ? features.state("studio.video").ok : Boolean(backend?.higgsfieldApi)), href: KEYS_HREF },
-    { label: "Checks", ok: known ? features.state("ai").ok : Boolean(backend?.typesafe), href: KEYS_HREF },
-    { label: "Desktop runner", ok: runner, href: RUNNER_HREF, optional: true },
+    { label: t("Images"), ok: runner || (known ? features.state("studio.images").ok : Boolean(backend?.higgsfieldApi || backend?.openaiImages)), href: KEYS_HREF },
+    { label: t("Videos"), ok: runner || (known ? features.state("studio.video").ok : Boolean(backend?.higgsfieldApi)), href: KEYS_HREF },
+    { label: t("Checks"), ok: known ? features.state("ai").ok : Boolean(backend?.typesafe), href: KEYS_HREF },
+    // Only where the person can set it up (not an account other than staff in accounts mode).
+    ...(features.install && !features.runnerOffered ? [] : [{ label: t("Desktop runner"), ok: runner, href: RUNNER_HREF, optional: true }]),
   ];
   // In the page's header bar: one row that scrolls sideways instead of pushing the page wider on a narrow screen.
   return (
     <span className="no-scrollbar flex max-w-[calc(100cqi-200px)] items-center gap-1.5 overflow-x-auto">
       {rows.map((row) => row.ok
-        ? <StatusPill key={row.label} tone="win">{row.label}<span className="sr-only"> ready</span></StatusPill>
+        ? <StatusPill key={row.label} tone="win">{row.label}<span className="sr-only"> {t("ready")}</span></StatusPill>
         : (
-          <Link key={row.label} href={row.href} className="rounded-full" title={row.optional ? "Optional. Set it up in Settings." : "Not connected yet. Add the key in Settings."}>
-            <StatusPill tone={row.optional ? "neutral" : "caution"} className="transition-colors hover:bg-hover">{row.label}<span className="font-normal text-muted">{row.optional ? "off" : "not connected"}</span></StatusPill>
+          <Link key={row.label} href={row.href} className="rounded-full" title={row.optional ? t("Optional. Set it up in Settings.") : t("Not connected yet. Add the key in Settings.")}>
+            <StatusPill tone={row.optional ? "neutral" : "caution"} className="transition-colors hover:bg-hover">{row.label}<span className="font-normal text-muted">{row.optional ? t("off") : t("not connected")}</span></StatusPill>
           </Link>
         ))}
     </span>

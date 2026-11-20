@@ -1,8 +1,9 @@
 "use client";
-// The Playground: bring a reference ad and say what to change, add your own images, and Higgsfield makes
-// new versions in the reference's exact style; or switch the form to Video and describe a shot for
-// Seedance 2.5. The form (or the Library, this product's own templates,
-// which fills it) is on the left; this workspace's results, live, on the right.
+// Studio › Remix and Studio › Templates (once "the Playground"): bring a reference ad and say what to
+// change, add your own images, and new versions come back in the reference's exact style; or switch the
+// form to Video and describe a shot. Templates (this app's own library of styles) fills the same form.
+// The form is on the left; this app's results, live, on the right. The two tabs switch here, without a
+// page load, so a template's "Use" lands in the form with nothing lost; the address follows the tab.
 // Everything here belongs to one product: the page mounts it with key={productId}, so switching product
 // starts from a clean slate (form, loaded request, open template, pickers, lightbox), and every list
 // (results, templates, images) comes from that product's own API routes.
@@ -19,7 +20,9 @@ import { createClient } from "@/lib/supabase/client";
 import { ASSET_KIND_LABEL, type AssetKind } from "@/lib/product-assets";
 import { PlaygroundSkeleton } from "../page-skeletons";
 import { CapabilityPills, useFeatures } from "../studio/features";
-import { Card, cx, ErrorNote, Page, segmentClass, segmentTrackClass } from "../ui";
+import { Card, ErrorNote, Page } from "../ui";
+import { useT } from "@/lib/i18n/client";
+import { studioHref } from "@/lib/nav-model";
 import { ProductPageHeader } from "../workspace/product-header";
 import type { PickSource, PickTile } from "./image-picker";
 import { PlaygroundForm } from "./playground-form";
@@ -32,7 +35,14 @@ type Tab = "playground" | "library";
 export function PlaygroundView({ productId, openTemplate = null, library = false }: { productId: string; openTemplate?: string | null; library?: boolean }) {
   const url = `/api/playground/${productId}`;
   const [overview, reload] = useCached<PlaygroundOverview>(url);
-  const [tab, setTab] = useState<Tab>(library ? "library" : "playground");
+  const { t } = useT();
+  const [tab, setTabState] = useState<Tab>(library ? "library" : "playground");
+  /** Switches tab and puts it in the address (Remix or Templates), so a reload opens the same one. */
+  const setTab = (next: Tab) => {
+    setTabState(next);
+    const href = studioHref(productId, next === "library" ? "templates" : "remix");
+    if (window.location.pathname !== href) window.history.replaceState(window.history.state, "", href);
+  };
   const [request, setRequest] = useState<PlaygroundRequest>(EMPTY_PLAYGROUND_REQUEST);
   const [options, setOptions] = useState<PlaygroundOptions>(DEFAULT_PLAYGROUND_OPTIONS);
   // The product's remembered image provider seeds the form once, when the overview first arrives (render-time, not an effect).
@@ -73,11 +83,11 @@ export function PlaygroundView({ productId, openTemplate = null, library = false
   }, [working, reload]);
 
   const sources = useMemo<Record<PickSource, PickTile[]>>(() => ({
-    product: (overview?.productImages ?? []).map((a) => ({ url: a.url, label: a.label, caption: ASSET_KIND_LABEL[a.kind as AssetKind] ?? a.kind })),
+    product: (overview?.productImages ?? []).map((a) => ({ url: a.url, label: a.label, caption: t(ASSET_KIND_LABEL[a.kind as AssetKind] ?? a.kind) })),
     research: (overview?.researchImages ?? []).map((a) => ({ url: a.url, label: a.page, caption: a.page })),
     // Images only: a video result becomes a reference through "Use as reference" (its frame).
     results: resultCards(items).flatMap((c) => (c.type === "output" && c.output.kind !== "video" ? [{ url: c.output.url, label: c.item.request.prompt.slice(0, 80), caption: c.output.aspect }] : [])),
-  }), [overview, items]);
+  }), [overview, items, t]);
 
   const showForm = () => {
     setTab("playground");
@@ -90,21 +100,20 @@ export function PlaygroundView({ productId, openTemplate = null, library = false
   };
 
   if (!overview) return <PlaygroundSkeleton />;
-  if (!overview.workspace) return <Page><ProductPageHeader productId={productId} page="Playground" /><ErrorNote>{overview.error ?? "This product doesn't exist."}</ErrorNote></Page>;
+  if (!overview.workspace) return <Page><ProductPageHeader productId={productId} page="Studio" /><ErrorNote>{overview.error ?? t("This product doesn't exist.")}</ErrorNote></Page>;
   const { workspace, backend } = overview;
 
   return (
     <Page>
-      <ProductPageHeader productId={productId} page="Playground" name={workspace.name}
-        subtitle={`Bring a reference ad, say what to change and add your own images, and get new versions in its exact style for ${workspace.appName || workspace.name}. Or describe a shot and make a video.`}
+      <ProductPageHeader productId={productId} page="Studio" name={workspace.name}
+        tab={tab === "library" ? "templates" : "remix"}
+        onTab={(next) => { if (next === "create") return false; setTab(next === "templates" ? "library" : "playground"); return true; }}
+        subtitle={tab === "library"
+          ? t("Ready-made styles for {name}: pick one, add your pictures and make it yours.", { name: workspace.appName || workspace.name })
+          : t("Bring an ad you like, say what to change and add your own pictures: new versions come back in its exact style for {name}. Or describe a shot and make a video.", { name: workspace.appName || workspace.name })}
         actions={<CapabilityPills features={features} backend={backend} />}
       />
       {overview.error && <ErrorNote>{overview.error}</ErrorNote>}
-      <div role="tablist" aria-label="Mode" className={cx(segmentTrackClass, "mb-4")}>
-        {(["playground", "library"] as Tab[]).map((t) => (
-          <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={segmentClass(tab === t)}>{t === "playground" ? "Playground" : "Library"}</button>
-        ))}
-      </div>
       {/* The Library is a marketplace: it takes the whole width, as many templates a row as fit. */}
       {tab === "library" ? (
         <div>

@@ -2,6 +2,13 @@
 // ships, its rating trend and review stars, and the opportunities across competitors (the complaints and
 // requests their reviewers share, merged and ranked). Safe in the browser; tested in market.test.ts.
 // The rows are written by the insight function's `market-*` routes (supabase/functions/insight/market.ts).
+// Words shown on the page are m()-marked (render them with t(label)); the functions that write words
+// take an optional translator (`tr`) and write English without one.
+import { m, translator, type Translator } from "./i18n/translate";
+
+/** The two lookups a function that writes words needs (a page's useT() or getTranslator()). */
+export type Words = Pick<Translator, "t" | "tn">;
+const ENGLISH: Words = translator("en", null);
 
 export type Store = "app_store" | "google_play";
 export type ChartKind = "free" | "paid" | "grossing";
@@ -42,10 +49,10 @@ export interface Review { store_review_id: string; rating: number; title: string
 export const SUMMARY_SECTIONS = ["loves", "complaints", "requests", "pricing"] as const;
 export type SummarySection = (typeof SUMMARY_SECTIONS)[number];
 export const SECTION_LABEL: Record<SummarySection, string> = {
-  loves: "What users love",
-  complaints: "What they complain about",
-  requests: "What they ask for",
-  pricing: "What they say about price",
+  loves: m("What users love"),
+  complaints: m("What they complain about"),
+  requests: m("What they ask for"),
+  pricing: m("What they say about price"),
 };
 
 export interface Quote { reviewId: string; text: string; rating: number | null; version: string | null }
@@ -72,27 +79,27 @@ export interface MarketDetail { setup: boolean; app: MarketApp | null; snapshots
 // MARK: Charts, categories and countries
 
 export const CHART_KINDS: { value: ChartKind; label: string; why: string }[] = [
-  { value: "grossing", label: "Top grossing", why: "Top grossing shows what people pay for: the apps earning the most right now." },
-  { value: "free", label: "Top free", why: "Top free shows what people download: demand, and the hooks that win installs." },
-  { value: "paid", label: "Top paid", why: "Top paid shows what people buy up front, with no free version to try first." },
+  { value: "grossing", label: m("Top grossing"), why: m("Top grossing shows what people pay for: the apps earning the most right now.") },
+  { value: "free", label: m("Top free"), why: m("Top free shows what people download: demand, and the hooks that win installs.") },
+  { value: "paid", label: m("Top paid"), why: m("Top paid shows what people buy up front, with no free version to try first.") },
 ];
 
 /** App Store categories (Apple's genre ids). "" is every app. */
 export const GENRES: { value: string; label: string }[] = [
-  { value: "", label: "All apps" },
-  { value: "6000", label: "Business" }, { value: "6017", label: "Education" }, { value: "6016", label: "Entertainment" }, { value: "6015", label: "Finance" },
-  { value: "6023", label: "Food & Drink" }, { value: "6014", label: "Games" }, { value: "6027", label: "Graphics & Design" }, { value: "6013", label: "Health & Fitness" },
-  { value: "6012", label: "Lifestyle" }, { value: "6020", label: "Medical" }, { value: "6011", label: "Music" }, { value: "6010", label: "Navigation" },
-  { value: "6009", label: "News" }, { value: "6008", label: "Photo & Video" }, { value: "6007", label: "Productivity" }, { value: "6006", label: "Reference" },
-  { value: "6024", label: "Shopping" }, { value: "6005", label: "Social Networking" }, { value: "6004", label: "Sports" }, { value: "6003", label: "Travel" },
-  { value: "6002", label: "Utilities" }, { value: "6001", label: "Weather" }, { value: "6026", label: "Developer Tools" }, { value: "6018", label: "Books" },
+  { value: "", label: m("All apps") },
+  { value: "6000", label: m("Business") }, { value: "6017", label: m("Education") }, { value: "6016", label: m("Entertainment") }, { value: "6015", label: m("Finance") },
+  { value: "6023", label: m("Food & Drink") }, { value: "6014", label: m("Games") }, { value: "6027", label: m("Graphics & Design") }, { value: "6013", label: m("Health & Fitness") },
+  { value: "6012", label: m("Lifestyle") }, { value: "6020", label: m("Medical") }, { value: "6011", label: m("Music") }, { value: "6010", label: m("Navigation") },
+  { value: "6009", label: m("News") }, { value: "6008", label: m("Photo & Video") }, { value: "6007", label: m("Productivity") }, { value: "6006", label: m("Reference") },
+  { value: "6024", label: m("Shopping") }, { value: "6005", label: m("Social Networking") }, { value: "6004", label: m("Sports") }, { value: "6003", label: m("Travel") },
+  { value: "6002", label: m("Utilities") }, { value: "6001", label: m("Weather") }, { value: "6026", label: m("Developer Tools") }, { value: "6018", label: m("Books") },
 ];
 
 export const COUNTRIES: { value: string; label: string }[] = [
-  { value: "us", label: "United States" }, { value: "gb", label: "United Kingdom" }, { value: "ca", label: "Canada" }, { value: "au", label: "Australia" },
-  { value: "de", label: "Germany" }, { value: "fr", label: "France" }, { value: "es", label: "Spain" }, { value: "it", label: "Italy" },
-  { value: "nl", label: "Netherlands" }, { value: "se", label: "Sweden" }, { value: "br", label: "Brazil" }, { value: "mx", label: "Mexico" },
-  { value: "in", label: "India" }, { value: "jp", label: "Japan" }, { value: "kr", label: "South Korea" },
+  { value: "us", label: m("United States") }, { value: "gb", label: m("United Kingdom") }, { value: "ca", label: m("Canada") }, { value: "au", label: m("Australia") },
+  { value: "de", label: m("Germany") }, { value: "fr", label: m("France") }, { value: "es", label: m("Spain") }, { value: "it", label: m("Italy") },
+  { value: "nl", label: m("Netherlands") }, { value: "se", label: m("Sweden") }, { value: "br", label: m("Brazil") }, { value: "mx", label: m("Mexico") },
+  { value: "in", label: m("India") }, { value: "jp", label: m("Japan") }, { value: "kr", label: m("South Korea") },
 ];
 
 // MARK: Words for numbers and dates
@@ -100,17 +107,17 @@ export const COUNTRIES: { value: string; label: string }[] = [
 const DAY = 86_400_000;
 
 /** "today", "yesterday", "12 days ago", "3 months ago", "2 years ago"; "" when there's no date. */
-export function ago(iso: string | null | undefined, now = Date.now()): string {
+export function ago(iso: string | null | undefined, now = Date.now(), tr: Words = ENGLISH): string {
   const at = iso ? Date.parse(iso) : NaN;
   if (!Number.isFinite(at)) return "";
   const days = Math.floor((now - at) / DAY);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 45) return `${days} days ago`;
+  if (days <= 0) return tr.t("today");
+  if (days === 1) return tr.t("yesterday");
+  if (days < 45) return tr.tn(days, "{n} day ago", "{n} days ago");
   const months = Math.round(days / 30.4);
-  if (months < 18) return `${months} month${months === 1 ? "" : "s"} ago`;
+  if (months < 18) return tr.tn(months, "{n} month ago", "{n} months ago");
   const years = Math.round(days / 365);
-  return `${years} year${years === 1 ? "" : "s"} ago`;
+  return tr.tn(years, "{n} year ago", "{n} years ago");
 }
 
 /** 149029 → "149K", 12375828 → "12.4M", 920 → "920". */
@@ -122,13 +129,14 @@ export function compact(n: number | null | undefined): string {
 }
 
 /** "4.8 (149K)"; "No ratings yet" when there are none. */
-export const ratingText = (rating: number | null | undefined, count: number | null | undefined) =>
-  rating == null || !count ? "No ratings yet" : `${rating.toFixed(1)} (${compact(count)})`;
+export const ratingText = (rating: number | null | undefined, count: number | null | undefined, tr: Words = ENGLISH) =>
+  rating == null || !count ? tr.t("No ratings yet") : `${rating.toFixed(1)} (${compact(count)})`;
 
 /** "Free", "$4.99", "Free · in-app purchases"; "" when the price isn't known. */
-export function priceText(app: Pick<MarketApp, "price_label" | "price" | "has_iap">): string {
-  const base = app.price_label ?? (app.price === 0 ? "Free" : app.price != null ? String(app.price) : "");
-  return app.has_iap ? `${base || "Free"} · in-app purchases` : base;
+export function priceText(app: Pick<MarketApp, "price_label" | "price" | "has_iap">, tr: Words = ENGLISH): string {
+  // The store's own label is English ("Free", "$4.99"); "Free" is the one word worth saying in the page's language.
+  const base = (app.price_label === "Free" ? tr.t("Free") : app.price_label) ?? (app.price === 0 ? tr.t("Free") : app.price != null ? String(app.price) : "");
+  return app.has_iap ? tr.t("{price} · in-app purchases", { price: base || tr.t("Free") }) : base;
 }
 
 // MARK: How often an app ships
@@ -139,18 +147,24 @@ export interface Cadence { releases: number; medianDays: number | null; lastAt: 
  * How often the app ships, from the releases seen (dated ones only): the median gap between them in
  * words. One release: when it shipped. None: nothing known yet.
  */
-export function cadence(releases: Pick<Release, "released_at">[], now = Date.now()): Cadence {
+export function cadence(releases: Pick<Release, "released_at">[], now = Date.now(), tr: Words = ENGLISH): Cadence {
   const dates = [...new Set(releases.map((r) => r.released_at).filter((d): d is string => Boolean(d && Number.isFinite(Date.parse(d)))))]
     .map((d) => Date.parse(d)).sort((a, b) => b - a);
   const lastAt = dates.length ? new Date(dates[0]).toISOString() : null;
   if (dates.length < 2) {
-    return { releases: dates.length, medianDays: null, lastAt, label: dates.length ? `One release seen so far, ${ago(lastAt, now)}.` : "No releases seen yet." };
+    return { releases: dates.length, medianDays: null, lastAt, label: dates.length ? tr.t("One release seen so far, {ago}.", { ago: ago(lastAt, now, tr) }) : tr.t("No releases seen yet.") };
   }
   const gaps = dates.slice(1).map((d, i) => (dates[i] - d) / DAY).sort((a, b) => a - b);
   const mid = Math.floor(gaps.length / 2);
   const median = gaps.length % 2 ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2;
-  const every = median < 1.5 ? "about every day" : median < 10 ? `about every ${Math.round(median)} days` : median < 60 ? `about every ${Math.round(median / 7)} weeks` : `about every ${Math.round(median / 30.4)} months`;
-  return { releases: dates.length, medianDays: Math.round(median * 10) / 10, lastAt, label: `Ships ${every.replace("every 1 weeks", "every week").replace("every 1 months", "every month")}, last ${ago(lastAt, now)}.` };
+  const last = ago(lastAt, now, tr);
+  const weeks = Math.round(median / 7);
+  const months = Math.round(median / 30.4);
+  const label = median < 1.5 ? tr.t("Ships about every day, last {ago}.", { ago: last })
+    : median < 10 ? tr.t("Ships about every {n} days, last {ago}.", { n: Math.round(median), ago: last })
+    : median < 60 ? tr.tn(weeks, "Ships about every week, last {ago}.", "Ships about every {n} weeks, last {ago}.", { ago: last })
+    : tr.tn(months, "Ships about every month, last {ago}.", "Ships about every {n} months, last {ago}.", { ago: last });
+  return { releases: dates.length, medianDays: Math.round(median * 10) / 10, lastAt, label };
 }
 
 // MARK: Ratings and stars

@@ -1,11 +1,14 @@
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { BackgroundTasks } from "@/components/background-tasks";
 import { DialogHost } from "@/components/dialog";
+import { CoachMarks } from "@/components/getting-started";
 import { InstantViews } from "@/components/instant";
 import { CommandMenu } from "@/components/nav/command-menu";
+import { HelpPanel } from "@/components/nav/help-panel";
 import { SessionWatch } from "@/components/nav/session";
 import { MobileBar, NavKeys, Sidebar } from "@/components/nav/sidebar";
 import { UpdateBanner } from "@/components/nav/update-banner";
+import { WhoProvider } from "@/components/nav/who";
 
 /**
  * The signed-in app's frame. Wide screens: the sidebar on the pale grey background, and beside it the
@@ -17,6 +20,7 @@ import { UpdateBanner } from "@/components/nav/update-banner";
  */
 export function AppShell({ name, email, local, children, page }: { name?: string | null; email?: string; local?: boolean; children: ReactNode; page?: ReactNode }) {
   return (
+    <WhoProvider who={{ name, email }}>
     <div className="flex min-h-dvh flex-col bg-canvas lg:h-dvh lg:flex-row lg:bg-shell">
       <Sidebar name={name} email={email} local={local} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:py-2 lg:pr-2">
@@ -32,8 +36,12 @@ export function AppShell({ name, email, local, children, page }: { name?: string
       <BackgroundTasks />
       <DialogHost />
       <CommandMenu />
+      <HelpPanel />
       <NavKeys />
       <SessionWatch />
+      {/* The getting-started guide's pointer on a page opened with ?guide= (components/getting-started.tsx). */}
+      <Suspense><CoachMarks /></Suspense>
     </div>
+    </WhoProvider>
   );
 }

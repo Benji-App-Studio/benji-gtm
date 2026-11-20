@@ -45,7 +45,7 @@ import {
   tiktokLibraryQuery, tiktokTokenBody, type AdSource, type PaidAd,
 } from "../radar/engine/adlibrary.ts";
 import { apifyRunLimits, LIMITS, makePlan as planFor, pageIdFrom, planAnswer, runEstimate } from "./plan.ts";
-import { giveUpPulls, NO_APIFY_MESSAGE } from "./pulls.ts";
+import { giveUpPulls, groupPulls, KEY_GONE_MESSAGE, NO_APIFY_MESSAGE, type PullKeySource, PULLS_PER_TICK } from "./pulls.ts";
 import { claimPatch, DECODE_MAX_ATTEMPTS, drainLanes, successPatch } from "./decode_retry.ts";
 import { onSources, readResearch, resolveSources, type ResolvedSources, tiktokSwitch } from "../_shared/research-sources.ts";
 import { apifyClient, isActive } from "../radar/engine/apify.ts";
@@ -55,17 +55,21 @@ import { creativeChanges, type CreativeFields } from "./versions.ts";
 import { cleanTemplateAnalysis, DEFAULT_TEMPLATE_NAME, isOwnTemplateUpload, responseJson, TEMPLATE_SCHEMA, TEMPLATE_SYSTEM } from "./templates.ts";
 import type { ProjectWorkflow } from "../radar/engine/types.ts";
 import {
-  allowedMediaUrl, extensionFor, failureFor, MEDIA_BUCKET, MEDIA_EXPIRED, MEDIA_MAX_BYTES, mediaFiles, mediaMime, mediaPath, retryDelaySeconds, sha256Hex, urlKey,
-  type MediaKind,
+  allowedMediaUrl, extensionFor, failureFor, MEDIA_BUCKET, MEDIA_EXPIRED, MEDIA_MAX_BYTES, MEDIA_QUEUE_FULL, MEDIA_QUEUE_PER_USER, mediaFiles, mediaMime, mediaPath,
+  retryDelaySeconds, sha256Hex, splitByQueueCap, urlKey, type MediaKind,
 } from "./media.ts";
 import { cleanAdMedia, MERGE_COLUMNS, mergeAdRow, scanTranscript, scanVideo } from "./rows.ts";
 import { accountError, type Judge, JudgeError, keyRefusal } from "../_shared/ai/judge.ts";
 import { modelOverrides, resolveModels, TIMED_TRANSCRIBE_MODELS } from "../_shared/ai/models.ts";
 import { createJudge, judgeAvailability } from "../_shared/ai/provider.ts";
-import { createAuth, HttpError } from "../_shared/auth.ts";
-import { addKeyMessage, createKeys, sameSecret } from "../_shared/keys.ts";
-import { mediaTimings, resolveLimits, storageQuotaBytes, tooBigNote, uploadMaxBytes, withinWallClock, workWindowMs } from "../_shared/limits.ts";
-import { fits, storageErrorText, storageRoom } from "../_shared/storage.ts";
+import { HttpError } from "../_shared/auth.ts";
+import { addKeyMessage, sameSecret } from "../_shared/keys.ts";
+import { tenantLocale, withLanguage } from "../_shared/language.ts";
+import {
+  type InstallLimits, mediaTimings, resolveLimits, resolvePlatformLimits, storageQuotaBytes, tooBigNote, uploadMaxBytes, withinWallClock, workWindowMs,
+} from "../_shared/limits.ts";
+import { fits, type Room, storageErrorText } from "../_shared/storage.ts";
+import { createTenancy, type Tenant } from "../_shared/tenant.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -100,9 +104,11 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
 
 // MARK: Keys and switches
 
-/** Every key comes from the shared reader (edge function secret first, then Vault). */
-const secrets = createKeys(db);
-const auth = createAuth(db);
+/**
+ * Whose keys, settings and limits each piece of work uses (_shared/tenant.ts): the install's in install
+ * and legacy mode, the account's own in accounts mode. The worker secret is the platform's.
+ */
+const tenancy = createTenancy(db);
 
 /** API keys: from the shared reader. */
 const KEY_NAMES = ["META_AD_LIBRARY_TOKEN", "APIFY_TOKEN", "TIKTOK_RESEARCH_CLIENT_KEY", "TIKTOK_RESEARCH_CLIENT_SECRET", "OPENAI_API_KEY"] as const;
@@ -110,30 +116,32 @@ const KEY_NAMES = ["META_AD_LIBRARY_TOKEN", "APIFY_TOKEN", "TIKTOK_RESEARCH_CLIE
 const SWITCH_NAMES = ["RESEARCH_TIKTOK", "RESEARCH_META_APIFY_ACTOR"] as const;
 type Keys = Partial<Record<(typeof KEY_NAMES)[number] | (typeof SWITCH_NAMES)[number], string>>;
 
-/** The keys and switches this function uses, as one object. */
-async function keys(): Promise<Keys> {
+/**
+ * The keys and switches this tenant uses, as one object. The switches are the project's environment:
+ * an account that isn't staff never reads it (accounts mode).
+ */
+async function keys(t: Tenant): Promise<Keys> {
   const found: Keys = {};
   for (const name of KEY_NAMES) {
-    const value = await secrets.get(name);
+    const value = await t.keys.get(name);
     if (value) found[name] = value;
   }
-  for (const name of SWITCH_NAMES) {
-    const value = Deno.env.get(name)?.trim();
-    if (value) found[name] = value;
+  if (t.mode !== "accounts" || t.staff) {
+    for (const name of SWITCH_NAMES) {
+      const value = Deno.env.get(name)?.trim();
+      if (value) found[name] = value;
+    }
   }
   return found;
 }
 
-/** The install's settings; undefined on an install from before setup existed (no install row). */
-const installSettings = async () => (await auth.install())?.settings;
-
-/** What decides which AI answers: the keys and the install's settings (_shared/ai/provider.ts). */
-const aiChoice = async () => ({ keys: secrets, settings: await installSettings() });
+/** What decides which AI answers: the tenant's keys and settings (_shared/ai/provider.ts). */
+const aiChoice = (t: Tenant) => ({ keys: t.keys, settings: t.settings });
 
 /** The judge that reads ads: OpenAI, or TypeSafe when Settings choose it. A missing key reads as it is. */
-async function aiJudge(): Promise<Judge> {
+async function aiJudge(t: Tenant): Promise<Judge> {
   try {
-    return await createJudge(await aiChoice());
+    return await createJudge(aiChoice(t));
   } catch (error) {
     if (error instanceof JudgeError && error.kind === "config") throw new UserError(`Ads can't be read yet. ${error.message}`);
     throw error;
@@ -141,25 +149,29 @@ async function aiJudge(): Promise<Judge> {
 }
 
 /** The model for each step: an environment variable or stored key, else Settings > Models, else the default. */
-const models = async () => resolveModels((await installSettings())?.models, await modelOverrides(secrets));
+const models = async (t: Tenant) => resolveModels(t.settings?.models, await modelOverrides(t.keys));
 
 /**
- * What the Supabase plan allows (_shared/limits.ts): Settings > Limits, an environment variable when
- * set, and the numbers this function always used on an install with no install row.
+ * The limits a worker runs with before it knows whose work it takes (the media worker's clock): the
+ * install's in install and legacy mode, the platform's in accounts mode. The same numbers every tenant
+ * of this database gets.
  */
-const planLimits = async () => resolveLimits(await auth.install(), (name) => Deno.env.get(name));
+async function workerLimits(): Promise<InstallLimits> {
+  const env = (name: string) => Deno.env.get(name);
+  return (await tenancy.mode()) === "accounts" ? resolvePlatformLimits(await tenancy.auth.platform(), env) : resolveLimits(await tenancy.auth.install(), env);
+}
 
 /** The media worker's secret: Vault only (RESEARCH_WORKER_SECRET, generated in the database). */
 async function workerSecret(): Promise<string | null> {
-  return (await secrets.get("RESEARCH_WORKER_SECRET")) ?? null;
+  return (await tenancy.platform().get("RESEARCH_WORKER_SECRET")) ?? null;
 }
 
 /**
  * Which sources a pull uses (_shared/research-sources.ts): Settings > Research sources, each only with
  * its keys saved; RESEARCH_TIKTOK and RESEARCH_META_APIFY_ACTOR win where they are set.
  */
-async function sourcesFor(k: Keys): Promise<ResolvedSources> {
-  return resolveSources(readResearch((await installSettings())?.research), (name) => Boolean(k[name as keyof Keys]), {
+function sourcesFor(t: Tenant, k: Keys): ResolvedSources {
+  return resolveSources(readResearch(t.settings?.research), (name) => Boolean(k[name as keyof Keys]), {
     RESEARCH_TIKTOK: k.RESEARCH_TIKTOK, RESEARCH_META_APIFY_ACTOR: k.RESEARCH_META_APIFY_ACTOR,
   });
 }
@@ -178,11 +190,6 @@ const CORS = {
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-/** The signed-in caller's user id; 403 unless this install lets them in. */
-async function signedInUser(req: Request): Promise<string> {
-  return (await auth.member(req)).id;
-}
-
 async function requireWorker(req: Request) {
   const secret = await workerSecret();
   if (!secret || !sameSecret(req.headers.get("x-research-worker") ?? "", secret)) throw new HttpError(403, "Forbidden");
@@ -196,8 +203,12 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const route = new URL(req.url).pathname.replace(/\/+$/, "").split("/").pop();
   try {
-    // Health is booleans only, so the studio's status panel can read it without a session.
-    if (route === "health") return json(await health());
+    // Health is booleans only, so the studio's status panel can read it without a session. In accounts
+    // mode it describes the caller's own keys, and nothing without a session.
+    if (route === "health") {
+      const tenant = await tenancy.healthTenant(req);
+      return json(tenant ? await health(tenant) : { ok: true, mode: "accounts" });
+    }
     if (route === "media-tick") {
       await requireWorker(req);
       EdgeRuntime.waitUntil(drainMedia().catch((error) => console.error("media-tick", error)));
@@ -216,23 +227,23 @@ Deno.serve(async (req) => {
       EdgeRuntime.waitUntil(pollAll().catch((error) => console.error("poll-tick", errorText(error))));
       return json({ accepted: true }, 202);
     }
-    const user = await signedInUser(req);
+    const { id: user, tenant } = await tenancy.member(req);
     const input = req.method === "POST" ? await body(req) : {};
     switch (route) {
-      case "plan": return json(await plan(user, String(input.productId ?? ""), watchIds(input.watchIds)));
-      case "pull": return json(await pull(user, String(input.productId ?? ""), Boolean(input.spend), watchIds(input.watchIds)));
-      case "poll": return json(await poll(user, String(input.productId ?? "")));
-      case "import": return json(await importMcp(user, String(input.productId ?? ""), input));
-      case "import-local": return json(await importLocal(user, String(input.productId ?? ""), input));
-      case "decode": return json(await decode(user, String(input.adId ?? "")));
-      case "decode-new": return json(await decodeNew(user, String(input.productId ?? "")));
-      case "scan": return json(await scan(user, String(input.adId ?? ""), input.force === true, input.frames, input.duration));
+      case "plan": return json(await plan(tenant, user, String(input.productId ?? ""), watchIds(input.watchIds)));
+      case "pull": await tenancy.rate(tenant, "research.pull"); return json(await pull(tenant, user, String(input.productId ?? ""), Boolean(input.spend), watchIds(input.watchIds)));
+      case "poll": return json(await poll(tenant, user, String(input.productId ?? "")));
+      case "import": await tenancy.rate(tenant, "research.import"); return json(await importMcp(user, String(input.productId ?? ""), input));
+      case "import-local": await tenancy.rate(tenant, "research.import"); return json(await importLocal(tenant, user, String(input.productId ?? ""), input));
+      case "decode": await tenancy.rate(tenant, "research.decode"); return json(await decode(tenant, user, String(input.adId ?? "")));
+      case "decode-new": await tenancy.rate(tenant, "research.decode"); return json(await decodeNew(tenant, user, String(input.productId ?? "")));
+      case "scan": await tenancy.rate(tenant, "research.scan"); return json(await scan(tenant, user, String(input.adId ?? ""), input.force === true, input.frames, input.duration));
       case "template-analyze": {
-        const result = await templateAnalyze(user, String(input.productId ?? ""), String(input.templateId ?? ""), input.wait === true);
+        const result = await templateAnalyze(tenant, user, String(input.productId ?? ""), String(input.templateId ?? ""), input.wait === true);
         return json(result, result.status === "analyzing" ? 202 : 200);
       }
       case "media-status": return json(await mediaStatus(user, String(input.productId ?? "")));
-      case "media-preview": return json(await mediaPreview(user, String(input.productId ?? ""), input));
+      case "media-preview": return json(await mediaPreview(tenant, user, String(input.productId ?? ""), input));
       case "media-clear": return json(await mediaClear(user, String(input.productId ?? ""), typeof input.pageId === "string" ? input.pageId : null));
       case "competitor-delete": return json(await competitorDelete(user, String(input.productId ?? ""), String(input.watchId ?? "")));
       default: return json({ error: "Not found" }, 404);
@@ -255,10 +266,10 @@ function watchIds(value: unknown): string[] | null {
   return ids.length ? ids : null;
 }
 
-async function health() {
-  const k = await keys();
-  const resolved = await sourcesFor(k);
-  const ai = await judgeAvailability(await aiChoice());
+async function health(t: Tenant) {
+  const k = await keys(t);
+  const resolved = sourcesFor(t, k);
+  const ai = await judgeAvailability(aiChoice(t));
   return {
     metaApi: Boolean(k.META_AD_LIBRARY_TOKEN),
     apify: Boolean(k.APIFY_TOKEN),
@@ -267,7 +278,7 @@ async function health() {
     jev: ai.ok,
     ai: ai.ok,
     aiProvider: ai.ok ? ai.provider : null,
-    limits: await planLimits(),
+    limits: t.limits,
     openai: Boolean(k.OPENAI_API_KEY),
     tiktok: tiktokMode(resolved, k),
     tiktokLibrary: Boolean(k.TIKTOK_RESEARCH_CLIENT_KEY && k.TIKTOK_RESEARCH_CLIENT_SECRET),
@@ -305,16 +316,16 @@ async function watchlist(productId: string, withPaused = false): Promise<WatchRo
 }
 
 /** What a pull would do with the current sources and watchlist, and the most it could cost (plan.ts). */
-async function makePlan(productId: string, k: Keys, ids: string[] | null) {
-  const resolved = await sourcesFor(k);
+async function makePlan(t: Tenant, productId: string, k: Keys, ids: string[] | null) {
+  const resolved = sourcesFor(t, k);
   const p = planFor(await watchlist(productId, Boolean(ids)), resolved, { watchIds: ids });
   if (p.metaApify.length && !k.APIFY_TOKEN) p.notes.push(`US and other non-EU ads can't be pulled yet. ${addKeyMessage("APIFY_TOKEN")}`);
   return { p, resolved };
 }
 
-async function plan(user: string, productId: string, ids: string[] | null) {
+async function plan(t: Tenant, user: string, productId: string, ids: string[] | null) {
   await ownProduct(user, productId);
-  const { p, resolved } = await makePlan(productId, await keys(), ids);
+  const { p, resolved } = await makePlan(t, productId, await keys(t), ids);
   return { ...planAnswer(p), sourcesOn: onSources(resolved), metaActor: resolved.metaActor };
 }
 
@@ -418,8 +429,14 @@ function matcher(list: WatchRow[]) {
 
 // MARK: Pull
 
-async function logPull(user: string, productId: string, source: AdSource, fields: Record<string, unknown>) {
-  const { data } = await db.from("ad_pulls").insert({ user_id: user, product_id: productId, source, ...fields }).select("id").single();
+/**
+ * Logs a pull. In accounts mode an Apify pull also notes which kind of token it was started with
+ * (ad_pulls.key_source), so it is polled with that same token later (pollAll); elsewhere the row is as before.
+ */
+async function logPull(user: string, productId: string, source: AdSource, fields: Record<string, unknown>, t?: Tenant) {
+  const keySource = t && fields.apify_run_id ? await tenancy.keySource(t, "APIFY_TOKEN") : null;
+  const row = { user_id: user, product_id: productId, source, ...fields, ...(keySource ? { key_source: keySource } : {}) };
+  const { data } = await db.from("ad_pulls").insert(row).select("id").single();
   return data?.id as string | undefined;
 }
 
@@ -429,10 +446,10 @@ async function logPull(user: string, productId: string, source: AdSource, fields
  * finish in `poll`. Answers each source's result and the ids of the pulls it logged, so the studio can
  * follow them to the end.
  */
-async function pull(user: string, productId: string, spend: boolean, ids: string[] | null = null) {
+async function pull(t: Tenant, user: string, productId: string, spend: boolean, ids: string[] | null = null) {
   await ownProduct(user, productId);
-  const k = await keys();
-  const { p, resolved } = await makePlan(productId, k, ids);
+  const k = await keys(t);
+  const { p, resolved } = await makePlan(t, productId, k, ids);
   const paidCount = p.metaApify.length + p.google.length + p.tiktokEu.length + p.tiktokTopAds.length;
   if (!p.metaApi.length && !p.tiktokLibrary.length && !paidCount) {
     throw new UserError(p.notes[0] ?? p.skipped[0]?.reason ?? "Nothing to collect: turn on a source in Settings > Research sources, or add a competitor.");
@@ -440,7 +457,7 @@ async function pull(user: string, productId: string, spend: boolean, ids: string
   const results: { source: AdSource; watch?: string; ads?: number; started?: boolean; error?: string }[] = [];
   const pullIds: string[] = [];
   const logged = async (source: AdSource, fields: Record<string, unknown>) => {
-    const id = await logPull(user, productId, source, fields);
+    const id = await logPull(user, productId, source, fields, t);
     if (id) pullIds.push(id);
   };
 
@@ -546,15 +563,41 @@ async function pull(user: string, productId: string, spend: boolean, ids: string
 }
 
 /** Finishes the workspace's Apify pulls whose runs are done (the Research page asks while it's open). */
-async function poll(user: string, productId: string) {
+async function poll(t: Tenant, user: string, productId: string) {
   await ownProduct(user, productId);
   const { data: running } = await db.from("ad_pulls").select("*").eq("product_id", productId).eq("status", "running").not("apify_run_id", "is", null);
   if (!running?.length) return { running: 0 };
-  const k = await keys();
+  let still = 0, missing = false;
+  // Each kind of token the pulls were started with (accounts mode); one group in install and legacy mode.
+  for (const group of groupPulls(running as PullRow[], Infinity)) {
+    const result = await pollGroup(t, group.keySource, group.products);
+    still += result.still;
+    missing ||= result.missing;
+  }
   // Without a token the pulls fail now with what to add (pulls.ts), instead of staying "running".
-  const live = await giveUpPulls(running as PullRow[], pullEnds(k.APIFY_TOKEN));
-  if (!k.APIFY_TOKEN) throw new UserError(NO_APIFY_MESSAGE);
-  return { running: await finishPulls(k.APIFY_TOKEN, productId, live) };
+  if (missing) throw new UserError(NO_APIFY_MESSAGE);
+  return { running: still };
+}
+
+/**
+ * Polls one account's pulls that were started with the same kind of token (pulls.ts groupPulls), with
+ * that token: the account's own, or the platform's for a staff account (tenancy.keysFor). Pulls whose
+ * token is gone fail with what to do instead of being polled with another one.
+ */
+async function pollGroup(t: Tenant, keySource: PullKeySource, products: Map<string, PullRow[]>): Promise<{ still: number; missing: boolean }> {
+  const reader = tenancy.keysFor(t, keySource);
+  const token = reader ? await reader.get("APIFY_TOKEN") : undefined;
+  const gone = t.mode === "accounts" && keySource !== null;
+  let still = 0;
+  for (const [productId, rows] of products) {
+    const live = await giveUpPulls(rows, { ...pullEnds(token), ...(gone ? { noTokenMessage: KEY_GONE_MESSAGE } : {}) });
+    if (!token || !live.length) continue;
+    still += await finishPulls(t, token, productId, live).catch((error) => {
+      console.error("poll", productId, errorText(error));
+      return live.length;
+    });
+  }
+  return { still, missing: !token && !gone };
 }
 
 /** A pull claimed by a poll that then stopped (a crashed invocation) can be claimed again after this. */
@@ -573,19 +616,23 @@ const pullEnds = (token: string | undefined) => ({
  * time is stopped at Apify and marked failed; without an Apify token every running pull fails at once.
  */
 async function pollAll() {
-  const { data: running } = await db.from("ad_pulls").select("*").eq("status", "running").not("apify_run_id", "is", null).order("started_at").limit(50);
+  // Accounts mode reads more at once and follows at most PULLS_PER_USER of one account's per run; install
+  // and legacy mode read the oldest 50, as they always did.
+  const accounts = (await tenancy.mode()) === "accounts";
+  const { data: running } = await db.from("ad_pulls").select("*").eq("status", "running").not("apify_run_id", "is", null).order("started_at").limit(accounts ? PULLS_PER_TICK : 50);
   if (!running?.length) return { running: 0 };
-  const k = await keys();
-  const live = await giveUpPulls(running as PullRow[], pullEnds(k.APIFY_TOKEN));
-  if (!k.APIFY_TOKEN || !live.length) return { running: 0 };
-  const byProduct = new Map<string, PullRow[]>();
-  for (const row of live) byProduct.set(row.product_id, [...(byProduct.get(row.product_id) ?? []), row]);
+  // Accounts mode: a suspended account's pulls wait (they are neither polled nor failed).
+  const active = await tenancy.activeUsers((running as PullRow[]).map((row) => row.user_id));
   let still = 0;
-  for (const [productId, rows] of byProduct) {
-    still += await finishPulls(k.APIFY_TOKEN, productId, rows).catch((error) => {
-      console.error("poll-tick", productId, errorText(error));
-      return rows.length;
-    });
+  // By account, then the kind of token, then workspace.
+  for (const group of groupPulls((running as PullRow[]).filter((row) => active.has(row.user_id)), accounts ? undefined : Infinity)) {
+    try {
+      const t = await tenancy.for(group.userId);
+      if (!t.active) continue;
+      still += (await pollGroup(t, group.keySource, group.products)).still;
+    } catch (error) {
+      console.error("poll-tick", group.userId, errorText(error));
+    }
   }
   return { running: still };
 }
@@ -598,14 +645,18 @@ function mapItem(source: AdSource, raw: Record<string, any>, competitor: string 
   return fromMetaLibrary(raw);
 }
 
-interface PullRow { id: string; user_id: string; product_id: string; source: AdSource; apify_run_id: string; input: Record<string, any> | null; finished_at: string | null; started_at: string | null }
+interface PullRow {
+  id: string; user_id: string; product_id: string; source: AdSource; apify_run_id: string; input: Record<string, any> | null; finished_at: string | null; started_at: string | null;
+  /** Which kind of token started it (accounts mode); null on older rows and elsewhere. */
+  key_source?: PullKeySource;
+}
 
 /**
  * Reads the ads of each finished run and saves them, then queues their media files for storage. A pull
  * is claimed first (its finished_at is stamped while it is still running), so the page's poll and the
  * watchdog never save one twice. Returns how many are still running.
  */
-async function finishPulls(apifyToken: string, productId: string, running: PullRow[]): Promise<number> {
+async function finishPulls(t: Tenant, apifyToken: string, productId: string, running: PullRow[]): Promise<number> {
   const apify = apifyClient(apifyToken);
   const list = await watchlist(productId, true);
   const match = matcher(list);
@@ -634,7 +685,7 @@ async function finishPulls(apifyToken: string, productId: string, running: PullR
       // Like an import: the files go to storage in the background, before Meta's links expire.
       // A failure here doesn't undo the pull.
       try {
-        const media = await enqueueMedia(user, productId, files);
+        const media = await enqueueMedia(t, user, productId, files);
         if (media.queued) EdgeRuntime.waitUntil(wakeMedia());
       } catch (error) {
         console.error("enqueue media", errorText(error));
@@ -762,7 +813,7 @@ function importBatch(value: unknown): ImportBatch | null {
  * among ads this import didn't touch (last seen before the first batch began); the run is logged once,
  * by the last batch (or by a batch that failed for good).
  */
-async function importLocal(user: string, productId: string, input: Record<string, any>) {
+async function importLocal(t: Tenant, user: string, productId: string, input: Record<string, any>) {
   await ownProduct(user, productId);
   const file = input.file as Record<string, any> | null;
   if (!file || typeof file !== "object") throw new UserError("Choose the scraper's .json file.");
@@ -871,7 +922,7 @@ async function importLocal(user: string, productId: string, input: Record<string
     try {
       const holdId = typeof input.holdId === "string" && /^[0-9a-f-]{36}$/.test(input.holdId) ? input.holdId : null;
       const { data: hold } = holdId ? await db.from("research_media_holds").select("holds").eq("hold_id", holdId).eq("user_id", user).maybeSingle() : { data: null };
-      media = await enqueueMedia(user, productId, files, (hold?.holds as Record<string, string> | undefined) ?? null);
+      media = await enqueueMedia(t, user, productId, files, (hold?.holds as Record<string, string> | undefined) ?? null);
       if (media.queued && (first || last || batch!.index % 5 === 0)) EdgeRuntime.waitUntil(wakeMedia());
     } catch (error) {
       console.error("enqueue media", error);
@@ -936,11 +987,11 @@ async function decodeRow(client: Judge, product: { name: string; description: st
  * Reads one ad now: the drawer's "Read again", or after the scan heard its video. A failure is kept on
  * the ad (decode_error) for the page, without using up one of the background reader's tries.
  */
-async function decode(user: string, adRowId: string) {
+async function decode(t: Tenant, user: string, adRowId: string) {
   if (!/^[0-9a-f-]{36}$/.test(adRowId)) throw new HttpError(400, "Which ad?");
   const { data: row } = await db.from("paid_ads").select("*").eq("id", adRowId).eq("user_id", user).maybeSingle();
   if (!row) throw new HttpError(404, "This ad doesn't exist.");
-  const client = await aiJudge();
+  const client = await aiJudge(t);
   try {
     return await decodeRow(client, await ownProduct(user, row.product_id), row);
   } catch (error) {
@@ -964,9 +1015,9 @@ function unread(user: string, productId: string, columns = "id") {
  * and when the Research page opens with unread ads). One run at a time per product; `pending` counts
  * the ads left to read.
  */
-async function decodeNew(user: string, productId: string) {
+async function decodeNew(t: Tenant, user: string, productId: string) {
   await ownProduct(user, productId);
-  const ai = await judgeAvailability(await aiChoice());
+  const ai = await judgeAvailability(aiChoice(t));
   if (!ai.ok) return { pending: 0, running: false, error: `Ads can't be read yet. ${ai.message}` };
   const { count } = await unread(user, productId).limit(1);
   const pending = count ?? 0;
@@ -986,9 +1037,12 @@ async function decodeNew(user: string, productId: string) {
  */
 async function drainDecodes(user: string, productId: string) {
   const started = Date.now();
-  const client = await aiJudge();
+  // The account's own keys and settings (accounts mode); a suspended account's ads wait.
+  const t = await tenancy.for(user);
+  if (!t.active) return;
+  const client = await aiJudge(t);
   const product = await ownProduct(user, productId);
-  const runMs = workWindowMs(await planLimits(), DECODE_RUN_MS);
+  const runMs = workWindowMs(t.limits, DECODE_RUN_MS);
   const claim = async (): Promise<(Record<string, any> & { id: string }) | null> => {
     const nowIso = new Date().toISOString();
     // Free: never claimed, or claimed long ago by a run that stopped; and past its wait after a failed try.
@@ -1303,7 +1357,7 @@ function cleanVideo(raw: any, seconds: number | null) {
  * `force`. Their image goes to OpenAI for reading only. A video ad is read as a video: the key frames
  * the browser took (`frames`; else its poster) plus its audio through speech-to-text.
  */
-async function scan(user: string, adRowId: string, force: boolean, framesInput?: unknown, durationInput?: unknown) {
+async function scan(t: Tenant, user: string, adRowId: string, force: boolean, framesInput?: unknown, durationInput?: unknown) {
   if (!/^[0-9a-f-]{36}$/.test(adRowId)) throw new HttpError(400, "Which ad?");
   const { data: row } = await db.from("paid_ads").select("*").eq("id", adRowId).eq("user_id", user).maybeSingle();
   if (!row) throw new HttpError(404, "This ad doesn't exist.");
@@ -1312,9 +1366,9 @@ async function scan(user: string, adRowId: string, force: boolean, framesInput?:
   // A stored scan of a video read from its poster alone is redone when frames come with the request.
   if (row.scan && !force && !(frames.length && row.scan.image_source !== "video_frames")) return { scan: row.scan, scannedAt: row.scanned_at, cached: true };
   const startedAt = Date.now();
-  const k = await keys();
+  const k = await keys(t);
   if (!k.OPENAI_API_KEY) throw new UserError(`OpenAI isn't connected. ${addKeyMessage("OPENAI_API_KEY")}`);
-  const use = await models();
+  const use = await models(t);
   const product = await ownProduct(user, row.product_id);
   const [{ data: kitRow }, { data: assetRows }] = await Promise.all([
     db.from("products").select("brand_kit, insight").eq("id", row.product_id).maybeSingle(),
@@ -1370,13 +1424,14 @@ async function scan(user: string, adRowId: string, force: boolean, framesInput?:
         // A video's key frames plus its transcript at medium effort ran past the timeout (Oct 15 2026): low keeps it inside.
         model, reasoning: { effort: frames.length ? "low" : "medium" },
         input: [
-          { role: "system", content: SCAN_SYSTEM },
+          // The analysis is read by the person (their language); our copy suggestions and script are ad copy (the same, by default).
+          { role: "system", content: withLanguage(SCAN_SYSTEM, await tenantLocale(db, t)) },
           { role: "user", content: [{ type: "input_text", text: JSON.stringify(facts, null, 2) }, ...pictures] },
         ],
         text: { format: { type: "json_schema", name: "ad_scan", strict: true, schema: SCAN_SCHEMA } },
       }),
       // Cut to end before the plan's time limit, counting what the download and the transcript already took.
-      signal: AbortSignal.timeout(withinWallClock(await planLimits(), videoUrl ? 100_000 : 120_000, Date.now() - startedAt)),
+      signal: AbortSignal.timeout(withinWallClock(t.limits, videoUrl ? 100_000 : 120_000, Date.now() - startedAt)),
     });
   } catch {
     throw new UserError("OpenAI didn't answer in time. Try again in a moment.");
@@ -1430,7 +1485,7 @@ async function templateImage(url: string): Promise<string> {
  * "analyzed", or "failed" with the reason. Answers at once (202, status "analyzing") and reads in the
  * background, unless `wait`. Never while the template is being remade or is already made.
  */
-async function templateAnalyze(user: string, productId: string, templateId: string, wait: boolean) {
+async function templateAnalyze(t: Tenant, user: string, productId: string, templateId: string, wait: boolean) {
   await ownProduct(user, productId);
   if (!/^[0-9a-f-]{36}$/.test(templateId)) throw new HttpError(400, "Which template?");
   const { data: row } = await db.from("product_templates").select("id, kind, status, name, source_url").eq("id", templateId).eq("product_id", productId).eq("user_id", user).maybeSingle();
@@ -1440,7 +1495,7 @@ async function templateAnalyze(user: string, productId: string, templateId: stri
   if (row.status !== "analyzing") {
     await db.from("product_templates").update({ status: "analyzing", error: null }).eq("id", row.id).eq("status", row.status);
   }
-  const work = readTemplate(row.id, row.source_url as string, row.name === DEFAULT_TEMPLATE_NAME);
+  const work = readTemplate(t, row.id, row.source_url as string, row.name === DEFAULT_TEMPLATE_NAME);
   if (!wait) {
     EdgeRuntime.waitUntil(work.catch((error) => console.error("template-analyze", error)));
     return { templateId: row.id, status: "analyzing" as const };
@@ -1450,13 +1505,13 @@ async function templateAnalyze(user: string, productId: string, templateId: stri
   return result;
 }
 
-async function readTemplate(id: string, sourceUrl: string, rename: boolean): Promise<{ templateId: string; status: "analyzed"; analysis: ReturnType<typeof cleanTemplateAnalysis> } | { templateId: string; status: "failed"; error: string }> {
+async function readTemplate(t: Tenant, id: string, sourceUrl: string, rename: boolean): Promise<{ templateId: string; status: "analyzed"; analysis: ReturnType<typeof cleanTemplateAnalysis> } | { templateId: string; status: "failed"; error: string }> {
   try {
-    const k = await keys();
+    const k = await keys(t);
     if (!k.OPENAI_API_KEY) throw new UserError(`OpenAI isn't connected. ${addKeyMessage("OPENAI_API_KEY")}`);
     const image = await templateImage(sourceUrl);
-    const model = (await models()).vision;
-    const timeoutMs = withinWallClock(await planLimits(), 120_000);
+    const model = (await models(t)).vision;
+    const timeoutMs = withinWallClock(t.limits, 120_000);
     let response: Response;
     try {
       response = await fetch("https://api.openai.com/v1/responses", {
@@ -1465,7 +1520,8 @@ async function readTemplate(id: string, sourceUrl: string, rename: boolean): Pro
         body: JSON.stringify({
           model, reasoning: { effort: "medium" },
           input: [
-            { role: "system", content: TEMPLATE_SYSTEM },
+            // The template's name and notes in the person's language; the examples stay as printed on the ad.
+            { role: "system", content: withLanguage(TEMPLATE_SYSTEM, await tenantLocale(db, t)) },
             { role: "user", content: [{ type: "input_text", text: "Read this ad image." }, { type: "input_image", image_url: image }] },
           ],
           text: { format: { type: "json_schema", name: "ad_template", strict: true, schema: TEMPLATE_SCHEMA } },
@@ -1512,6 +1568,11 @@ const MEDIA_MAX_ATTEMPTS = 3;
 const MEDIA_NO_ROOM = "No room left in storage when it was imported: free up space in Settings > Storage (or delete competitors you're done with), then import the same file again.";
 /** A file the worker reached when storage had filled up: not stored, the ad and its poster link stay. */
 const MEDIA_NO_ROOM_NOW = "Storage was full when this file's turn came: free up space in Settings > Storage, then import the same file again.";
+/** Accounts mode: the same two notes when it is the account's own storage that is full. */
+const MEDIA_NO_ROOM_ACCOUNT = "No room left in your storage when it was imported: delete old saved ad media or creatives in Settings > Storage, then import the same file again.";
+const MEDIA_NO_ROOM_NOW_ACCOUNT = "Your storage was full when this file's turn came: delete old saved ad media or creatives in Settings > Storage, then import the same file again.";
+/** A file of a suspended account that the worker reached: not stored. */
+const MEDIA_SUSPENDED = "This account is suspended, so the file wasn't saved.";
 
 /**
  * The media worker's numbers for this install's Supabase plan (_shared/limits.ts):
@@ -1524,13 +1585,12 @@ const MEDIA_NO_ROOM_NOW = "Storage was full when this file's turn came: free up 
  *     left out with `tooBig` as its stored note, and never tried again.
  *   quotaBytes   the plan's storage (RESEARCH_STORAGE_QUOTA_GB overrides it).
  */
-async function mediaPlan() {
-  const limits = await planLimits();
+function mediaPlan(limits: InstallLimits) {
   const uploadBytes = uploadMaxBytes(limits);
   return { ...mediaTimings(limits), uploadBytes, tooBig: tooBigNote(uploadBytes), quotaBytes: storageQuotaBytes(limits) };
 }
 /** A worker run's plan, with the room left in storage (checked once at the start, then counted down as files are saved). */
-type MediaPlan = Awaited<ReturnType<typeof mediaPlan>> & { room?: { left: number } };
+type MediaPlan = ReturnType<typeof mediaPlan> & { room?: { left: number }; noRoomNow?: string };
 /** The note on a download that ran out of time (tried again, up to MEDIA_MAX_ATTEMPTS). */
 const slowNote = (ms: number) => `It didn't finish downloading within ${Math.round(ms / 1000)} s, the time this plan gives a file.`;
 const timedOut = (error: unknown) => /abort|timed? ?out/i.test(error instanceof Error ? `${error.name} ${error.message}` : String(error));
@@ -1541,7 +1601,7 @@ const tooLarge = (message: string) => /413|payload too large|maximum allowed siz
  * Queues an import's files (new, failed or still waiting ones; stored ones are skipped). Only links on
  * Meta's, Instagram's or TikTok's CDN: the worker never downloads from anywhere else.
  */
-async function enqueueMedia(user: string, productId: string, files: QueuedFile[], holds?: Record<string, string> | null) {
+async function enqueueMedia(t: Tenant, user: string, productId: string, files: QueuedFile[], holds?: Record<string, string> | null) {
   const rows = new Map<string, { url_key: string; source_url: string; kind: MediaKind; page_id: string | null }>();
   for (const file of files) {
     if (!allowedMedia(file.url)) continue;
@@ -1552,20 +1612,32 @@ async function enqueueMedia(user: string, productId: string, files: QueuedFile[]
   // recorded with the reason (a later import of the same file checks again).
   // Storage full (every bucket counts against the plan): nothing is queued; each file is recorded with the
   // reason, so a later import of the same file, after space is freed, queues it again.
+  // In accounts mode the room is the tighter of the account's and the project's (tenancy.room).
+  let noRoom = MEDIA_NO_ROOM;
   if (rows.size && !(holds && Object.keys(holds).length)) {
-    const room = await storageRoom(db, await planLimits()).catch(() => null);
+    const room = await tenancy.room(t).catch(() => null);
     if (room && !fits(room)) {
+      if (room.scope === "account") noRoom = MEDIA_NO_ROOM_ACCOUNT;
       const all = [...rows.keys()];
       holds = Object.fromEntries(all.map((k) => [k, "no_room"]));
     }
   }
+  // Accounts mode: one (non-staff) account has at most MEDIA_QUEUE_PER_USER files waiting at once; the
+  // rest are recorded as left out, with the reason, like files past the room.
+  if (t.mode === "accounts" && !t.staff && rows.size) {
+    const pending = [...rows.values()].filter((r) => !holds?.[r.url_key]);
+    const { count } = await db.from("paid_ad_media").select("id", { count: "exact", head: true }).eq("user_id", user).in("status", ["queued", "downloading"]);
+    const { over } = splitByQueueCap(pending, count ?? 0, MEDIA_QUEUE_PER_USER);
+    if (over.length) holds = { ...(holds ?? {}), ...Object.fromEntries(over.map((r) => [r.url_key, "queue_full"])) };
+  }
   const held = holds ? [...rows.values()].filter((r) => holds![r.url_key]) : [];
   if (held.length) {
-    const { tooBig } = await mediaPlan();
+    const { tooBig } = mediaPlan(t.limits);
+    const note = (hold: string) => (hold === "too_big" ? tooBig : hold === "queue_full" ? MEDIA_QUEUE_FULL : noRoom);
     for (const r of held) rows.delete(r.url_key);
     for (let i = 0; i < held.length; i += 500) {
       const { error } = await db.rpc("research_media_hold", { p_user: user, p_product: productId,
-        p_files: held.slice(i, i + 500).map((r) => ({ ...r, error: holds![r.url_key] === "too_big" ? tooBig : MEDIA_NO_ROOM })) });
+        p_files: held.slice(i, i + 500).map((r) => ({ ...r, error: note(holds![r.url_key]) })) });
       if (error) throw new Error(`Couldn't record the files left out: ${error.message}`);
     }
   }
@@ -1610,9 +1682,26 @@ async function storedUrl(productId: string, url: string): Promise<string | null>
  */
 async function drainMedia() {
   const started = Date.now();
-  const base = await mediaPlan();
-  const room = await storageRoom(db, await planLimits()).catch(() => null);
-  const plan: MediaPlan = { ...base, room: { left: room ? room.roomBytes : Infinity } };
+  const base = mediaPlan(await workerLimits());
+  const plan: MediaPlan = { ...base };
+  // Each file is saved against its own account's room (accounts mode: the tighter of the account's and
+  // the project's; elsewhere the project's, shared by every file). Checked once per tenant per run, then
+  // counted down as files are saved.
+  const rooms = new Map<string, Promise<{ tenant: Tenant; room: { left: number; account: boolean } }>>();
+  const roomFor = (userId: string) => {
+    let hit = rooms.get(userId);
+    if (!hit) {
+      hit = (async () => {
+        const tenant = await tenancy.for(userId);
+        const room: Room | null = await tenancy.room(tenant).catch(() => null);
+        return { tenant, room: { left: room ? room.roomBytes : Infinity, account: room?.scope === "account" } };
+      })();
+      // Install and legacy mode: one room for every file, as before.
+      rooms.set(userId, hit);
+    }
+    return hit;
+  };
+  const shared = (await tenancy.mode()) !== "accounts";
   const { data: active } = await db.rpc("research_media_active");
   if (Number(active ?? 0) >= MEDIA_MAX_ACTIVE) return;
   // A big backlog: wake one more worker before starting, which does the same, until the cap is reached.
@@ -1626,7 +1715,13 @@ async function drainMedia() {
       if (error) throw new Error(`Couldn't claim media: ${error.message}`);
       const row = ((data ?? []) as MediaRow[])[0];
       if (!row) return;
-      await saveMedia(row, plan).catch((e) => finishFailed(row, null, errorText(e)));
+      try {
+        const { tenant, room } = await roomFor(shared ? "" : row.user_id);
+        if (!tenant.active) { await finishFailed(row, null, MEDIA_SUSPENDED, false); continue; }
+        await saveMedia(row, { ...plan, room, noRoomNow: room.account ? MEDIA_NO_ROOM_NOW_ACCOUNT : MEDIA_NO_ROOM_NOW });
+      } catch (e) {
+        await finishFailed(row, null, errorText(e));
+      }
     }
   };
   await Promise.all(Array.from({ length: MEDIA_LANES }, lane));
@@ -1665,7 +1760,7 @@ async function saveMedia(row: MediaRow, plan: MediaPlan) {
   // No room left for it (or storage is full and its size is unknown): not stored, never half-saved.
   if (plan.room && (Number.isFinite(length) && length > 0 ? length > plan.room.left : plan.room.left <= 0)) {
     await response.body?.cancel().catch(() => {});
-    return finishFailed(row, null, MEDIA_NO_ROOM_NOW, false);
+    return finishFailed(row, null, plan.noRoomNow ?? MEDIA_NO_ROOM_NOW, false);
   }
   const path = mediaPath(row.product_id, row.page_id, await sha256Hex(row.url_key), extensionFor(mime, row.source_url));
   let bytes: number;
@@ -1749,7 +1844,7 @@ const SIZE_GUESS: Record<MediaKind, number> = { image: 400_000, poster: 150_000,
  * how much room is left and how many new files won't fit (left behind: images and posters first, then the
  * smallest videos, until the room runs out). Its decisions are saved under `holdId` for the import to apply.
  */
-async function mediaPreview(user: string, productId: string, input: Record<string, any>) {
+async function mediaPreview(t: Tenant, user: string, productId: string, input: Record<string, any>) {
   await ownProduct(user, productId);
   const holdId = String(input.holdId ?? "");
   if (!/^[0-9a-f-]{36}$/.test(holdId)) throw new HttpError(400, "Which import?");
@@ -1777,14 +1872,16 @@ async function mediaPreview(user: string, productId: string, input: Record<strin
       fresh[i].known = size !== null;
     }
   }));
-  const plan = await mediaPlan();
+  const plan = mediaPlan(t.limits);
   const limit = plan.uploadBytes;
   const tooBig = fresh.filter((f) => f.bytes > limit);
   const rest = fresh.filter((f) => f.bytes <= limit)
     .sort((a, b) => (a.kind === "video" ? 1 : 0) - (b.kind === "video" ? 1 : 0) || a.bytes - b.bytes);
-  const { data: usedData } = await db.rpc("research_storage_used");
-  const used = Number(usedData) || 0;
-  const room = Math.max(0, plan.quotaBytes - used);
+  // The project's storage (install and legacy mode); in accounts mode the tighter of the account's and the project's.
+  const space = await tenancy.room(t);
+  const used = space.usedBytes;
+  const quotaBytes = space.quotaBytes;
+  const room = space.roomBytes;
   let total = 0;
   const fits: typeof rest = [], left: typeof rest = [];
   for (const f of rest) {
@@ -1802,7 +1899,7 @@ async function mediaPreview(user: string, productId: string, input: Record<strin
     tooBig: { files: tooBig.length, videos: videos(tooBig), bytes: sum(tooBig), limitBytes: limit },
     fit: { files: fits.length, bytes: total },
     left: { files: left.length, videos: videos(left), bytes: sum(left) },
-    storage: { usedBytes: used, quotaBytes: plan.quotaBytes, roomBytes: room },
+    storage: { usedBytes: used, quotaBytes, roomBytes: room },
   };
 }
 

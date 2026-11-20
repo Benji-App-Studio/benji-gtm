@@ -1,7 +1,8 @@
 // The "Send to Meta" sheet's view of the launch function: the shapes its read routes answer with
 // (supabase/functions/launch/catalog.ts and sheet.ts) and a small caller. Rules and defaults live in
 // rules.ts (a byte-identical copy of the function's), so the sheet checks what the server checks.
-import type { BudgetMode, MetaObjective } from "./rules";
+import type { AdSetSpec, AdSpec, BudgetMode, CampaignSpec, MetaObjective } from "./rules";
+import { formatMoney } from "../i18n/format";
 
 export interface CampaignRow {
   id: string;
@@ -91,15 +92,15 @@ export async function metaCall<T>(productId: string, route: string, body: Record
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, route }),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new MetaCallError(data.error ?? `The server answered ${response.status}.`, Array.isArray(data.errors) ? data.errors : [], data);
+  // Without the server's own words, the HTTP status in a sentence the sheet shows translated
+  // (ruleText in components/launch/rules-words.ts matches it).
+  if (!response.ok) throw new MetaCallError(data.error ?? `The server answered ${response.status}. Try again.`, Array.isArray(data.errors) ? data.errors : [], data);
   return data as T;
 }
 
-/** "₹2,000" in the account currency. */
-export function money(n: number | null | undefined, currency = "USD") {
-  if (n == null || !Number.isFinite(n)) return "–";
-  try { return new Intl.NumberFormat("en", { style: "currency", currency, maximumFractionDigits: n < 100 ? 2 : 0 }).format(n); }
-  catch { return `${n} ${currency}`; }
+/** "₹2,000" in the account currency (`locale`: the page's, from the translator's `intl`). */
+export function money(n: number | null | undefined, currency = "USD", locale = "en") {
+  return formatMoney(locale, n, currency);
 }
 
 /** A <input type="datetime-local"> value ↔ ISO. */
@@ -111,3 +112,20 @@ export const toLocalInput = (iso: string | null | undefined) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 export const fromLocalInput = (v: string) => (v ? new Date(v).toISOString() : null);
+
+/**
+ * What the sheet sends to the "send" route: the specs exactly as built (Meta's codes: objective, goal,
+ * button, placements), never the words the page shows for them, so the page's language never reaches Meta.
+ */
+export function sendBody(o: {
+  stage: "TEST" | "SCALE"; mode: "new-campaign" | "new-adset" | "existing";
+  campaign: CampaignSpec; campaignId?: string | null; adSet: AdSetSpec; adSetId?: string | null; ad: AdSpec; creativeIds: string[]; confirm: boolean;
+}) {
+  return {
+    stage: o.stage,
+    campaign: o.mode === "new-campaign" ? { create: o.campaign } : { id: o.campaignId ?? undefined },
+    adSet: o.mode === "existing" ? { id: o.adSetId ?? undefined } : { create: o.adSet },
+    ad: { ...o.ad, creativeIds: o.creativeIds },
+    confirm: o.confirm,
+  };
+}

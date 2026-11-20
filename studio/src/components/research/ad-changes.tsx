@@ -4,6 +4,7 @@
 // replaced. The drawer's "Changes" section lists them newest first: when each ran, what changed, the
 // earlier text against the next version (word-level highlights) and small tiles of the earlier media.
 import { useEffect, useState } from "react";
+import { useT } from "@/lib/i18n/client";
 import { AD_CHANGE_LABEL, type AdChange, type AdVersion, type PaidAdRow } from "@/lib/research";
 import { Skeleton, SkeletonLine, SkeletonText } from "../skeleton";
 import { Badge, cx } from "../ui";
@@ -11,17 +12,18 @@ import { Badge, cx } from "../ui";
 type Text = Pick<AdVersion, "body" | "headline" | "description" | "cta" | "link_url" | "media">;
 type Load = { state: "loading" } | { state: "done"; versions: AdVersion[] } | { state: "error" };
 
-/** "Oct 3", with the year when it isn't this year's. */
-export function shortDate(iso: string | null | undefined): string {
+/** "Oct 3", with the year when it isn't this year's. `intl` is the translator's locale (useT().intl). */
+export function shortDate(iso: string | null | undefined, intl = "en-US"): string {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   const year = date.getFullYear() === new Date().getFullYear() ? undefined : "numeric";
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year });
+  return date.toLocaleDateString(intl, { month: "short", day: "numeric", year });
 }
 
 /** The "Changes" section: fetched when the drawer opens, quiet on errors. */
 export function AdChanges({ productId, ad }: { productId: string; ad: PaidAdRow }) {
+  const { t, tn, intl } = useT();
   const [load, setLoad] = useState<Load>({ state: "loading" });
   useEffect(() => {
     let live = true;
@@ -39,20 +41,20 @@ export function AdChanges({ productId, ad }: { productId: string; ad: PaidAdRow 
   return (
     <div className="grid gap-2">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="eyebrow">Changes</p>
+        <p className="eyebrow">{t("Changes")}</p>
         <p className="text-xs text-muted">
-          Edited {shortDate(ad.creative_changed_at)}
-          {versions.length > 0 && ` · ${versions.length} earlier version${versions.length === 1 ? "" : "s"}`}
+          {t("Edited {date}", { date: shortDate(ad.creative_changed_at, intl) })}
+          {versions.length > 0 && ` · ${tn(versions.length, "{n} earlier version", "{n} earlier versions")}`}
         </p>
       </div>
       {load.state === "loading" && (
-        <Skeleton label="Loading earlier versions" className="grid gap-1.5 border-t border-line pt-3">
+        <Skeleton label={t("Loading earlier versions")} className="grid gap-1.5 border-t border-line pt-3">
           <SkeletonLine size="xs" width="w-40" />
           <SkeletonText lines={2} />
         </Skeleton>
       )}
-      {load.state === "error" && <p className="text-xs text-muted">The earlier versions couldn&apos;t be loaded.</p>}
-      {load.state === "done" && versions.length === 0 && <p className="text-xs text-muted">No earlier version was saved.</p>}
+      {load.state === "error" && <p className="text-xs text-muted">{t("The earlier versions couldn't be loaded.")}</p>}
+      {load.state === "done" && versions.length === 0 && <p className="text-xs text-muted">{t("No earlier version was saved.")}</p>}
       {versions.length > 0 && (
         <ol className="grid divide-y divide-line border-t border-line">
           {versions.map((version, i) => <VersionRow key={version.id} version={version} next={i === 0 ? ad : versions[i - 1]} current={i === 0} />)}
@@ -63,9 +65,9 @@ export function AdChanges({ productId, ad }: { productId: string; ad: PaidAdRow 
 }
 
 /** "Aug 2 – Sep 30", or "Until Oct 3" when the first sighting isn't known. */
-function ranLine(v: AdVersion): string {
-  const until = shortDate(v.seen_until ?? v.replaced_at);
-  return v.seen_from ? `${shortDate(v.seen_from)} – ${until}` : `Until ${until}`;
+function ranLine(v: AdVersion, t: (text: string, vars?: Record<string, string>) => string, intl: string): string {
+  const until = shortDate(v.seen_until ?? v.replaced_at, intl);
+  return v.seen_from ? `${shortDate(v.seen_from, intl)} – ${until}` : t("Until {date}", { date: until });
 }
 
 const TEXT_FIELDS: { key: "headline" | "body" | "description"; change: AdChange }[] = [
@@ -73,31 +75,32 @@ const TEXT_FIELDS: { key: "headline" | "body" | "description"; change: AdChange 
 ];
 
 function VersionRow({ version, next, current }: { version: AdVersion; next: Text; current: boolean }) {
+  const { t, intl } = useT();
   const [full, setFull] = useState(false);
   const changed = new Set(version.changed);
   const texts = TEXT_FIELDS.filter((f) => changed.has(f.change) && (version[f.key] || next[f.key]));
   const long = texts.some((f) => f.key === "body" && (version.body.length > 180 || next.body.length > 180));
-  const after = current ? "Now" : "After";
+  const after = current ? t("Now") : t("After");
   return (
     <li className="grid gap-2 py-3">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <span className="text-xs text-label tabular-nums">{ranLine(version)}</span>
-        <span className="flex flex-wrap gap-1">{version.changed.map((c) => <Badge key={c}>{AD_CHANGE_LABEL[c] ?? c}</Badge>)}</span>
+        <span className="text-xs text-label tabular-nums">{ranLine(version, t, intl)}</span>
+        <span className="flex flex-wrap gap-1">{version.changed.map((c) => <Badge key={c}>{AD_CHANGE_LABEL[c] ? t(AD_CHANGE_LABEL[c]) : c}</Badge>)}</span>
       </div>
       {texts.map((f) => (
         <div key={f.key} className="grid gap-1">
-          <p className="text-xs text-faint">{AD_CHANGE_LABEL[f.change]}</p>
+          <p className="text-xs text-faint">{t(AD_CHANGE_LABEL[f.change])}</p>
           <Compare before={version[f.key]} after={next[f.key]} afterLabel={after} clamp={f.key === "body" && !full} />
         </div>
       ))}
       {long && (
-        <button type="button" onClick={() => setFull((v) => !v)} className="w-fit text-xs text-accent hover:underline">{full ? "Show less" : "Show all the text"}</button>
+        <button type="button" onClick={() => setFull((v) => !v)} className="w-fit text-xs text-accent hover:underline">{full ? t("Show less") : t("Show all the text")}</button>
       )}
-      {changed.has("cta") && <Swap label="Button" before={version.cta} after={next.cta} />}
-      {changed.has("link") && <Swap label="Link" before={version.link_url ?? ""} after={next.link_url ?? ""} />}
+      {changed.has("cta") && <Swap label={t("Button")} before={version.cta} after={next.cta} />}
+      {changed.has("link") && <Swap label={t("Link")} before={version.link_url ?? ""} after={next.link_url ?? ""} />}
       {changed.has("media") && version.media.length > 0 && (
         <div className="grid gap-1">
-          <p className="text-xs text-faint">Earlier media</p>
+          <p className="text-xs text-faint">{t("Earlier media")}</p>
           <div className="flex flex-wrap gap-1.5">{version.media.slice(0, 10).map((m, i) => <VersionTile key={`${m.url}-${i}`} media={m} />)}</div>
         </div>
       )}
@@ -105,21 +108,22 @@ function VersionRow({ version, next, current }: { version: AdVersion; next: Text
   );
 }
 
-const rowLabel = "w-11 shrink-0 pt-px text-xs text-faint";
+const rowLabel = "min-w-11 shrink-0 pt-px text-xs text-faint";
 
 /** Before and after, each with the words the other doesn't have highlighted. */
 function Compare({ before, after, afterLabel, clamp }: { before: string; after: string; afterLabel: string; clamp: boolean }) {
+  const { t } = useT();
   const diff = wordDiff(before, after);
   const text = cx("min-w-0 flex-1 text-sm leading-[1.45] whitespace-pre-line [overflow-wrap:anywhere]", clamp && "line-clamp-3");
   return (
     <div className="grid gap-1">
       <div className="flex gap-2">
-        <span className={rowLabel}>Before</span>
-        <p className={cx(text, "text-muted")}>{before ? <Marked parts={diff?.before} text={before} tone="removed" /> : <span className="text-faint">None</span>}</p>
+        <span className={rowLabel}>{t("Before")}</span>
+        <p className={cx(text, "text-muted")}>{before ? <Marked parts={diff?.before} text={before} tone="removed" /> : <span className="text-faint">{t("None")}</span>}</p>
       </div>
       <div className="flex gap-2">
         <span className={rowLabel}>{afterLabel}</span>
-        <p className={cx(text, "text-ink")}>{after ? <Marked parts={diff?.after} text={after} tone="added" /> : <span className="text-faint">None</span>}</p>
+        <p className={cx(text, "text-ink")}>{after ? <Marked parts={diff?.after} text={after} tone="added" /> : <span className="text-faint">{t("None")}</span>}</p>
       </div>
     </div>
   );
@@ -138,18 +142,20 @@ function Marked({ parts, text, tone }: { parts: Part[] | undefined; text: string
 
 /** A one-line change: the button or the link. */
 function Swap({ label, before, after }: { label: string; before: string; after: string }) {
+  const { t } = useT();
   return (
     <p className="flex min-w-0 items-baseline gap-2 text-sm">
-      <span className="w-11 shrink-0 text-xs text-faint">{label}</span>
-      <span className="min-w-0 truncate text-muted" title={before}>{before || "None"}</span>
-      <span className="shrink-0 text-faint" aria-label="changed to">→</span>
-      <span className="min-w-0 truncate" title={after}>{after || "None"}</span>
+      <span className="min-w-11 shrink-0 text-xs text-faint">{label}</span>
+      <span className="min-w-0 truncate text-muted" title={before}>{before || t("None")}</span>
+      <span className="shrink-0 text-faint" aria-label={t("changed to")}>→</span>
+      <span className="min-w-0 truncate" title={after}>{after || t("None")}</span>
     </p>
   );
 }
 
 /** A small tile of an earlier image or video: the stored copy, then the Ad Library link, then "Expired". */
 function VersionTile({ media }: { media: AdVersion["media"][number] }) {
+  const { t } = useT();
   const sources = [
     ...(media.type === "video" ? [media.thumb, media.thumb_source_url].map((url) => ({ url, video: false })) : []),
     ...[media.url, media.source_url].map((url) => ({ url, video: media.type === "video" })),
@@ -157,12 +163,12 @@ function VersionTile({ media }: { media: AdVersion["media"][number] }) {
   const [tried, setTried] = useState(0);
   const src = sources[tried];
   const tile = "size-12 shrink-0 overflow-hidden rounded-sm bg-canvas";
-  if (!src) return <span className={cx(tile, "grid place-items-center text-xs text-faint")} title="The Ad Library link expired before this file was saved">Expired</span>;
+  if (!src) return <span className={cx(tile, "grid place-items-center text-xs text-faint")} title={t("The Ad Library link expired before this file was saved")}>{t("Expired")}</span>;
   const fail = () => setTried((n) => n + 1);
   return src.video
-    ? <video key={src.url} src={`${src.url}#t=0.1`} muted playsInline preload="metadata" onError={fail} className={cx(tile, "object-cover")} aria-label="Earlier video" />
+    ? <video key={src.url} src={`${src.url}#t=0.1`} muted playsInline preload="metadata" onError={fail} className={cx(tile, "object-cover")} aria-label={t("Earlier video")} />
     // eslint-disable-next-line @next/next/no-img-element
-    : <img key={src.url} src={src.url} alt="Earlier image" loading="lazy" onError={fail} className={cx(tile, "object-cover")} />;
+    : <img key={src.url} src={src.url} alt={t("Earlier image")} loading="lazy" onError={fail} className={cx(tile, "object-cover")} />;
 }
 
 // MARK: Word diff

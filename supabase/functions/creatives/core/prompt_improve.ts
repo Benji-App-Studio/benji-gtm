@@ -5,6 +5,7 @@
 // fixed JSON schema, and refuses an answer that brings in a blocked word or a new number. Plain
 // TypeScript with fetch injected: Deno tests run it with no network.
 import { addKeyMessage } from "../../_shared/keys.ts";
+import { LANGUAGE_NAME, type UiLocale } from "../../_shared/language.ts";
 import { OCR_DEFAULT_MODEL } from "./ocr.ts";
 
 export const IMPROVE_MAX = 6_000;
@@ -15,6 +16,15 @@ const SCHEMA = {
   required: ["prompt", "note"],
   properties: { prompt: { type: "string" }, note: { type: "string" } },
 } as const;
+
+/**
+ * The instructions with the person's language for the note (unchanged for English). The rewritten prompt
+ * stays in the prompt's own language: it is read by an image model, and the studio writes prompts in English.
+ */
+export function improveInstructions(instructions: string, locale: UiLocale | null | undefined): string {
+  if (!locale || locale === "en") return instructions;
+  return `LANGUAGE\nWrite \`note\` in ${LANGUAGE_NAME[locale]}. Keep \`prompt\` in the language the original prompt is written in.\n\n${instructions}`;
+}
 
 export function improveRequestBody(model: string, instructions: string, prompt: string) {
   return {

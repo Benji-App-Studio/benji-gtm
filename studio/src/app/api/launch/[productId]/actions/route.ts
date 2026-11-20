@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getTranslator } from "@/lib/i18n/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { launch } from "@/lib/server/launch";
 import { relay } from "@/lib/server/radar";
@@ -18,6 +19,9 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/launch/
     case "promote": return relay(await launch(session, "promote", { productId, adId: String(body.adId ?? ""), reason: body.reason }));
     case "pause": return relay(await launch(session, "pause", { productId, adId: String(body.adId ?? "") }));
     case "setup": return relay(await launch(session, "setup", { productId, stages: body.stages, confirm: body.confirm === true }));
-    default: return Response.json({ error: "Unknown action." }, { status: 400 });
+    default: {
+      const { t } = await getTranslator();
+      return Response.json({ error: t("Unknown action.") }, { status: 400 });
+    }
   }
 }

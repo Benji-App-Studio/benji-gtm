@@ -1,24 +1,23 @@
 "use client";
 import { usePathname } from "next/navigation";
 import {
-  BrandSkeleton, DashboardSkeleton, FormatsSkeleton, GenericPageSkeleton, LaunchSkeleton, MarketSkeleton, MeasureSkeleton, ProductsSkeleton, ProjectSkeleton,
-  PlaygroundSkeleton, ResearchSkeleton, StudioSkeleton, WorkflowListSkeleton, WorkspaceOverviewSkeleton, WorkspaceSettingsSkeleton,
+  BrandSkeleton, DashboardSkeleton, GenericPageSkeleton, LaunchSkeleton, MarketSkeleton, MeasureSkeleton, ProjectSkeleton,
+  PlaygroundSkeleton, ResearchSkeleton, StudioSkeleton, WorkflowListSkeleton, WorkspaceOverviewSkeleton,
 } from "@/components/page-skeletons";
 import { SettingsLoading } from "@/components/settings/settings-ui";
-import type { WorkspaceModule } from "@/lib/workspace-schema";
 
-/** A product's pages ("" is its Home), each with the skeleton it shows while its data loads. */
-const PRODUCT_PAGES: Record<WorkspaceModule | "", () => React.ReactNode> = {
+/** An app's pages ("" is its Home; "research/app-store" a tab), each with the skeleton it shows while its data loads. */
+const PRODUCT_PAGES: Record<string, () => React.ReactNode> = {
   "": WorkspaceOverviewSkeleton,
-  brand: BrandSkeleton,
   research: ResearchSkeleton,
-  market: MarketSkeleton,
-  formats: FormatsSkeleton,
+  "research/app-store": MarketSkeleton,
+  "research/social": WorkflowListSkeleton,
   studio: StudioSkeleton,
-  playground: PlaygroundSkeleton,
+  "studio/remix": PlaygroundSkeleton,
+  "studio/templates": PlaygroundSkeleton,
   launch: LaunchSkeleton,
   measure: MeasureSkeleton,
-  settings: WorkspaceSettingsSkeleton,
+  settings: BrandSkeleton,
 };
 
 /**
@@ -27,15 +26,14 @@ const PRODUCT_PAGES: Record<WorkspaceModule | "", () => React.ReactNode> = {
  */
 export default function Loading() {
   const path = (usePathname() ?? "/app").replace(/\/$/, "");
-  const product = /^\/app\/w\/([^/]+)(?:\/([^/]+))?/.exec(path);
+  const product = /^\/app\/w\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?/.exec(path);
   if (product) {
-    const Page = PRODUCT_PAGES[(product[2] ?? "") as WorkspaceModule | ""];
+    const Page = PRODUCT_PAGES[[product[2], product[3]].filter(Boolean).join("/")] ?? PRODUCT_PAGES[product[2] ?? ""];
     return Page ? <Page /> : <GenericPageSkeleton />;
   }
-  if (path === "/app") return <DashboardSkeleton />;
-  if (/^\/app\/(accounts|campaigns)$/.test(path)) return <WorkflowListSkeleton />;
+  if (path === "/app/apps") return <DashboardSkeleton />;
+  if (path === "/app/analyses") return <WorkflowListSkeleton />;
   if (path.startsWith("/app/p/")) return <ProjectSkeleton />;
-  if (path === "/app/product") return <ProductsSkeleton />;
   if (path === "/app/settings" || path.startsWith("/app/settings/")) return <SettingsLoading framed />;
   return <GenericPageSkeleton />;
 }

@@ -11,13 +11,21 @@
 //   workspace   <user>/<app>/assets|brand|fonts|playground/…  uploads and brand files
 //   thumbs      <user>/<run>/…                                 analysis thumbnails (not per app)
 //   app-assets  style-library/…                                the Style Library images setup copies in
+//
+// Sentences: the functions that build one take the page's `t` (lib/i18n) as their last argument and say
+// English without it, so the API routes, the tests and the edge functions' twin read the same words.
+import { fill, m, type Vars } from "./i18n/translate";
+
+/** A page's `t`, or English. */
+export type Say = (text: string, vars?: Vars) => string;
+const english: Say = (text, vars) => fill(text, vars, "en");
 
 export type StorageKind = "competitor_media" | "creatives" | "uploads" | "other";
 export const KIND_LABEL: Record<StorageKind, string> = {
-  competitor_media: "Competitors' ad media",
-  creatives: "Generated creatives",
-  uploads: "Uploads and brand files",
-  other: "Other files",
+  competitor_media: m("Competitors' ad media"),
+  creatives: m("Generated creatives"),
+  uploads: m("Uploads and brand files"),
+  other: m("Other files"),
 };
 
 export const BUCKET_KIND: Record<string, StorageKind> = {
@@ -58,6 +66,8 @@ export interface StorageSummary {
   orphanBytes: number;
   orphans: { appId: string; bytes: number; files: number }[];
   checkedAt: string;
+  /** `account`: accounts mode, the caller's own files against their plan's storage (nothing to upgrade on Supabase). */
+  scope?: "account" | "install";
 }
 
 /** 80%: a quiet notice. 95%: a clear warning before anything adds files. 100%: those actions are refused. */
@@ -74,7 +84,7 @@ export function storageLevel(usedBytes: number, quotaBytes: number): StorageLeve
 export const wouldOverflow = (usedBytes: number, quotaBytes: number, bytes: number) => quotaBytes > 0 && usedBytes + Math.max(0, bytes) > quotaBytes;
 
 /** The rows from storage_usage() summed by kind and by app, with the plan's numbers. */
-export function summarise(rows: UsageRow[], o: { quotaBytes: number; uploadLimitBytes: number; apps: { id: string; name: string }[]; now?: Date }): StorageSummary {
+export function summarise(rows: UsageRow[], o: { quotaBytes: number; uploadLimitBytes: number; apps: { id: string; name: string }[]; now?: Date; scope?: "account" | "install" }): StorageSummary {
   const byKind: Record<StorageKind, number> = { competitor_media: 0, creatives: 0, uploads: 0, other: 0 };
   const apps = new Map<string, AppUsage>();
   const known = new Map(o.apps.map((a) => [a.id.toLowerCase(), a.name]));
@@ -106,6 +116,7 @@ export function summarise(rows: UsageRow[], o: { quotaBytes: number; uploadLimit
     level: storageLevel(used, o.quotaBytes), ratio: o.quotaBytes > 0 ? used / o.quotaBytes : 0,
     byKind, apps: [...apps.values()].sort((a, b) => b.bytes - a.bytes), orphanBytes: orphan, orphans: [...orphans.values()],
     checkedAt: (o.now ?? new Date()).toISOString(),
+    ...(o.scope ? { scope: o.scope } : {}),
   };
 }
 
@@ -128,10 +139,10 @@ export const percent = (ratio: number) => `${ratio >= 1 ? Math.round(ratio * 100
 /** The actions that add files. */
 export type AddAction = "collect" | "save_media" | "generate" | "upload";
 const ACTION_TEXT: Record<AddAction, string> = {
-  collect: "Collecting ads saves their images and videos",
-  save_media: "Saving media adds files",
-  generate: "Generating saves the new creatives",
-  upload: "Uploading adds files",
+  collect: m("Collecting ads saves their images and videos"),
+  save_media: m("Saving media adds files"),
+  generate: m("Generating saves the new creatives"),
+  upload: m("Uploading adds files"),
 };
 
 export interface Guard {
@@ -142,67 +153,75 @@ export interface Guard {
   level: StorageLevel;
 }
 
-/** What to say (or refuse) before an action that adds files. */
-export function guardFor(action: AddAction, summary: Pick<StorageSummary, "usedBytes" | "quotaBytes"> | null | undefined, adding = 0): Guard {
+/** What to say (or refuse) before an action that adds files. Pass the page's `t` to say it in the viewer's language. */
+export function guardFor(action: AddAction, summary: Pick<StorageSummary, "usedBytes" | "quotaBytes" | "scope"> | null | undefined, adding = 0, t: Say = english): Guard {
   if (!summary) return { block: false, message: null, level: "ok" };
   const level = storageLevel(summary.usedBytes, summary.quotaBytes);
   const left = Math.max(0, summary.quotaBytes - summary.usedBytes);
+  const doing = t(ACTION_TEXT[action]);
   if (level === "full" || (adding > 0 && wouldOverflow(summary.usedBytes, summary.quotaBytes, adding))) {
-    return { block: true, level: "full", message: `Storage is full (${formatBytes(summary.usedBytes)} of ${formatBytes(summary.quotaBytes)}). ${ACTION_TEXT[action]}, so it can't run until you free up space or upgrade your Supabase plan.` };
+    // Accounts mode: their own plan's storage, so say what to delete (there is no Supabase plan of theirs to upgrade).
+    if (summary.scope === "account") {
+      return { block: true, level: "full", message: t("Your storage is full ({used} of {quota}). {action}, so it can't run until you delete something: rejected or unused creatives, or old saved ad media (Settings › Storage).", { used: formatBytes(summary.usedBytes), quota: formatBytes(summary.quotaBytes), action: doing }) };
+    }
+    return { block: true, level: "full", message: t("Storage is full ({used} of {quota}). {action}, so it can't run until you free up space or upgrade your Supabase plan.", { used: formatBytes(summary.usedBytes), quota: formatBytes(summary.quotaBytes), action: doing }) };
   }
-  if (level === "warn") return { block: false, level, message: `Storage is almost full: ${formatBytes(left)} left of ${formatBytes(summary.quotaBytes)}. ${ACTION_TEXT[action]}; free up space first so nothing stops halfway.` };
+  if (level === "warn") return { block: false, level, message: t("Storage is almost full: {left} left of {quota}. {action}; free up space first so nothing stops halfway.", { left: formatBytes(left), quota: formatBytes(summary.quotaBytes), action: doing }) };
   return { block: false, message: null, level };
 }
 
 /** The quiet 80% notice (sidebar card, Settings > Storage). */
-export function noticeText(summary: Pick<StorageSummary, "usedBytes" | "quotaBytes">): string | null {
+export function noticeText(summary: Pick<StorageSummary, "usedBytes" | "quotaBytes">, t: Say = english): string | null {
   const level = storageLevel(summary.usedBytes, summary.quotaBytes);
   if (level === "ok") return null;
   const ratio = summary.quotaBytes > 0 ? summary.usedBytes / summary.quotaBytes : 0;
-  if (level === "full") return `Storage is full. New ads, media, creatives and uploads can't be saved until you free up space.`;
-  return `Storage is ${percent(ratio)} full (${formatBytes(summary.usedBytes)} of ${formatBytes(summary.quotaBytes)}).`;
+  if (level === "full") return t("Storage is full. New ads, media, creatives and uploads can't be saved until you free up space.");
+  return t("Storage is {percent} full ({used} of {quota}).", { percent: percent(ratio), used: formatBytes(summary.usedBytes), quota: formatBytes(summary.quotaBytes) });
 }
 
 /** A file over the plan's per-file limit, refused before it is uploaded. Null when it fits. */
-export function fileTooBig(sizeBytes: number, limitBytes: number): string | null {
+export function fileTooBig(sizeBytes: number, limitBytes: number, t: Say = english): string | null {
   if (!(limitBytes > 0) || !(sizeBytes > limitBytes)) return null;
   const mb = (n: number) => { const v = n / (1024 * 1024); return Number.isInteger(v) ? String(v) : v.toFixed(1); };
-  return `This file is ${mb(sizeBytes)} MB; your Supabase plan takes files up to ${mb(limitBytes)} MB. Make it smaller, or raise the limit on a paid plan.`;
+  return t("This file is {size} MB; your Supabase plan takes files up to {limit} MB. Make it smaller, or raise the limit on a paid plan.", { size: mb(sizeBytes), limit: mb(limitBytes) });
 }
 
 /** When Supabase itself refuses an upload: what happened and what to do, in plain words. */
-export function uploadErrorText(error: unknown, limitBytes?: number): string {
+export function uploadErrorText(error: unknown, limitBytes?: number, t: Say = english): string {
   const raw = error instanceof Error ? error.message : typeof error === "string" ? error : (error as { message?: string } | null)?.message ?? "";
   const e = raw.toLowerCase();
-  const limit = limitBytes ? ` (${Math.round(limitBytes / (1024 * 1024))} MB on this plan)` : "";
-  if (/413|payload too large|maximum allowed size|exceeded the maximum|entity too large|file size/.test(e)) return `The file is bigger than your Supabase plan allows${limit}. Make it smaller, or raise the limit on a paid plan.`;
-  if (/quota|storage limit|no space|insufficient storage|507|exceed.*(storage|size limit)/.test(e)) return "Your Supabase storage is full. Free up space in Settings > Storage, or upgrade your Supabase plan, then try again.";
-  if (/mime|content type|not allowed|invalid.*type/.test(e)) return "This kind of file isn't accepted here. Use a PNG, JPEG or WebP image (or an MP4 video where videos are allowed).";
-  if (/network|fetch|failed to fetch|timed? ?out|abort|econn|offline/.test(e)) return "The upload didn't reach Supabase (network trouble). Check your connection and try again.";
-  if (/row-level security|unauthori|not allowed|403|401|jwt/.test(e)) return "Supabase didn't let this account save the file. Sign in again, then try again.";
-  return raw ? `The upload didn't work: ${raw.slice(0, 160)}` : "The upload didn't work. Try again.";
+  if (/413|payload too large|maximum allowed size|exceeded the maximum|entity too large|file size/.test(e)) {
+    return limitBytes
+      ? t("The file is bigger than your Supabase plan allows ({limit} MB on this plan). Make it smaller, or raise the limit on a paid plan.", { limit: String(Math.round(limitBytes / (1024 * 1024))) })
+      : t("The file is bigger than your Supabase plan allows. Make it smaller, or raise the limit on a paid plan.");
+  }
+  if (/quota|storage limit|no space|insufficient storage|507|exceed.*(storage|size limit)/.test(e)) return t("Your Supabase storage is full. Free up space in Settings › Storage, or upgrade your Supabase plan, then try again.");
+  if (/mime|content type|not allowed|invalid.*type/.test(e)) return t("This kind of file isn't accepted here. Use a PNG, JPEG or WebP image (or an MP4 video where videos are allowed).");
+  if (/network|fetch|failed to fetch|timed? ?out|abort|econn|offline/.test(e)) return t("The upload didn't reach Supabase (network trouble). Check your connection and try again.");
+  if (/row-level security|unauthori|not allowed|403|401|jwt/.test(e)) return t("Supabase didn't let this account save the file. Sign in again, then try again.");
+  return raw ? t("The upload didn't work: {reason}", { reason: raw.slice(0, 160) }) : t("The upload didn't work. Try again.");
 }
 
 // MARK: Cleanup
 
 export type CleanupAction = "rejected_creatives" | "unused_creatives" | "old_media" | "app_media" | "app_files";
 export const CLEANUP_LABEL: Record<CleanupAction, string> = {
-  rejected_creatives: "Delete rejected creatives",
-  unused_creatives: "Delete unused creatives",
-  old_media: "Delete old saved media",
-  app_media: "Delete an app's competitor media",
-  app_files: "Remove a deleted app's files",
+  rejected_creatives: m("Delete rejected creatives"),
+  unused_creatives: m("Delete unused creatives"),
+  old_media: m("Delete old saved media"),
+  app_media: m("Delete an app's competitor media"),
+  app_files: m("Remove a deleted app's files"),
 };
 
 export interface CleanupRequest { action: CleanupAction; appId?: string | null; days?: number | null }
 
 /** The request made safe: a known action, an app id where one is needed, days from 7 to 3650 (default 90, or 30 for unused creatives). */
-export function cleanCleanup(input: unknown): CleanupRequest | string {
+export function cleanCleanup(input: unknown, t: Say = english): CleanupRequest | string {
   const v = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const action = v.action as CleanupAction;
-  if (!Object.keys(CLEANUP_LABEL).includes(action)) return "Pick what to delete.";
+  if (!Object.keys(CLEANUP_LABEL).includes(action)) return t("Pick what to delete.");
   const appId = typeof v.appId === "string" && UUID.test(v.appId) ? v.appId.toLowerCase() : null;
-  if ((action === "app_media" || action === "app_files") && !appId) return "Pick the app.";
+  if ((action === "app_media" || action === "app_files") && !appId) return t("Pick the app.");
   const fallback = action === "unused_creatives" ? 30 : 90;
   const raw = Number(v.days);
   const days = action === "old_media" || action === "unused_creatives" ? Math.min(3650, Math.max(7, Number.isFinite(raw) && raw > 0 ? Math.round(raw) : fallback)) : null;
@@ -212,15 +231,24 @@ export function cleanCleanup(input: unknown): CleanupRequest | string {
 export interface CleanupPreview { action: CleanupAction; files: number; bytes: number; items: number; what: string }
 
 /** The confirm's sentence: exactly what goes and how much space it frees. */
-export function cleanupSentence(p: CleanupPreview, appName?: string, days?: number | null): string {
-  const app = appName ? ` of ${appName}` : "";
-  const files = `${p.files.toLocaleString("en-US")} file${p.files === 1 ? "" : "s"}`;
-  const frees = `frees ${formatBytes(p.bytes)}`;
+export function cleanupSentence(p: CleanupPreview, appName?: string, days?: number | null, t: Say = english): string {
+  const v = { app: appName ?? "", items: p.items, files: p.files === 1 ? t("{n} file", { n: p.files }) : t("{n} files", { n: p.files }), size: formatBytes(p.bytes), days: days ?? (p.action === "unused_creatives" ? 30 : 90) };
+  const one = p.items === 1;
   switch (p.action) {
-    case "rejected_creatives": return `Deletes ${p.items} rejected creative${p.items === 1 ? "" : "s"}${app} and their ${files}; ${frees}. Approved and pending creatives stay.`;
-    case "unused_creatives": return `Deletes ${p.items} creative${p.items === 1 ? "" : "s"}${app} older than ${days ?? 30} days that were never approved or sent to Meta, and their ${files}; ${frees}.`;
-    case "old_media": return `Deletes the saved copies of ${files} of competitors' ad media${app} saved more than ${days ?? 90} days ago; ${frees}. The ads themselves stay in Research, with their text and links.`;
-    case "app_media": return `Deletes all ${files} of competitors' saved ad media${app}; ${frees}. The ads stay in Research, with their text and links.`;
-    case "app_files": return `Deletes all ${files}${app} (creatives, saved ad media, uploads and brand files); ${frees}. This can't be undone.`;
+    case "rejected_creatives": return appName
+      ? (one ? t("Deletes {items} rejected creative of {app} and their {files}; frees {size}. Approved and pending creatives stay.", v) : t("Deletes {items} rejected creatives of {app} and their {files}; frees {size}. Approved and pending creatives stay.", v))
+      : (one ? t("Deletes {items} rejected creative and their {files}; frees {size}. Approved and pending creatives stay.", v) : t("Deletes {items} rejected creatives and their {files}; frees {size}. Approved and pending creatives stay.", v));
+    case "unused_creatives": return appName
+      ? (one ? t("Deletes {items} creative of {app} older than {days} days that were never approved or sent to Meta, and their {files}; frees {size}.", v) : t("Deletes {items} creatives of {app} older than {days} days that were never approved or sent to Meta, and their {files}; frees {size}.", v))
+      : (one ? t("Deletes {items} creative older than {days} days that were never approved or sent to Meta, and their {files}; frees {size}.", v) : t("Deletes {items} creatives older than {days} days that were never approved or sent to Meta, and their {files}; frees {size}.", v));
+    case "old_media": return appName
+      ? t("Deletes the saved copies of {files} of competitors' ad media of {app} saved more than {days} days ago; frees {size}. The ads themselves stay in Research, with their text and links.", v)
+      : t("Deletes the saved copies of {files} of competitors' ad media saved more than {days} days ago; frees {size}. The ads themselves stay in Research, with their text and links.", v);
+    case "app_media": return appName
+      ? t("Deletes all {files} of competitors' saved ad media of {app}; frees {size}. The ads stay in Research, with their text and links.", v)
+      : t("Deletes all {files} of competitors' saved ad media; frees {size}. The ads stay in Research, with their text and links.", v);
+    case "app_files": return appName
+      ? t("Deletes all {files} of {app} (creatives, saved ad media, uploads and brand files); frees {size}. This can't be undone.", v)
+      : t("Deletes all {files} (creatives, saved ad media, uploads and brand files); frees {size}. This can't be undone.", v);
   }
 }

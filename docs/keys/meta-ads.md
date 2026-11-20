@@ -95,7 +95,7 @@ Page.
 
 ✅ **Checkpoint:** the token starts with `EAA`.
 
-26. In Benji GTM, open **Settings > API keys**.
+26. In Benji GTM, open **Settings > Your keys**.
 27. Find **Meta system user token**, click **Add**, paste the token and click **Save and check**. It
     says Meta accepted the token and asks for the app secret too. That's expected.
 28. Find **Meta app secret**, click **Add**, paste the secret from step 8 and click **Save and check**.

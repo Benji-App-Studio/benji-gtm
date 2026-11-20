@@ -25,9 +25,11 @@ import { assemble, nicheInstagramBest, planCollection, planComments, planNicheDe
 import { accountError, type AiProvider, JudgeError } from "../_shared/ai/judge.ts";
 import { modelOverrides, resolveModels } from "../_shared/ai/models.ts";
 import { createJudge, judgeAvailability } from "../_shared/ai/provider.ts";
-import { createAuth, HttpError } from "../_shared/auth.ts";
-import { addKeyMessage, createKeys, sameSecret } from "../_shared/keys.ts";
-import { resolveLimits, workerLeaseSeconds, workWindowMs } from "../_shared/limits.ts";
+import { HttpError } from "../_shared/auth.ts";
+import { addKeyMessage, sameSecret } from "../_shared/keys.ts";
+import { tenantLocale } from "../_shared/language.ts";
+import { workerLeaseSeconds, workWindowMs } from "../_shared/limits.ts";
+import { createTenancy, type Tenant } from "../_shared/tenant.ts";
 import { clean, PLATFORMS, type Candidate, type Decoded, type DiscoveryProject, type PartnerConfig, type Platform, type Profile, type ProjectWorkflow, type Reel } from "./engine/types.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
@@ -69,33 +71,33 @@ class UserError extends Error {}
 
 // MARK: Keys and callers
 
-/** Every key comes from the shared reader (edge function secret first, then Vault; the worker secret Vault only). */
-const secrets = createKeys(db);
-const auth = createAuth(db);
+/**
+ * Whose keys, settings and limits a request or job uses (_shared/tenant.ts): the install's in install and
+ * legacy mode; the account's own in accounts mode. The worker secret is the platform's, always.
+ */
+const tenancy = createTenancy(db);
+const platform = tenancy.platform();
 
-const SECRET_NAMES = ["APIFY_TOKEN", "OPENAI_API_KEY", "RADAR_WORKER_SECRET"] as const;
-type Keys = Partial<Record<(typeof SECRET_NAMES)[number], string>>;
+const KEY_NAMES = ["APIFY_TOKEN", "OPENAI_API_KEY"] as const;
+type Keys = Partial<Record<(typeof KEY_NAMES)[number], string>>;
 
-/** The keys this function uses, as one object. */
-async function keys(): Promise<Keys> {
+/** The tenant's keys this function uses, as one object. */
+async function keys(tenant: Tenant): Promise<Keys> {
   const found: Keys = {};
-  for (const name of SECRET_NAMES) {
-    const value = await secrets.get(name);
+  for (const name of KEY_NAMES) {
+    const value = await tenant.keys.get(name);
     if (value) found[name] = value;
   }
   return found;
 }
 
-/** The install's settings; undefined on an install from before setup existed (no install row). */
-const installSettings = async () => (await auth.install())?.settings;
+/** What decides which AI answers: the tenant's keys and settings (_shared/ai/provider.ts). */
+const aiChoice = (tenant: Tenant) => ({ keys: tenant.keys, settings: tenant.settings });
 
-/** What decides which AI answers: the keys and the install's settings (_shared/ai/provider.ts). */
-const aiChoice = async () => ({ keys: secrets, settings: await installSettings() });
-
-/** The judge for this install: OpenAI, or TypeSafe when Settings choose it. A missing key reads as it is. */
-async function aiJudge() {
+/** The tenant's judge: OpenAI, or TypeSafe when Settings choose it. A missing key reads as it is. */
+async function aiJudge(tenant: Tenant) {
   try {
-    return await createJudge(await aiChoice());
+    return await createJudge(aiChoice(tenant));
   } catch (error) {
     if (error instanceof JudgeError && error.kind === "config") throw new UserError(error.message);
     throw error;
@@ -103,16 +105,25 @@ async function aiJudge() {
 }
 
 /** Stops with what to add when no AI key is set, before a job is started that would need one. */
-async function requireAi() {
-  const ai = await judgeAvailability(await aiChoice());
+async function requireAi(tenant: Tenant) {
+  const ai = await judgeAvailability(aiChoice(tenant));
   if (!ai.ok) throw new UserError(ai.message);
 }
 
 /** The model for each step: an environment variable or stored key, else Settings > Models, else the default. */
-const models = async () => resolveModels((await installSettings())?.models, await modelOverrides(secrets));
+const models = async (tenant: Tenant) => resolveModels(tenant.settings?.models, await modelOverrides(tenant.keys));
 
-/** The plan's limits (Settings, environment overrides): _shared/limits.ts. */
-const planLimits = async () => resolveLimits(await auth.install(), (name) => Deno.env.get(name));
+/** Accounts mode: how many analysis or discovery jobs one (non-staff) account may have running at once. */
+const RUNNING_JOBS_PER_ACCOUNT = 3;
+
+/** Refuses a new job past the account's cap on running jobs (accounts mode, non-staff only). `replacing`: the project's own jobs, stopped next. */
+async function roomForJob(tenant: Tenant, user: string, replacing: string) {
+  if (tenant.mode !== "accounts" || tenant.staff) return;
+  const { count } = await db.from("jobs").select("id", { count: "exact", head: true }).eq("user_id", user).eq("status", "running").neq("project_id", replacing);
+  if ((count ?? 0) >= RUNNING_JOBS_PER_ACCOUNT) {
+    throw new UserError(`You have ${RUNNING_JOBS_PER_ACCOUNT} searches or analyses running already. Wait for one to finish (or stop one), then try again.`);
+  }
+}
 
 // MARK: HTTP
 
@@ -123,13 +134,14 @@ const CORS = {
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-/** The signed-in caller's user id; 403 unless this install lets them in. */
-async function signedInUser(req: Request): Promise<string> {
-  return (await auth.member(req)).id;
+/** The signed-in caller and their tenant; 403 unless this install lets them in. */
+async function signedInUser(req: Request): Promise<{ id: string; tenant: Tenant }> {
+  const { id, tenant } = await tenancy.member(req);
+  return { id, tenant };
 }
 
 async function requireWorker(req: Request) {
-  const secret = await secrets.get("RADAR_WORKER_SECRET");
+  const secret = await platform.get("RADAR_WORKER_SECRET");
   const given = req.headers.get("x-radar-worker") ?? "";
   if (!secret || !sameSecret(given, secret)) throw new HttpError(403, "Forbidden");
 }
@@ -143,7 +155,7 @@ Deno.serve(async (req) => {
   const route = new URL(req.url).pathname.replace(/\/+$/, "").split("/").pop();
   try {
     switch (route) {
-      case "health": return json(await health());
+      case "health": return json(await health(req));
       case "intake": return json(await intake(await signedInUser(req), await body(req)));
       case "discover": return json(await discover(await signedInUser(req), String((await body(req)).projectId ?? "")));
       case "analyze": return json(await analyze(await signedInUser(req), String((await body(req)).projectId ?? "")));
@@ -182,21 +194,26 @@ function readable(error: unknown): string | null {
   return accountError(error)?.message ?? null;
 }
 
-async function health() {
-  const set = await secrets.flags(["APIFY_TOKEN", "OPENAI_API_KEY", "RADAR_WORKER_SECRET"]);
-  const ai = await judgeAvailability(await aiChoice());
+async function health(req: Request) {
+  // Accounts mode without a session: nobody's keys are described to a stranger.
+  const tenant = await tenancy.healthTenant(req);
+  if (!tenant) return { ok: true, mode: "accounts" };
+  const set = await tenant.keys.flags(["APIFY_TOKEN", "OPENAI_API_KEY"]);
+  const worker = Boolean(await platform.get("RADAR_WORKER_SECRET"));
+  const ai = await judgeAvailability(aiChoice(tenant));
   // `typesafe` is the name the app has always read for "the AI that checks competitors and reads posts
   // is connected": true with an OpenAI key, or a TypeSafe key when that provider is chosen.
-  return { typesafe: ai.ok, apify: set.APIFY_TOKEN, openai: set.OPENAI_API_KEY, worker: set.RADAR_WORKER_SECRET, ai: ai.ok, aiProvider: ai.ok ? ai.provider : null };
+  return { typesafe: ai.ok, apify: set.APIFY_TOKEN, openai: set.OPENAI_API_KEY, worker, ai: ai.ok, aiProvider: ai.ok ? ai.provider : null };
 }
 
 // MARK: Intake
 
-async function intake(_user: string, input: Record<string, any>) {
+async function intake({ tenant }: { id: string; tenant: Tenant }, input: Record<string, any>) {
   const name = String(input.name ?? "").trim().slice(0, 120);
   const description = String(input.description ?? "").trim().slice(0, 2000);
   if (!name || description.length < 10) throw new UserError("Add the product's name and a sentence about it.");
-  return runIntake(await aiJudge(), {
+  await tenancy.rate(tenant, "radar.intake");
+  return runIntake(await aiJudge(tenant), {
     name, description,
     website: input.website ? String(input.website).slice(0, 300) : undefined,
     kind: input.kind ? String(input.kind).slice(0, 40) : undefined,
@@ -223,9 +240,9 @@ async function activity(project: { id: string; user_id: string }, message: strin
 }
 
 /** Stops whatever is running for a project (a newer request replaces it, or the user pressed Stop). */
-async function stopJobs(projectId: string, reason: string) {
+async function stopJobs(tenant: Tenant, projectId: string, reason: string) {
   const { data } = await db.from("jobs").update({ status: "cancelled", lease_until: null }).eq("project_id", projectId).eq("status", "running").select("kind, run_id, state");
-  const apifyToken = (await keys()).APIFY_TOKEN;
+  const apifyToken = (await keys(tenant)).APIFY_TOKEN;
   const apify = apifyToken ? apifyClient(apifyToken) : null;
   for (const job of data ?? []) {
     for (const task of ((job.state as { tasks?: Task[] }).tasks ?? [])) if (apify && task.status === "running" && task.runId) await apify.abort(task.runId);
@@ -234,17 +251,19 @@ async function stopJobs(projectId: string, reason: string) {
   return (data ?? []) as { kind: string; run_id: string | null }[];
 }
 
-async function discover(user: string, projectId: string) {
+async function discover({ id: user, tenant }: { id: string; tenant: Tenant }, projectId: string) {
   const row = await ownProject(user, projectId);
   if (row.type !== "competitors") throw new UserError("Only competitor projects search for competitors.");
-  const k = await keys();
-  await requireAi();
+  const k = await keys(tenant);
+  await requireAi(tenant);
   const { data: product } = row.product_id ? await db.from("products").select("*").eq("id", row.product_id).maybeSingle() : { data: null };
   const knownList: string[] = product?.known_competitors ?? [];
   if (!k.APIFY_TOKEN && !k.OPENAI_API_KEY && !knownList.length) {
     throw new UserError("Finding competitors needs Apify or OpenAI. Add your Apify token or your OpenAI key in Settings > API keys, or add competitors you know to your product.");
   }
-  await stopJobs(row.id, "Replaced by a new search.");
+  await roomForJob(tenant, user, row.id);
+  await tenancy.rate(tenant, "radar.analyze");
+  await stopJobs(tenant, row.id, "Replaced by a new search.");
   const answers: Record<string, string> = {
     ...(row.settings.answers ?? {}),
     ...(product ? {
@@ -265,11 +284,11 @@ async function discover(user: string, projectId: string) {
   return { jobId: job.id };
 }
 
-async function analyze(user: string, projectId: string) {
+async function analyze({ id: user, tenant }: { id: string; tenant: Tenant }, projectId: string) {
   const row = await ownProject(user, projectId);
   if (row.demo) throw new UserError("The demo can't be run again.");
-  const k = await keys();
-  await requireAi();
+  const k = await keys(tenant);
+  await requireAi(tenant);
   if (!k.APIFY_TOKEN) throw new UserError(`Apify isn't connected. ${addKeyMessage("APIFY_TOKEN")}`);
   const s = row.settings;
   const chosen = row.candidates.filter((c) => c.selected);
@@ -285,7 +304,9 @@ async function analyze(user: string, projectId: string) {
   if (!usable.length && !niche && !(row.type === "campaign" && findsCreators)) {
     throw new UserError(competitors.length ? "None of the chosen accounts has a handle on the selected channels." : row.type === "campaign" ? "Add a creator, or turn on “Find the brand's creators” with the brand's Instagram handle." : "Pick at least one account to analyse.");
   }
-  await stopJobs(row.id, "Replaced by a newer run.");
+  await roomForJob(tenant, user, row.id);
+  await tenancy.rate(tenant, "radar.analyze");
+  await stopJobs(tenant, row.id, "Replaced by a newer run.");
   const workflow: ProjectWorkflow = {
     mode: "project", title: row.name, product: row.name, productDescription: row.description, platforms: s.platforms, transcripts: true,
     competitors: usable, sinceDays: s.sinceDays, limitPerAccount: s.limitPerAccount,
@@ -309,9 +330,9 @@ async function analyze(user: string, projectId: string) {
   return { run };
 }
 
-async function cancel(user: string, projectId: string) {
+async function cancel({ id: user, tenant }: { id: string; tenant: Tenant }, projectId: string) {
   const row = await ownProject(user, projectId);
-  const running = await stopJobs(row.id, "Stopped.");
+  const running = await stopJobs(tenant, row.id, "Stopped.");
   const { count } = await db.from("runs").select("id", { count: "exact", head: true }).eq("project_id", row.id).eq("status", "done");
   const discovering = running.some((job) => job.kind === "discover");
   const status = count ? "ready" : "review";
@@ -323,7 +344,7 @@ async function cancel(user: string, projectId: string) {
 // MARK: Runs the studio asks for (users only read `runs`; every write is here, as the service role)
 
 /** Removes one of the user's runs from history (not while it runs); its report and jobs go with it. */
-async function deleteRun(user: string, runId: string) {
+async function deleteRun({ id: user }: { id: string }, runId: string) {
   if (!/^[0-9a-f-]{36}$/.test(runId)) throw new HttpError(400, "Which run?");
   const { data: run } = await db.from("runs").select("id, status").eq("id", runId).eq("user_id", user).maybeSingle();
   if (!run) throw new HttpError(404, "Not found");
@@ -360,7 +381,7 @@ const toTask = (spec: Omit<ScrapeSpec, "platform"> & { platform?: Platform; post
 
 /** Asks a fresh invocation to advance a job (or, without a worker secret, advances it here). */
 async function wake(jobId: string) {
-  const secret = (await keys()).RADAR_WORKER_SECRET;
+  const secret = await platform.get("RADAR_WORKER_SECRET");
   if (!secret) return advance(jobId);
   try {
     await fetch(`${FUNCTION_URL}/work`, {
@@ -376,8 +397,11 @@ class Job {
   readonly id: string;
   readonly deadline: number;
   cancelled = false;
-  /** The worker's lease: the whole wall clock plus a margin (_shared/limits.ts workerLeaseSeconds), never shorter than a slow step. */
-  constructor(readonly row: JobRow, slice = SLICE_MS, readonly leaseSeconds = 180) { this.id = row.id; this.deadline = Date.now() + slice; }
+  /**
+   * The worker's lease: the whole wall clock plus a margin (_shared/limits.ts workerLeaseSeconds), never
+   * shorter than a slow step. `tenant`: whose keys and settings the job runs with (the job's account).
+   */
+  constructor(readonly row: JobRow, readonly tenant: Tenant, slice = SLICE_MS, readonly leaseSeconds = 180) { this.id = row.id; this.deadline = Date.now() + slice; }
   get state() { return this.row.state; }
   get project() { return { id: this.row.project_id, user_id: this.row.user_id }; }
 
@@ -409,13 +433,18 @@ class Job {
 
 async function advance(jobId: string) {
   if (!/^[0-9a-f-]{36}$/.test(jobId)) return;
-  const limits = await planLimits();
+  // The job's account decides the keys, settings and limits it runs with.
+  const { data: owner } = await db.from("jobs").select("user_id").eq("id", jobId).maybeSingle();
+  if (!owner?.user_id) return;
+  const tenant = await tenancy.for(owner.user_id as string);
+  const limits = tenant.limits;
   const lease = workerLeaseSeconds(limits);
   const { data } = await db.rpc("radar_claim_job", { p_job: jobId, p_seconds: lease });
   const row = (data as JobRow[] | null)?.[0];
   if (!row) return;
-  const job = new Job(row, workWindowMs(limits, SLICE_MS), lease);
+  const job = new Job(row, tenant, workWindowMs(limits, SLICE_MS), lease);
   try {
+    if (!tenant.active) throw new UserError("This account is suspended, so the run was stopped.");
     // A worker that died three times in a row on the same step, or a job that never ends, stops here.
     if (row.crashes >= 3) throw new UserError("This step kept stopping the worker, so the run was stopped. Try fewer accounts or a shorter time frame.");
     if (row.wakes > 150) throw new UserError("This run took too long and was stopped. Try again.");
@@ -440,7 +469,7 @@ async function failJob(job: Job, error: unknown) {
   console.error(job.id, error);
   const { data } = await db.from("jobs").update({ status: "error", error: message, lease_until: null, state: job.state }).eq("id", job.id).eq("status", "running").select("id");
   if (!data?.length) return; // Cancelled meanwhile: nothing to report.
-  const apifyToken = (await keys()).APIFY_TOKEN;
+  const apifyToken = (await keys(job.tenant)).APIFY_TOKEN;
   if (apifyToken) for (const task of job.state.tasks) if (task.status === "running" && task.runId) await apifyClient(apifyToken).abort(task.runId);
   if (job.row.run_id) {
     await db.from("runs").update({ status: "error", phase: "error", message, finished_at: new Date().toISOString() }).eq("id", job.row.run_id);
@@ -523,7 +552,7 @@ function collectingMessage(s: RunState) {
 async function stepRun(job: Job): Promise<"continue" | "wait" | "done"> {
   const s = job.state as RunState;
   const w = s.workflow;
-  const token = (await keys()).APIFY_TOKEN;
+  const token = (await keys(job.tenant)).APIFY_TOKEN;
   const apify = token ? apifyClient(token) : null;
   const storeScrape = async (task: Task, items: any[]) => {
     if (task.key === "bios") {
@@ -577,7 +606,7 @@ async function stepRun(job: Job): Promise<"continue" | "wait" | "done"> {
       let reels = assemble(w, outputs, (await job.get<Reel[]>("niche-ig-best")) ?? []);
       if (w.partners) {
         const profiles = (await job.get<Profile[]>("profiles")) ?? [];
-        const bioJudge = profiles.length ? await aiJudge() : null;
+        const bioJudge = profiles.length ? await aiJudge(job.tenant) : null;
         const verdicts = bioJudge ? await judgeBios(bioJudge, profiles, w.partners.brands) : {};
         await job.put("bio-verdicts", verdicts);
         // What a verdict means depends on the provider that gave it; the report is built in a later slice.
@@ -622,7 +651,7 @@ async function stepRun(job: Job): Promise<"continue" | "wait" | "done"> {
       const skipped = new Set(s.skipped);
       const queue = reels.filter((r) => !done.has(r.id) && !skipped.has(r.id));
       if (queue.length) {
-        const { decodeAll } = decoder(await aiJudge(), w, LIBRARY);
+        const { decodeAll } = decoder(await aiJudge(job.tenant), w, LIBRARY);
         let lastPublish = 0, lastSave = Date.now();
         const result = await decodeAll(queue, {
           concurrency: 8,
@@ -683,9 +712,18 @@ async function stepRun(job: Job): Promise<"continue" | "wait" | "done"> {
   }
 }
 
-/** Instagram and TikTok image links expire within days, so thumbnails are copied into Storage. */
+/**
+ * Instagram and TikTok image links expire within days, so thumbnails are copied into Storage. With no
+ * room left (the project's storage, or in accounts mode the account's), they stay as the links they are.
+ */
 async function saveThumbs(job: Job, reels: Reel[]) {
   const todo = reels.filter((r) => r.thumb?.startsWith("http") && !r.thumb.includes("/storage/v1/object/public/thumbs/"));
+  if (!todo.length) return;
+  const room = await tenancy.room(job.tenant).catch(() => null);
+  if (room?.level === "full") {
+    await job.log(`Thumbnails weren't copied: ${tenancy.fullNote(room)}`, "warn");
+    return;
+  }
   let next = 0;
   await Promise.all(Array.from({ length: 10 }, async () => {
     for (let i = next++; i < todo.length; i = next++) {
@@ -710,7 +748,7 @@ async function saveThumbs(job: Job, reels: Reel[]) {
 
 async function stepDiscover(job: Job): Promise<"continue" | "wait" | "done"> {
   const s = job.state as DiscoverState;
-  const k = await keys();
+  const k = await keys(job.tenant);
   const say = async (message: string) => { await db.from("projects").update({ message }).eq("id", job.row.project_id); };
   switch (s.stage) {
     case "search": {
@@ -745,7 +783,7 @@ async function stepDiscover(job: Job): Promise<"continue" | "wait" | "done"> {
     case "judge": {
       const list = (await job.get<Candidate[]>("candidates")) ?? [];
       let last = 0;
-      const candidateJudge = await aiJudge();
+      const candidateJudge = await aiJudge(job.tenant);
       s.jevTokens += await judge(candidateJudge, s.project, list, (done, total) => {
         if (Date.now() - last < 600) return;
         last = Date.now();
@@ -772,7 +810,8 @@ async function stepDiscover(job: Job): Promise<"continue" | "wait" | "done"> {
 function pollOpenAI(job: Job, s: DiscoverState, k: Keys): Promise<boolean> {
   return pollSearch(s.openai, {
     apiKey: k.OPENAI_API_KEY ?? "",
-    body: async () => openAIRequest(s.project, (await models()).text, true),
+    // Each competitor's description is read by the person: in the account's language (a worker: profiles.locale).
+    body: async () => openAIRequest(s.project, (await models(job.tenant)).text, true, await tenantLocale(db, job.tenant, job.project.user_id)),
     markSent: () => job.save(),
     store: async (data) => {
       const found = openAICandidates(data);

@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getTranslator } from "@/lib/i18n/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { VERIFIERS, type VerifyResult } from "@/lib/server/connections";
 import { loadRow } from "@/lib/server/workspaces";
@@ -16,15 +17,17 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/workspa
   const row = await loadRow(session, (await ctx.params).id);
   if (isResponse(row)) return row;
   const { connection } = await request.json().catch(() => ({}));
-  if (!CONNECTION_KEYS.includes(connection)) return Response.json({ error: "Choose a connection to check." }, { status: 400 });
+  const { t } = await getTranslator();
+  if (!CONNECTION_KEYS.includes(connection)) return Response.json({ error: t("Choose a connection to check.") }, { status: 400 });
   const key = connection as ConnectionKey;
   const workspace = toWorkspace(row);
-  if (!connectionValues(workspace.connections, key)) return Response.json({ error: "Save the IDs first." }, { status: 400 });
+  if (!connectionValues(workspace.connections, key)) return Response.json({ error: t("Save the IDs first.") }, { status: 400 });
 
   let result: VerifyResult;
   try {
     result = await VERIFIERS[key]({ workspace, supabase: session.supabase, userId: session.user.id });
   } catch (error) {
+    // Stored in English with the check; the page translates it where it shows it (connectionMessage).
     result = { ok: false, message: `The check failed: ${logCaught("workspace verify", error, "something went wrong. Try again.")}`.slice(0, 400) };
   }
   if (result.pending) return Response.json({ result, workspace: toWorkspaceView(row) });
@@ -32,6 +35,6 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/workspa
   const check: ConnectionCheck = { ok: result.ok, message: result.message.slice(0, 400), checkedAt: new Date().toISOString(), values: connectionValues(workspace.connections, key) };
   const { data, error } = await session.supabase.from("products").update({ connection_checks: { ...row.connection_checks, [key]: check } })
     .eq("id", row.id).select(WORKSPACE_COLUMNS).single<WorkspaceRow>();
-  if (error) return dbFailure("workspace verify save", error, "The check ran but its result couldn't be saved. Try again.");
+  if (error) return dbFailure("workspace verify save", error, t("The check ran but its result couldn't be saved. Try again."), 500, {}, t);
   return Response.json({ result, workspace: toWorkspaceView(data) });
 }

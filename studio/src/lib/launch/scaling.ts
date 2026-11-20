@@ -6,6 +6,8 @@ import type { AdMetrics } from "@/lib/ad-metrics";
 import { EVENT_LABEL, type Thresholds } from "./promotion";
 
 export type ScalingMove = "setup" | "promote_first" | "wait" | "raise" | "hold" | "horizontal" | "at_cap";
+/** Which advice it is, so a page can say it in its own language from `values` (amounts in `currency`). */
+export type ScalingCode = "setup" | "promote_first" | "no_target" | "wait_spend" | "at_cap" | "raise" | "raise_plain" | "horizontal" | "hold_over" | "hold_around";
 
 export interface ScalingAdvice {
   move: ScalingMove;
@@ -13,6 +15,9 @@ export interface ScalingAdvice {
   summary: string;
   /** Why, in a line or two. */
   why: string;
+  code: ScalingCode;
+  /** The amounts the sentences use (major units; null when there is none, e.g. no conversions). */
+  values: { spend?: number; need?: number; max?: number; budget?: number; next?: number; cpa?: number | null; before?: number; target?: number };
   currency: string;
   dailyBudget: number | null;
   /** The budget the playbook's next 20 % step lands on (capped by the max daily budget). */
@@ -64,11 +69,11 @@ export function scalingAdvice(o: {
   const base = { currency, dailyBudget: budget, nextBudget, recent, before, ads: ads.length };
   const money = (n: number) => { try { return new Intl.NumberFormat("en", { style: "currency", currency, maximumFractionDigits: 0 }).format(n); } catch { return `${Math.round(n)} ${currency}`; } };
 
-  if (!o.scalingAdSetId) return { ...base, move: "setup", summary: "No scaling ad set yet.", why: "Pick or create one in Launch settings. The playbook scales winners in their own campaign, ideally with a campaign budget (CBO) so Meta moves money to the best ad." };
-  if (!ads.length) return { ...base, move: "promote_first", summary: "Promote a winner from testing first.", why: "Scaling starts once a testing ad has beaten your target cost per " + e.one + " on enough spend; the suggestions above say when." };
-  if (!t.targetCac) return { ...base, move: "wait", summary: `Set a target cost per ${e.one} to get scaling advice.`, why: "Every scaling step is judged against it. Work it out from what a customer is worth (LTV) and how fast you need the money back." };
+  if (!o.scalingAdSetId) return { ...base, move: "setup", code: "setup", values: {}, summary: "No scaling ad set yet.", why: "Pick or create one in Launch settings. The playbook scales winners in their own campaign, ideally with a campaign budget (CBO) so Meta moves money to the best ad." };
+  if (!ads.length) return { ...base, move: "promote_first", code: "promote_first", values: {}, summary: "Promote a winner from testing first.", why: "Scaling starts once a testing ad has beaten your target cost per " + e.one + " on enough spend; the suggestions above say when." };
+  if (!t.targetCac) return { ...base, move: "wait", code: "no_target", values: {}, summary: `Set a target cost per ${e.one} to get scaling advice.`, why: "Every scaling step is judged against it. Work it out from what a customer is worth (LTV) and how fast you need the money back." };
   if (recent.days < 2 || recent.spend < t.targetCac * 2) {
-    return { ...base, move: "wait", summary: "Let it spend before changing the budget.", why: `The last 3 days spent ${money(recent.spend)}; judge on at least about ${money(t.targetCac * 2)} (2 × target) so the cost per ${e.one} is a result, not noise.` };
+    return { ...base, move: "wait", code: "wait_spend", values: { spend: recent.spend, need: t.targetCac * 2 }, summary: "Let it spend before changing the budget.", why: `The last 3 days spent ${money(recent.spend)}; judge on at least about ${money(t.targetCac * 2)} (2 × target) so the cost per ${e.one} is a result, not noise.` };
   }
   const cpa = recent.cpa;
   const under = cpa != null && cpa <= t.targetCac;
@@ -77,21 +82,23 @@ export function scalingAdvice(o: {
   const brokeAfterRaise = before.cpa != null && before.cpa <= t.targetCac && wellOver;
   if (under) {
     if (budget != null && o.maxDailyBudget != null && budget >= o.maxDailyBudget) {
-      return { ...base, move: "at_cap", summary: `At your max daily budget (${money(o.maxDailyBudget)}), and still under target.`, why: "Raise the max in Launch settings if the economics allow, or scale horizontally: promote another winner and give it its own budget." };
+      return { ...base, move: "at_cap", code: "at_cap", values: { max: o.maxDailyBudget }, summary: `At your max daily budget (${money(o.maxDailyBudget)}), and still under target.`, why: "Raise the max in Launch settings if the economics allow, or scale horizontally: promote another winner and give it its own budget." };
     }
     return {
       ...base, move: "raise",
+      code: nextBudget != null && budget != null ? "raise" : "raise_plain",
+      values: { budget: budget ?? undefined, next: nextBudget ?? undefined, cpa, target: t.targetCac },
       summary: nextBudget != null && budget != null ? `Raise the daily budget about 20 %: ${money(budget)} → ${money(nextBudget)}, then leave it 48 hours.` : "Raise the daily budget about 20 %, then leave it 48 hours.",
       why: `Cost per ${e.one} over the last 3 days is ${money(cpa!)} against a ${money(t.targetCac)} target. Expect it to wobble after the change; judge where it settles, not the next morning.`,
     };
   }
   if (brokeAfterRaise) {
-    return { ...base, move: "horizontal", summary: "Stop raising this one; scale sideways with more winners.", why: `Cost per ${e.one} went from ${money(before.cpa!)} to ${cpa != null ? money(cpa) : "no conversions"} in the last 3 days. If it doesn't settle back under ${money(t.targetCac)} within 48 hours, step the budget back about 20 % and promote another winner (or a variation of this one) to run beside it.` };
+    return { ...base, move: "horizontal", code: "horizontal", values: { before: before.cpa!, cpa, target: t.targetCac }, summary: "Stop raising this one; scale sideways with more winners.", why: `Cost per ${e.one} went from ${money(before.cpa!)} to ${cpa != null ? money(cpa) : "no conversions"} in the last 3 days. If it doesn't settle back under ${money(t.targetCac)} within 48 hours, step the budget back about 20 % and promote another winner (or a variation of this one) to run beside it.` };
   }
   if (wellOver) {
-    return { ...base, move: "hold", summary: "Hold the budget; the cost per " + e.one + " is over target.", why: `${cpa != null ? money(cpa) : "No conversions"} over the last 3 days against ${money(t.targetCac)}. Give it 48 hours to settle; if it doesn't, lower the budget or pause the weakest ad, and keep new creatives in testing.` };
+    return { ...base, move: "hold", code: "hold_over", values: { cpa, target: t.targetCac }, summary: "Hold the budget; the cost per " + e.one + " is over target.", why: `${cpa != null ? money(cpa) : "No conversions"} over the last 3 days against ${money(t.targetCac)}. Give it 48 hours to settle; if it doesn't, lower the budget or pause the weakest ad, and keep new creatives in testing.` };
   }
-  return { ...base, move: "hold", summary: "Hold: it's around target.", why: `${money(cpa!)} against ${money(t.targetCac)}. Raise again once it settles under target.` };
+  return { ...base, move: "hold", code: "hold_around", values: { cpa, target: t.targetCac }, summary: "Hold: it's around target.", why: `${money(cpa!)} against ${money(t.targetCac)}. Raise again once it settles under target.` };
 }
 
 /** Meta reports budgets in the currency's minor unit (cents); the studio works in major units. */

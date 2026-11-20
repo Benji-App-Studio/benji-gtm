@@ -1,7 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getInstallConfig, readStoredOwner } from "@/lib/install/config";
-import { decideProxy, isLocalMode, loginFor, signInStoredOwner, startedLocalOnly } from "@/lib/install/local-auth";
+import { decideProxy, isLocalMode, loginFor, signInStoredOwner, signupAllowed, startedLocalOnly } from "@/lib/install/local-auth";
+import { accountsMode } from "@/lib/install/mode";
+import { navRedirect } from "@/lib/nav-model";
+import { LANG_PARAM, localeFromQuery, queryLocaleCookie } from "@/lib/i18n/query-locale";
+import { needsSavedLocale, savedLocaleCookies } from "@/lib/i18n/saved-locale";
+import { LOCALE_COOKIE } from "@/lib/storage-keys";
 
 /**
  * Keeps the Supabase session fresh on every request and guards the signed-in parts of the app. On a copy
@@ -26,6 +31,10 @@ export async function proxy(request: NextRequest) {
     if (!url.searchParams.has("next")) url.searchParams.set("next", "/onboarding");
     return NextResponse.redirect(url);
   }
+  // Addresses from before the journey-ordered navigation (lib/nav-model.ts) go to their new place with
+  // their query, as a real redirect before anything renders. /app itself opens the last app's Home.
+  const moved = navRedirect(request.nextUrl.pathname, request.nextUrl.search);
+  if (moved) return NextResponse.redirect(new URL(moved, request.nextUrl.origin));
   let response = NextResponse.next({ request });
   const supabase = createServerClient(config.supabaseUrl, config.publishableKey, {
     cookies: {
@@ -49,6 +58,32 @@ export async function proxy(request: NextRequest) {
   // The stored sign-in is read only when it may be used: local mode, nobody signed in.
   const owner = local && !signedIn ? readStoredOwner() : null;
 
+  // The language saved on the profile follows the person to a browser with no language cookie yet: read
+  // once, then the cookie (or a session-long "checked" marker) means no further reads.
+  const userId = data?.claims?.sub;
+  if (userId && needsSavedLocale({ signedIn, path, cookies: request.cookies })) {
+    const { data: profile, error } = await supabase.from("profiles").select("locale").eq("id", userId).maybeSingle<{ locale: string | null }>();
+    const { cookies: toSet } = savedLocaleCookies(error ? null : profile?.locale);
+    const kept = response.cookies.getAll();
+    // On the request too, so this very page renders in the saved language.
+    toSet.forEach(({ name, value }) => request.cookies.set(name, value));
+    response = NextResponse.next({ request });
+    kept.forEach((cookie) => response.cookies.set(cookie));
+    toSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+  }
+
+  // A language in the address (/?lang=ja, the landing page's hreflang links) becomes the language cookie:
+  // on the request so this page renders in it, and on the response so it sticks (lib/i18n/query-locale.ts).
+  const asked = localeFromQuery(request.nextUrl.searchParams.get(LANG_PARAM));
+  if (asked && request.cookies.get(LOCALE_COOKIE)?.value !== asked) {
+    const cookie = queryLocaleCookie(asked);
+    const kept = response.cookies.getAll();
+    request.cookies.set(cookie.name, cookie.value);
+    response = NextResponse.next({ request });
+    kept.forEach((c) => response.cookies.set(c));
+    response.cookies.set(cookie.name, cookie.value, cookie.options);
+  }
+
   const redirect = (to: string) => {
     const url = new URL(to, request.nextUrl.origin);
     const out = NextResponse.redirect(url);
@@ -56,8 +91,13 @@ export async function proxy(request: NextRequest) {
     return out;
   };
 
+  // Asked only for the sign-up page, by someone signed out (one cached request a minute).
+  const env = process.env;
+  const signupOpen = path === "/signup" && !signedIn && !local
+    ? signupAllowed({ allowSignup: env["ALLOW_SIGNUP"], accounts: env["ALLOW_SIGNUP"] === "1" ? false : await accountsMode(config) })
+    : undefined;
   const decision = decideProxy({
-    path, local, signedIn, storedOwner: Boolean(owner),
+    path, local, signedIn, storedOwner: Boolean(owner), signupOpen,
     next: request.nextUrl.searchParams.get("next"), reason: request.nextUrl.searchParams.get("reason"),
   });
   if (decision.action === "next") return response;
@@ -70,6 +110,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Static files, the generated icons (app/icon.tsx, app/apple-icon.tsx), API routes and the auth links skip this.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon$|apple-icon$|api/|auth/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  // Static files, the generated icons (app/icon.tsx, app/apple-icon.tsx), the share picture (app/og-image) and
+  // robots.txt, API routes and the auth links skip this.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon$|apple-icon$|og-image$|robots\\.txt$|api/|auth/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
 };

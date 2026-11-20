@@ -8,6 +8,7 @@ import {
   type BrandBasics, type BrandColumns, type BrandOverview, type MergedBrand, type SuggestionKey,
 } from "@/lib/brand";
 import { requireInstallConfig } from "@/lib/install/config";
+import { m } from "@/lib/i18n/translate";
 import type { ProductInsight } from "@/lib/product-insight";
 import { WORKSPACE_BUCKET, WorkspaceNotFoundError } from "@/lib/workspace";
 import { readBrandKit, UUID } from "@/lib/workspace-schema";
@@ -65,7 +66,7 @@ export async function applyBrandSuggestion(session: Session, productId: string, 
   const row = await loadBrandRow(session.supabase, productId);
   const draft = brandDraft(row);
   const suggestion = brandSuggestions(row.insight, draft).find((s) => s.key === key);
-  if (!suggestion) throw new BrandSaveError("That suggestion is already in your brand.");
+  if (!suggestion) throw new BrandSaveError(m("That suggestion is already in your brand."));
   const next = applySuggestion(draft, suggestion);
   return saveBrand(session, productId, { basics: next.basics, system: next.system });
 }

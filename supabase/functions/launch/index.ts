@@ -26,8 +26,9 @@
 //   POST /edit     { productId, level, id, changes, confirm }           rename, budget, bid, schedule, pause
 //   POST /work, /tick, /daily         worker secret only
 import { createClient } from "@supabase/supabase-js";
-import { createAuth, HttpError } from "../_shared/auth.ts";
-import { addKeyMessage, createKeys, sameSecret } from "../_shared/keys.ts";
+import { HttpError } from "../_shared/auth.ts";
+import { addKeyMessage, sameSecret } from "../_shared/keys.ts";
+import { createTenancy, type Tenant } from "../_shared/tenant.ts";
 import { adAccountRefusal, launchAccess } from "./access.ts";
 import { planDaily } from "./automation.ts";
 import { due, stepDraft } from "./draft.ts";
@@ -35,6 +36,7 @@ import { adsManagerUrl, Graph, GRAPH_VERSION } from "./graph.ts";
 import { account, adSet, copyAd, createStructure, destination, explain, missing, pauseAd, previewDraft, campaignPayload, adSetPayload, type StructureInput } from "./meta.ts";
 import { mockMeta } from "./mock.ts";
 import { adName, appCode, day, nextVersion, parseAdName, slug, withStage, type Stage } from "./naming.ts";
+import { pauseRefusal, promoteRefusal, REFUSAL_TEXT } from "./scope.ts";
 import { automationRefusal, settingsInput } from "./settings.ts";
 import { approvedCreatives, creativesByIds, draftCreative } from "./sources.ts";
 import { adPreviewRoute, adSetsRoute, campaignsRoute, connectionsRoute, editRoute, estimateRoute, type NewDraft, searchRoute, sendRoute, SheetError, type SheetDeps } from "./sheet.ts";
@@ -68,33 +70,55 @@ class UserError extends Error {}
 
 // MARK: Keys and callers
 
-/** Every key comes from the shared reader (edge function secret first, then Vault; the worker secret Vault only). */
-const secrets = createKeys(db);
-const auth = createAuth(db);
+/**
+ * Whose keys: the install's (install and legacy mode) or each account's own (accounts mode,
+ * _shared/tenant.ts). The worker secret is always the platform's.
+ */
+const tenancy = createTenancy(db);
+const workerSecret = () => tenancy.platform().get("LAUNCH_WORKER_SECRET");
 
-interface Keys { token?: string; appSecret?: string; worker?: string }
+interface Keys { token?: string; appSecret?: string }
 
-/** The system-user token, the app secret and the worker secret, as one object. */
-async function keys(): Promise<Keys> {
+/** The tenant's system-user token and app secret, as one object. */
+async function keys(tenant: Tenant): Promise<Keys> {
   return {
-    token: await secrets.get("META_SYSTEM_USER_TOKEN"),
-    appSecret: await secrets.get("META_APP_SECRET"),
-    worker: await secrets.get("LAUNCH_WORKER_SECRET"),
+    token: await tenant.keys.get("META_SYSTEM_USER_TOKEN"),
+    appSecret: await tenant.keys.get("META_APP_SECRET"),
   };
 }
+
+/**
+ * META_ALLOWED_AD_ACCOUNTS is the platform's list for the platform's token: it applies in install and
+ * legacy mode, and in accounts mode only while the token in use is the platform's (a staff account
+ * without its own). An account's own token writes to its own ad accounts.
+ */
+async function adAccountList(tenant: Tenant): Promise<string | undefined> {
+  if (tenant.mode !== "accounts" || await tenant.keys.source("META_SYSTEM_USER_TOKEN") === "platform") return Deno.env.get("META_ALLOWED_AD_ACCOUNTS");
+  return undefined;
+}
+
+/** The ad account list that applies to each settings row (set wherever a row is read: settingsFor, advance). */
+const allowLists = new WeakMap<LaunchSettingsRow, string | undefined>();
+async function withAllowList(settings: LaunchSettingsRow, tenant: Tenant): Promise<LaunchSettingsRow> {
+  allowLists.set(settings, await adAccountList(tenant));
+  return settings;
+}
+/** A row read without withAllowList keeps the platform's list (refuses rather than allows). */
+const allowListOf = (settings: LaunchSettingsRow) => (allowLists.has(settings) ? allowLists.get(settings) : Deno.env.get("META_ALLOWED_AD_ACCOUNTS"));
 
 const MOCK = Deno.env.get("LAUNCH_META_MOCK") === "1";
 const mock = MOCK ? mockMeta({ videoPolls: 1 }) : null;
 
-/** The Graph client, or null when Meta isn't connected (no token and not in mock mode). */
-async function graph(): Promise<Graph | null> {
+/** The Graph client on the tenant's token, or null when Meta isn't connected (no token and not in mock mode). */
+async function graphFor(tenant: Tenant): Promise<Graph | null> {
   if (mock) return new Graph("mock-token", mock.fetch);
-  const k = await keys();
+  const k = await keys(tenant);
   return k.token ? new Graph(k.token, fetch, GRAPH_VERSION, k.appSecret) : null;
 }
+const graph = async (user: string) => graphFor(await tenancy.for(user));
 
-async function requireGraph(): Promise<Graph> {
-  const g = await graph();
+async function requireGraph(user: string): Promise<Graph> {
+  const g = await graph(user);
   if (!g) throw new UserError(`Meta isn't connected. ${addKeyMessage("META_SYSTEM_USER_TOKEN")}`);
   return g;
 }
@@ -113,7 +137,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
  * owner, its members may; on one from before setup existed, LAUNCH_ALLOWED_EMAILS decides (access.ts).
  */
 async function launcher(req: Request): Promise<string> {
-  const caller = await auth.member(req);
+  const caller = await tenancy.auth.member(req);
   const refusal = launchAccess(caller.role, caller.email, Deno.env.get("LAUNCH_ALLOWED_EMAILS"));
   if (refusal) throw new HttpError(403, refusal);
   return caller.id;
@@ -121,7 +145,9 @@ async function launcher(req: Request): Promise<string> {
 
 /** Whether a workspace's owner may still use Launch (for the daily automation, which runs as no one). */
 async function ownerAllowed(userId: string): Promise<string | null> {
-  const role = await auth.roleOf(userId);
+  // Accounts mode: each account uses its own token; a suspended account's automation stops.
+  if (await tenancy.mode() === "accounts") return (await tenancy.activeUsers([userId])).has(userId) ? null : "This account is suspended.";
+  const role = await tenancy.auth.roleOf(userId);
   if (role !== "legacy") return launchAccess(role, null, undefined);
   const { data, error } = await db.auth.admin.getUserById(userId);
   if (error || !data.user) return "The workspace's owner couldn't be found.";
@@ -129,7 +155,7 @@ async function ownerAllowed(userId: string): Promise<string | null> {
 }
 
 async function requireWorker(req: Request) {
-  const secret = (await keys()).worker;
+  const secret = await workerSecret();
   const given = req.headers.get("x-launch-worker") ?? "";
   if (!secret || !sameSecret(given, secret)) throw new HttpError(403, "Forbidden");
 }
@@ -144,8 +170,10 @@ Deno.serve(async (req) => {
   try {
     switch (route) {
       case "health": {
-        const set = await secrets.flags(["META_SYSTEM_USER_TOKEN", "META_APP_SECRET", "LAUNCH_WORKER_SECRET"]);
-        return json({ meta: set.META_SYSTEM_USER_TOKEN || MOCK, mock: MOCK, appSecret: set.META_APP_SECRET, worker: set.LAUNCH_WORKER_SECRET, version: GRAPH_VERSION });
+        const tenant = await tenancy.healthTenant(req);
+        if (!tenant) return json({ ok: true, mode: "accounts" });
+        const set = await tenant.keys.flags(["META_SYSTEM_USER_TOKEN", "META_APP_SECRET"]);
+        return json({ meta: set.META_SYSTEM_USER_TOKEN || MOCK, mock: MOCK, appSecret: set.META_APP_SECRET, worker: Boolean(await workerSecret()), version: GRAPH_VERSION });
       }
       case "settings": { const user = await launcher(req); return json(await saveSettings(user, await body(req))); }
       case "status": { const user = await launcher(req); return json(await status(user, await body(req))); }
@@ -197,16 +225,16 @@ async function settingsFor(user: string, productId: unknown): Promise<LaunchSett
   if (!UUID.test(id)) throw new HttpError(400, "Which workspace?");
   const { data } = await db.from("launch_settings").select("*").eq("product_id", id).eq("user_id", user).maybeSingle();
   if (!data) throw new UserError("Save this workspace's Launch settings first.");
-  const s = data as LaunchSettingsRow;
+  const s = await withAllowList(data as LaunchSettingsRow, await tenancy.for(user));
   s.meta ??= {};
-  const refusal = adAccountRefusal(s.meta.adAccountId, Deno.env.get("META_ALLOWED_AD_ACCOUNTS"), false);
+  const refusal = adAccountRefusal(s.meta.adAccountId, allowListOf(s), false);
   if (refusal) throw new UserError(refusal);
   return s;
 }
 
 /** Every Meta write goes through here first: the ad account must be on META_ALLOWED_AD_ACCOUNTS (an empty list refuses). */
 function requireWritable(settings: LaunchSettingsRow) {
-  const refusal = adAccountRefusal(settings.meta?.adAccountId, Deno.env.get("META_ALLOWED_AD_ACCOUNTS"), true);
+  const refusal = adAccountRefusal(settings.meta?.adAccountId, allowListOf(settings), true);
   if (refusal) throw new UserError(refusal);
 }
 
@@ -224,7 +252,7 @@ async function saveSettings(user: string, input: Record<string, any>) {
   const automation = automationRefusal(patch, current);
   if (automation) throw new UserError(automation);
   if (patch.meta?.adAccountId) {
-    const refusal = adAccountRefusal(patch.meta.adAccountId, Deno.env.get("META_ALLOWED_AD_ACCOUNTS"), false);
+    const refusal = adAccountRefusal(patch.meta.adAccountId, await adAccountList(await tenancy.for(user)), false);
     if (refusal) throw new UserError(refusal);
   }
   const { data, error } = await db.from("launch_settings").upsert({ ...patch, product_id: id, user_id: user }, { onConflict: "product_id" }).select("*").single();
@@ -238,7 +266,7 @@ const codeFor = (s: LaunchSettingsRow) => appCode(s.meta.appName ?? "App", s.app
 
 async function status(user: string, input: Record<string, any>) {
   const settings = await settingsFor(user, input.productId);
-  const g = await graph();
+  const g = await graph(user);
   const result: Record<string, unknown> = { connected: Boolean(g), mock: MOCK, version: GRAPH_VERSION, missing: missing(settings, "TEST") };
   if (!g || !settings.meta.adAccountId) return result;
   try {
@@ -247,7 +275,7 @@ async function status(user: string, input: Record<string, any>) {
     const issues: string[] = [];
     if (!a.hasPaymentMethod) issues.push("The ad account has no payment method: drafts can be created, but nothing can be published until one is added.");
     if (a.accountStatus !== 1) issues.push(`The ad account isn't active (status ${a.accountStatus}).`);
-    const writes = adAccountRefusal(settings.meta.adAccountId, Deno.env.get("META_ALLOWED_AD_ACCOUNTS"), true);
+    const writes = adAccountRefusal(settings.meta.adAccountId, allowListOf(settings), true);
     if (writes) issues.push(writes);
     for (const [key, id] of [["testing", settings.testing_adset_id], ["scaling", settings.scaling_adset_id]] as const) {
       if (!id) continue;
@@ -337,7 +365,7 @@ async function preview(user: string, input: Record<string, any>) {
 async function queueDrafts(user: string, input: Record<string, any>, source: DraftRow["source"] = "manual") {
   const settings = await settingsFor(user, input.productId);
   requireWritable(settings);
-  await requireGraph();
+  await requireGraph(user);
   const gaps = missing(settings, "TEST");
   if (gaps.length) throw new UserError(gaps.join(" "));
   const items = await nameItems(settings, await itemsFor(settings, input.items), "TEST");
@@ -369,7 +397,7 @@ async function createJob(settings: LaunchSettingsRow, items: (ItemInput & { name
 /** What the sheet's routes need: the workspace's settings (read access checked), the database and the queue. */
 async function sheetDeps(user: string, productId: unknown): Promise<SheetDeps> {
   const settings = await settingsFor(user, productId);
-  const graph = await requireGraph();
+  const graph = await requireGraph(user);
   return {
     graph, settings, mediaAllowed,
     allowWrite: () => requireWritable(settings),
@@ -406,7 +434,7 @@ async function queueSheetDrafts(settings: LaunchSettingsRow, drafts: NewDraft[])
 // MARK: Worker
 
 async function wake(jobId: string) {
-  const secret = (await keys()).worker;
+  const secret = await workerSecret();
   if (!secret) return advance(jobId);
   try {
     await fetch(`${FUNCTION_URL}/work`, {
@@ -433,10 +461,13 @@ async function advance(jobId: string) {
   const deadline = Date.now() + SLICE_MS;
   try {
     if (job.wakes > 200) throw new UserError("The upload took too long and was stopped.");
-    const g = await requireGraph();
+    const tenant = await tenancy.for(job.user_id);
+    if (!tenant.active) throw new UserError("This account is suspended.");
+    const g = await graphFor(tenant);
+    if (!g) throw new UserError(`Meta isn't connected. ${addKeyMessage("META_SYSTEM_USER_TOKEN")}`);
     const { data: s } = await db.from("launch_settings").select("*").eq("product_id", job.product_id).eq("user_id", job.user_id).single();
-    const settings = s as LaunchSettingsRow;
-    if (!settings) throw new UserError("This workspace's Launch settings are gone.");
+    if (!s) throw new UserError("This workspace's Launch settings are gone.");
+    const settings = await withAllowList(s as LaunchSettingsRow, tenant);
     settings.meta ??= {};
     requireWritable(settings);
     for (;;) {
@@ -475,7 +506,7 @@ async function setup(user: string, input: Record<string, any>) {
   const stages = (Array.isArray(input.stages) ? input.stages : ["TEST", "SCALE"]).filter((s: string) => s === "TEST" || s === "SCALE") as Stage[];
   const gaps = missing(settings, "TEST").filter((m) => !m.includes("ad set"));
   if (gaps.length) throw new UserError(gaps.join(" "));
-  const g = await requireGraph();
+  const g = await requireGraph(user);
   const currency = (await account(g, settings.meta.adAccountId!)).currency;
   const cap = settings.max_daily_budget;
   const plans = stages.map((stage) => {
@@ -506,18 +537,23 @@ async function adInfo(g: Graph, adId: string) {
   return g.get<{ id: string; name: string; adset_id: string; account_id: string; status: string }>(adId, { fields: "id,name,adset_id,account_id,status" });
 }
 
+/** Meta's answer as scope.ts reads it: a missing account counts as another account. */
+const scopeAd = (ad: { adset_id?: string; account_id?: string }) => ({ adset_id: ad.adset_id ?? "", account_id: ad.account_id ?? "" });
+const scopeOf = (s: LaunchSettingsRow) => ({ testing_adset_id: s.testing_adset_id, scaling_adset_id: s.scaling_adset_id, adAccountId: s.meta?.adAccountId });
+
 async function promote(user: string, input: Record<string, any>) {
   const settings = await settingsFor(user, input.productId);
   if (!settings.scaling_adset_id) throw new UserError("Choose (or create) the scaling ad set first.");
   requireWritable(settings);
-  const g = await requireGraph();
+  const g = await requireGraph(user);
   const ad = await adInfo(g, String(input.adId ?? ""));
-  if (ad.adset_id !== settings.testing_adset_id) throw new UserError("Only ads in the testing ad set can be promoted.");
+  const { data: original } = await db.from("launch_drafts").select("*").eq("product_id", settings.product_id).eq("ad_id", ad.id).maybeSingle();
+  const refusal = promoteRefusal(scopeAd(ad), scopeOf(settings), original);
+  if (refusal) throw new UserError(REFUSAL_TEXT[refusal]);
   const name = parseAdName(ad.name) ? withStage(ad.name, "SCALE") : `${codeFor(settings)} | SCALE | ${slug(ad.name)}`;
   const { data: existing } = await db.from("launch_drafts").select("ad_id").eq("product_id", settings.product_id).eq("promoted_from_ad_id", ad.id).eq("status", "draft").maybeSingle();
   if (existing?.ad_id) return { adId: existing.ad_id, already: true, url: adsManagerUrl(settings.meta.adAccountId!, "ads", [existing.ad_id]) };
   const copyId = await copyAd(g, ad.id, settings.scaling_adset_id, name);
-  const { data: original } = await db.from("launch_drafts").select("*").eq("product_id", settings.product_id).eq("ad_id", ad.id).maybeSingle();
   await db.from("launch_drafts").insert({
     user_id: user, product_id: settings.product_id, source: "promotion", stage: "SCALE",
     creative_ref: original?.creative_ref ?? `meta:${ad.id}`, creative: original?.creative ?? { id: `meta:${ad.id}`, url: "", kind: "video" },
@@ -531,9 +567,11 @@ async function promote(user: string, input: Record<string, any>) {
 async function pause(user: string, input: Record<string, any>) {
   const settings = await settingsFor(user, input.productId);
   requireWritable(settings);
-  const g = await requireGraph();
+  const g = await requireGraph(user);
   const ad = await adInfo(g, String(input.adId ?? ""));
-  if (![settings.testing_adset_id, settings.scaling_adset_id].includes(ad.adset_id)) throw new UserError("Launch only pauses ads in this workspace's testing or scaling ad set.");
+  const { data: own } = await db.from("launch_drafts").select("stage, status").eq("product_id", settings.product_id).eq("ad_id", ad.id).maybeSingle();
+  const refusal = pauseRefusal(scopeAd(ad), scopeOf(settings), own);
+  if (refusal) throw new UserError(REFUSAL_TEXT[refusal]);
   await pauseAd(g, ad.id);
   return { paused: ad.id, url: adsManagerUrl(settings.meta.adAccountId!, "ads", [ad.id]) };
 }
@@ -543,15 +581,24 @@ async function pause(user: string, input: Record<string, any>) {
 async function daily() {
   const { data } = await db.from("launch_settings").select("*").eq("automation_enabled", true);
   const results: { productId: string; queued: number; notes: string[] }[] = [];
-  const g = await graph();
+  // Each workspace's owner's token (one client per owner): the install's in install and legacy mode.
+  const graphs = new Map<string, Promise<Graph | null>>();
+  const graphOf = (user: string) => {
+    if (!graphs.has(user)) graphs.set(user, graph(user));
+    return graphs.get(user)!;
+  };
+  let connected = false;
   for (const settings of (data ?? []) as LaunchSettingsRow[]) {
     settings.meta ??= {};
     let notes: string[] = [];
     let queued = 0;
     try {
+      const g = await graphOf(settings.user_id);
       if (!g) throw new UserError("Meta isn't connected.");
+      connected = true;
       const owner = await ownerAllowed(settings.user_id);
       if (owner) throw new UserError(owner);
+      await withAllowList(settings, await tenancy.for(settings.user_id));
       requireWritable(settings);
       const since = `${day()}T00:00:00Z`;
       const [{ data: drafts }, { count }] = await Promise.all([
@@ -586,5 +633,5 @@ async function daily() {
     await db.from("launch_settings").update({ automation_last_run_at: new Date().toISOString(), automation_last_note: [`Queued ${queued}.`, ...notes].join(" ").slice(0, 1000) }).eq("product_id", settings.product_id);
     results.push({ productId: settings.product_id, queued, notes });
   }
-  return { ran: results.length, connected: Boolean(g), results };
+  return { ran: results.length, connected, results };
 }

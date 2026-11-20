@@ -1,3 +1,4 @@
+import { getTranslator } from "@/lib/i18n/server";
 import type { NextRequest } from "next/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { callFunction, relay } from "@/lib/server/functions";
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
   const session = await requireUser();
   if (isResponse(session)) return session;
   const body = (await request.json().catch(() => null)) as { email?: unknown } | null;
-  if (typeof body?.email !== "string" || !body.email.trim()) return Response.json({ error: "Type the person's email address." }, { status: 400 });
+  if (typeof body?.email !== "string" || !body.email.trim()) return Response.json({ error: (await getTranslator()).t("Type the person's email address.") }, { status: 400 });
   const result = await callFunction<{ member: InstallMember; inviteLink?: string }>("install", session, "members/add", { body: { email: body.email.trim() } });
   if (result.ok && typeof result.data.inviteLink === "string") result.data.inviteLink = inviteHref(request.nextUrl.origin, result.data.inviteLink);
   return relay(result);

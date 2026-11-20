@@ -1,7 +1,7 @@
 # Higgsfield API key
 
 > **What this key does in the app:** Higgsfield makes the images and videos in Studio and
-> Playground (Marketing Studio images and Seedance 2.5 videos). Without it, those buttons can't
+> Studio's Remix and Templates (Marketing Studio images and Seedance 2.5 videos). Without it, those buttons can't
 > generate anything, unless you run the optional desktop runner.
 >
 > **Required or optional:** Optional (needed for image and video generation).
@@ -61,7 +61,7 @@ not enough. The secret is shown only once, so create a new key.
 
 ### Part 4. Paste it into Benji GTM
 
-1. Open **Settings > API keys**.
+1. Open **Settings > Your keys**.
 2. In the **Higgsfield** row (under "Creative"), click **Add** (or **Replace**).
 3. Paste the key into the box.
 4. Click **Save and check**.
@@ -91,7 +91,7 @@ Higgsfield as `Authorization: Key ID:SECRET`.
   GitHub copy. Anyone with it can spend your Higgsfield balance.
 - To delete or replace a key: open https://open.higgsfield.ai/api-keys, open the key's actions menu,
   and choose **Disable** (temporary) or **Delete** (permanent, can't be undone). Then create a new
-  key and paste it into **Settings > API keys > Higgsfield > Replace**.
+  key and paste it into **Settings > Your keys > Higgsfield > Replace**.
 
 ---
 

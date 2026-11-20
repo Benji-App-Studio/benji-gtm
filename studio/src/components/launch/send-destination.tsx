@@ -3,21 +3,24 @@
 // Meta, with status, objective, budget and goal; each can be edited (rename, budget, bid, schedule,
 // pause) without leaving the sheet.
 import { useCallback, useEffect, useState } from "react";
+import { useT } from "@/lib/i18n/client";
+import type { Translator } from "@/lib/i18n/translate";
 import type { Stage } from "@/lib/launch/naming";
-import { GOAL_INFO, type MetaObjective, OBJECTIVE_INFO } from "@/lib/launch/rules";
+import { BID_INFO, type BidStrategy, GOAL_INFO, type MetaObjective, OBJECTIVE_INFO } from "@/lib/launch/rules";
 import { type AdSetRow, type CampaignRow, metaCall, money, type Paged } from "@/lib/launch/send";
 import { IconPencil } from "../icons";
 import { Badge, Button, cx, Segmented, Spinner } from "../ui";
 import { MetaEdit } from "./meta-edit";
-import { Choice, Group } from "./send-parts";
+import { callErrorText } from "./launch-words";
+import { Choice, Group, statusWord } from "./send-parts";
 
 export type Mode = "existing" | "new-adset" | "new-campaign";
 
 const STATUS_TONE = (s: string) => (s === "ACTIVE" ? "win" : s.includes("PAUSED") ? "neutral" : ["DISAPPROVED", "WITH_ISSUES"].includes(s) ? "warn" : "highlight") as "win" | "neutral" | "warn" | "highlight";
 
-const objectiveLabel = (o: string) => OBJECTIVE_INFO[o as MetaObjective]?.label ?? o;
-const budgetText = (r: { budgetMode?: string; dailyBudget: number | null; lifetimeBudget: number | null }, currency: string, inherited = false) =>
-  r.dailyBudget != null ? `${money(r.dailyBudget, currency)}/day` : r.lifetimeBudget != null ? `${money(r.lifetimeBudget, currency)} total` : inherited ? "campaign budget" : "budget on ad sets";
+const objectiveLabel = ({ t }: Translator, o: string) => (OBJECTIVE_INFO[o as MetaObjective] ? t(OBJECTIVE_INFO[o as MetaObjective].label) : o);
+const budgetText = ({ t, intl }: Translator, r: { budgetMode?: string; dailyBudget: number | null; lifetimeBudget: number | null }, currency: string, inherited = false) =>
+  r.dailyBudget != null ? t("{amount}/day", { amount: money(r.dailyBudget, currency, intl) }) : r.lifetimeBudget != null ? t("{amount} total", { amount: money(r.lifetimeBudget, currency, intl) }) : inherited ? t("campaign budget") : t("budget on ad sets");
 
 export function DestinationStep({ productId, mode, onMode, stage, onStage, campaign, onCampaign, adSet, onAdSet, preselect }: {
   productId: string;
@@ -37,6 +40,8 @@ export function DestinationStep({ productId, mode, onMode, stage, onStage, campa
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<{ level: "campaign" | "adset"; row: CampaignRow | AdSetRow } | null>(null);
   const [reloads, setReloads] = useState(0);
+  const tr = useT();
+  const { t } = tr;
 
   const fetchCampaigns = useCallback((after?: string | null) => metaCall<Paged<CampaignRow>>(productId, "campaigns", { after }), [productId]);
   const fetchAdSets = useCallback((campaignId: string) => metaCall<Paged<AdSetRow>>(productId, "adsets", { campaignId }), [productId]);
@@ -95,57 +100,57 @@ export function DestinationStep({ productId, mode, onMode, stage, onStage, campa
 
   return (
     <div className="grid gap-4">
-      <Group title="Where should the ads go?" hint="Everything is created paused. Nothing spends until you publish it in Ads Manager.">
+      <Group title={t("Where should the ads go?")} hint={t("Everything is created paused. Nothing spends until you publish it in Ads Manager.")}>
         <Choice name="mode" value={mode} onChange={onMode} options={[
-          { value: "existing", label: "An existing ad set", hint: "Add the ads next to the ones already there." },
-          { value: "new-adset", label: "A new ad set in an existing campaign", hint: "New targeting or budget inside a campaign you already have." },
-          { value: "new-campaign", label: "A new campaign and ad set", hint: "Testing: one ABO campaign, about $20–50 a day per ad set. Scaling: one CBO campaign for proven winners." },
+          { value: "existing", label: t("An existing ad set"), hint: t("Add the ads next to the ones already there.") },
+          { value: "new-adset", label: t("A new ad set in an existing campaign"), hint: t("New targeting or budget inside a campaign you already have.") },
+          { value: "new-campaign", label: t("A new campaign and ad set"), hint: t("Testing: one ABO campaign, about $20–50 a day per ad set. Scaling: one CBO campaign for proven winners.") },
         ]} />
         <div className="flex flex-wrap items-center gap-3">
-          <Segmented label="Stage" value={stage} onChange={onStage} options={[{ value: "TEST", label: "Testing" }, { value: "SCALE", label: "Scaling" }]} />
-          <span className="text-xs text-muted">Names say {stage} so Measure can group results ({stage === "TEST" ? "new concepts at a small budget" : "winners moved up"}).</span>
+          <Segmented label={t("Stage")} value={stage} onChange={onStage} options={[{ value: "TEST", label: t("Testing") }, { value: "SCALE", label: t("Scaling") }]} />
+          <span className="text-xs text-muted">{stage === "TEST" ? t("Names say TEST so Measure can group results (new concepts at a small budget).") : t("Names say SCALE so Measure can group results (winners moved up).")}</span>
         </div>
       </Group>
 
       {mode !== "new-campaign" && (
-        <Group title="Campaign" hint={campaigns ? `${campaigns.length}${next ? "+" : ""} in this ad account` : undefined}>
-          {error && <p className="text-sm text-warn">{error}</p>}
-          {!campaigns ? <div className="flex items-center gap-2 text-sm text-muted"><Spinner className="size-3.5" />Reading campaigns from Meta…</div>
-            : !campaigns.length ? <p className="text-sm text-muted">No campaigns yet. Pick “A new campaign and ad set”.</p>
+        <Group title={t("Campaign")} hint={campaigns ? (next ? t("{n}+ in this ad account", { n: campaigns.length }) : t("{n} in this ad account", { n: campaigns.length })) : undefined}>
+          {error && <p className="text-sm text-warn">{callErrorText(tr, error)}</p>}
+          {!campaigns ? <div className="flex items-center gap-2 text-sm text-muted"><Spinner className="size-3.5" />{t("Reading campaigns from Meta…")}</div>
+            : !campaigns.length ? <p className="text-sm text-muted">{t("No campaigns yet. Pick “A new campaign and ad set”.")}</p>
             : (
               <ul className="grid max-h-72 gap-1.5 overflow-y-auto pr-1">
                 {campaigns.map((c) => (
                   <li key={c.id}>
                     <Row selected={campaign?.id === c.id} disabled={!c.supported} onSelect={() => onCampaign(campaign?.id === c.id ? null : c)} onEdit={() => setEditing({ level: "campaign", row: c })}
                       title={c.name} badges={<>
-                        <Badge tone={STATUS_TONE(c.effectiveStatus)}>{c.effectiveStatus.toLowerCase().replace(/_/g, " ")}</Badge>
-                        <Badge>{objectiveLabel(c.objective)}</Badge>
+                        <Badge tone={STATUS_TONE(c.effectiveStatus)}>{statusWord(tr, c.effectiveStatus)}</Badge>
+                        <Badge>{objectiveLabel(tr, c.objective)}</Badge>
                         <Badge tone={c.budgetMode === "CBO" ? "accent" : "neutral"}>{c.budgetMode}</Badge>
                       </>}
-                      detail={`${budgetText(c, currency)}${c.bidStrategy ? ` · ${c.bidStrategy.toLowerCase().replace(/_/g, " ")}` : ""}${!c.supported ? " · older objective: the API can't add ads to it" : ""}`} />
+                      detail={`${budgetText(tr, c, currency)}${c.bidStrategy ? ` · ${BID_INFO[c.bidStrategy as BidStrategy] ? t(BID_INFO[c.bidStrategy as BidStrategy].label) : c.bidStrategy.toLowerCase().replace(/_/g, " ")}` : ""}${!c.supported ? ` · ${t("older objective: the API can't add ads to it")}` : ""}`} />
                   </li>
                 ))}
               </ul>
             )}
-          {next && <Button variant="ghost" size="sm" disabled={loading} onClick={more}>{loading && <Spinner className="size-3" />}Load more</Button>}
+          {next && <Button variant="ghost" size="sm" disabled={loading} onClick={more}>{loading && <Spinner className="size-3" />}{t("Load more")}</Button>}
         </Group>
       )}
 
       {mode === "existing" && campaign && (
-        <Group title="Ad set" hint={campaign.budgetMode === "CBO" ? "This campaign holds the budget (CBO); its ad sets share it." : "Each ad set here has its own budget (ABO)."}>
-          {!adSets ? <div className="flex items-center gap-2 text-sm text-muted"><Spinner className="size-3.5" />Reading ad sets…</div>
-            : !adSets.length ? <p className="text-sm text-muted">This campaign has no ad sets. Pick “A new ad set in an existing campaign”.</p>
+        <Group title={t("Ad set")} hint={campaign.budgetMode === "CBO" ? t("This campaign holds the budget (CBO); its ad sets share it.") : t("Each ad set here has its own budget (ABO).")}>
+          {!adSets ? <div className="flex items-center gap-2 text-sm text-muted"><Spinner className="size-3.5" />{t("Reading ad sets…")}</div>
+            : !adSets.length ? <p className="text-sm text-muted">{t("This campaign has no ad sets. Pick “A new ad set in an existing campaign”.")}</p>
             : (
               <ul className="grid max-h-72 gap-1.5 overflow-y-auto pr-1">
                 {adSets.map((a) => (
                   <li key={a.id}>
                     <Row selected={adSet?.id === a.id} onSelect={() => onAdSet(adSet?.id === a.id ? null : a)} onEdit={() => setEditing({ level: "adset", row: a })}
                       title={a.name} badges={<>
-                        <Badge tone={STATUS_TONE(a.effectiveStatus)}>{a.effectiveStatus.toLowerCase().replace(/_/g, " ")}</Badge>
-                        <Badge>{GOAL_INFO[a.optimizationGoal]?.label ?? a.optimizationGoal}</Badge>
-                        <Badge>{a.ads} ad{a.ads === 1 ? "" : "s"}</Badge>
+                        <Badge tone={STATUS_TONE(a.effectiveStatus)}>{statusWord(tr, a.effectiveStatus)}</Badge>
+                        <Badge>{GOAL_INFO[a.optimizationGoal] ? t(GOAL_INFO[a.optimizationGoal].label) : a.optimizationGoal}</Badge>
+                        <Badge>{tr.tn(a.ads, "{n} ad", "{n} ads")}</Badge>
                       </>}
-                      detail={`${budgetText(a, currency, campaign.budgetMode === "CBO")} · ${a.targeting}`} />
+                      detail={`${budgetText(tr, a, currency, campaign.budgetMode === "CBO")} · ${a.targeting}`} />
                   </li>
                 ))}
               </ul>
@@ -163,6 +168,7 @@ export function DestinationStep({ productId, mode, onMode, stage, onStage, campa
 }
 
 function Row({ selected, disabled, onSelect, onEdit, title, badges, detail }: { selected: boolean; disabled?: boolean; onSelect: () => void; onEdit: () => void; title: string; badges: React.ReactNode; detail: string }) {
+  const { t } = useT();
   return (
     <div className={cx("flex items-start gap-2 rounded-inner border p-2.5 transition", selected ? "border-accent/60 bg-raised ring-1 ring-accent/30" : "border-line hover:border-hairline hover:bg-hover", disabled && "opacity-60")}>
       <button type="button" disabled={disabled} onClick={onSelect} aria-pressed={selected} className="min-w-0 flex-1 text-left disabled:cursor-not-allowed">
@@ -175,7 +181,7 @@ function Row({ selected, disabled, onSelect, onEdit, title, badges, detail }: { 
           </span>
         </span>
       </button>
-      <button type="button" onClick={onEdit} aria-label={`Edit ${title}`} title="Rename, change the budget or bid, or pause" className="grid size-7 shrink-0 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink"><IconPencil className="size-3.5" /></button>
+      <button type="button" onClick={onEdit} aria-label={t("Edit {name}", { name: title })} title={t("Rename, change the budget or bid, or pause")} className="grid size-7 shrink-0 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink"><IconPencil className="size-3.5" /></button>
     </div>
   );
 }

@@ -55,14 +55,19 @@ export type SetupAccess =
  * The rule for every setup route:
  *   not configured yet  -> allowed from this computer only
  *   configured          -> allowed for the signed-in owner only
+ *   accounts mode       -> allowed for signed-in staff only (lib/install/setup-access.ts shows /setup to staff
+ *                          only; there is no install of an account's own to set up or update)
  */
-export function decideSetupAccess(input: { configured: boolean; local: boolean; signedIn: boolean; role: string | null }): SetupAccess {
+export function decideSetupAccess(input: { configured: boolean; local: boolean; signedIn: boolean; role: string | null; accounts?: { staff: boolean } }): SetupAccess {
   if (!input.configured) {
     return input.local
       ? { allowed: true, mode: "first-run" }
       : { allowed: false, status: 403, reason: "Setup can only be done on the computer the app is running on. Start the app with start.command and open it there, at its localhost address." };
   }
   if (!input.signedIn) return { allowed: false, status: 401, reason: "Sign in as the owner to continue." };
+  if (input.accounts) {
+    return input.accounts.staff ? { allowed: true, mode: "owner" } : { allowed: false, status: 403, reason: "Only staff can do this." };
+  }
   if (input.role !== "owner") return { allowed: false, status: 403, reason: "Only the owner of this install can do this." };
   return { allowed: true, mode: "owner" };
 }

@@ -2,7 +2,7 @@
 // (and in node tests: relative imports only).
 // - Studio batches (no settings.source): everywhere in the Studio.
 // - Playground batches (source "playground"): their jobs stay on the Playground (it shows them live), but
-//   their results join the Studio's review gallery, with a "Playground" badge, so they go through QA and
+//   their results join the Studio's review gallery, with a "Remix" badge, so they go through QA and
 //   approval like any other creative and can launch.
 // - Template remakes (source "playground-template"): library templates, not ads; never in the Studio.
 import { PLAYGROUND_SOURCE } from "./playground";

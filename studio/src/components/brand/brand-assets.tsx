@@ -5,6 +5,7 @@
 import { useRef, useState, type DragEvent } from "react";
 import type { BrandBasics } from "@/lib/brand";
 import { BRAND_LIMITS } from "@/lib/workspace-schema";
+import { useT } from "@/lib/i18n/client";
 import { ProductImages } from "../product/product-images";
 import { Button, Card, cx, Field, inputClass, Spinner } from "../ui";
 import { Block, IMAGE_TYPES, RemoveButton, uploadBrandImage } from "./brand-fields";
@@ -31,6 +32,7 @@ export function BrandAssetsTab({ productId, basics, insightAt, onChange, onError
 
 /** Where people get the app and what it looks like: creatives show these screenshots instead of an invented UI. */
 function AppBlock({ productId, basics, onChange, onError }: Omit<Props, "insightAt">) {
+  const { t } = useT();
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -39,11 +41,11 @@ function AppBlock({ productId, basics, onChange, onError }: Omit<Props, "insight
   async function addShots(files: File[]) {
     const room = BRAND_LIMITS.screenshots - shots.length;
     if (!files.length) return;
-    if (room <= 0) return onError(`The brand holds ${BRAND_LIMITS.screenshots} screenshots. Remove some first.`);
+    if (room <= 0) return onError(t("The brand holds {n} screenshots. Remove some first.", { n: BRAND_LIMITS.screenshots }));
     setBusy(true);
     try {
       const urls: string[] = [];
-      for (const file of files.slice(0, room)) urls.push(await uploadBrandImage(productId, "screenshot", file));
+      for (const file of files.slice(0, room)) urls.push(await uploadBrandImage(productId, "screenshot", file, t));
       onChange({ screenshotUrls: [...shots, ...urls] });
     } catch (error) { onError(error instanceof Error ? error.message : String(error)); }
     setBusy(false);
@@ -60,15 +62,15 @@ function AppBlock({ productId, basics, onChange, onError }: Omit<Props, "insight
   };
 
   return (
-    <Block title="The app" hint="Where people get it, and the real screens: creatives show these instead of an invented UI." count={`${shots.length}/${BRAND_LIMITS.screenshots} screenshots`}>
-      <Field label="App Store link" hint="Studio imports the listing; Launch needs it for install ads.">
+    <Block title={t("The app")} hint={t("Where people get it, and the real screens: creatives show these instead of an invented UI.")} count={t("{n}/{max} screenshots", { n: shots.length, max: BRAND_LIMITS.screenshots })}>
+      <Field label={t("App Store link")} hint={t("Studio imports the listing; Launch needs it for install ads.")}>
         <input className={inputClass} value={basics.appStoreUrl} inputMode="url" placeholder="https://apps.apple.com/app/id…" onChange={(e) => onChange({ appStoreUrl: e.target.value })} />
       </Field>
       <div onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop}
         className={cx("grid gap-3 rounded-inner border border-dashed p-3 transition", dragging ? "border-ink bg-hover" : "border-line")}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm"><span className="font-medium">Screenshots</span> <span className="text-xs text-muted">· in the order to use them. Drop images here.</span></p>
-          <Button size="sm" variant="secondary" disabled={busy} onClick={() => input.current?.click()}>{busy && <Spinner />}Add screenshots</Button>
+          <p className="text-sm"><span className="font-medium">{t("Screenshots")}</span> <span className="text-xs text-muted">· {t("in the order to use them. Drop images here.")}</span></p>
+          <Button size="sm" variant="secondary" disabled={busy} onClick={() => input.current?.click()}>{busy && <Spinner />}{t("Add screenshots")}</Button>
           <input ref={input} type="file" accept={IMAGE_TYPES.join(",")} multiple hidden onChange={(e) => { void addShots(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
         </div>
         {shots.length > 0 && (
@@ -76,13 +78,13 @@ function AppBlock({ productId, basics, onChange, onError }: Omit<Props, "insight
             {shots.map((url, i) => (
               <li key={url} className="grid gap-1">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt={`Screenshot ${i + 1}`} loading="lazy" className="aspect-[9/19.5] w-full rounded-small border border-line bg-raised object-cover" />
+                <img src={url} alt={t("Screenshot {n}", { n: i + 1 })} loading="lazy" className="aspect-[9/19.5] w-full rounded-small border border-line bg-raised object-cover" />
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-mono text-faint">{String(i + 1).padStart(2, "0")}</span>
                   <span className="flex">
-                    <button type="button" aria-label="Move earlier" disabled={i === 0} onClick={() => move(i, i - 1)} className="grid size-6 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink disabled:opacity-30">←</button>
-                    <button type="button" aria-label="Move later" disabled={i === shots.length - 1} onClick={() => move(i, i + 1)} className="grid size-6 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink disabled:opacity-30">→</button>
-                    <RemoveButton label={`Remove screenshot ${i + 1}`} onClick={() => onChange({ screenshotUrls: shots.filter((u) => u !== url) })} />
+                    <button type="button" aria-label={t("Move earlier")} disabled={i === 0} onClick={() => move(i, i - 1)} className="grid size-6 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink disabled:opacity-30">←</button>
+                    <button type="button" aria-label={t("Move later")} disabled={i === shots.length - 1} onClick={() => move(i, i + 1)} className="grid size-6 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink disabled:opacity-30">→</button>
+                    <RemoveButton label={t("Remove screenshot {n}", { n: i + 1 })} onClick={() => onChange({ screenshotUrls: shots.filter((u) => u !== url) })} />
                   </span>
                 </div>
               </li>

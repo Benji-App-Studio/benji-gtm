@@ -5,7 +5,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { metaCall, type SearchHit } from "@/lib/launch/send";
 import { type MetaObjective, PLATFORM_LABEL, PLATFORMS, type PlacementRule, POSITION_LABEL, POSITIONS } from "@/lib/launch/rules";
 import { IconChevronRight, IconSearch, IconX } from "../icons";
+import { useT } from "@/lib/i18n/client";
+import { m, type Translator } from "@/lib/i18n/translate";
 import { cx, inputClass, Spinner } from "../ui";
+import { callErrorText } from "./launch-words";
+import { ruleText } from "./rules-words";
 
 /** A label, the control, and a one-line explanation under it. */
 export function Labeled({ label, hint, children, className }: { label: ReactNode; hint?: ReactNode; children: ReactNode; className?: string }) {
@@ -43,24 +47,30 @@ export function MoneyInput({ value, onChange, currency, placeholder, label }: { 
 }
 
 /** Advanced fields, folded away so the common path stays short. */
-export function MoreOptions({ children, label = "More options", defaultOpen = false }: { children: ReactNode; label?: string; defaultOpen?: boolean }) {
+export function MoreOptions({ children, label, defaultOpen = false }: { children: ReactNode; label?: string; defaultOpen?: boolean }) {
+  const { t } = useT();
   return (
     <details open={defaultOpen} className="group rounded-inner border border-line bg-canvas/40 px-3 py-2">
       <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-label hover:text-ink">
-        <IconChevronRight className="size-3.5 transition-transform group-open:rotate-90" />{label}
+        <IconChevronRight className="size-3.5 transition-transform group-open:rotate-90" />{label ?? t("More options")}
       </summary>
       <div className="mt-3 grid gap-4 pb-1">{children}</div>
     </details>
   );
 }
 
-/** What has to be fixed before the next step, in the app's error style. */
-export function Problems({ list, title = "Fix these first" }: { list: string[]; title?: string }) {
+/**
+ * What has to be fixed before the next step, in the app's error style. Each reason shows in the page's
+ * language when it is a known sentence (the rules and the launch function write English).
+ */
+export function Problems({ list, title }: { list: string[]; title?: string }) {
+  const tr = useT();
+  const { t } = tr;
   if (!list.length) return null;
   return (
     <div role="alert" className="rounded-inner border border-warn/30 bg-warn-soft/40 p-3 text-sm">
-      <p className="font-medium text-warn">{title}</p>
-      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-ink">{list.map((m) => <li key={m}>{m}</li>)}</ul>
+      <p className="font-medium text-warn">{title ?? t("Fix these first")}</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-ink">{list.map((item) => <li key={item}>{ruleText(tr, item)}</li>)}</ul>
     </div>
   );
 }
@@ -72,13 +82,14 @@ export function Hint({ children }: { children: ReactNode }) {
 
 /** Removable chips. */
 export function Chips<T>({ items, label, onRemove }: { items: T[]; label: (item: T) => ReactNode; onRemove: (index: number) => void }) {
+  const { t } = useT();
   if (!items.length) return null;
   return (
     <div className="flex flex-wrap gap-1.5">
       {items.map((item, i) => (
         <span key={i} className="inline-flex max-w-full items-center gap-1 rounded-full bg-control py-0.5 pr-1 pl-2.5 text-xs text-ink">
           <span className="truncate">{label(item)}</span>
-          <button type="button" onClick={() => onRemove(i)} aria-label="Remove" className="grid size-4 place-items-center rounded-full text-muted hover:bg-active hover:text-ink"><IconX className="size-3" /></button>
+          <button type="button" onClick={() => onRemove(i)} aria-label={t("Remove")} className="grid size-4 place-items-center rounded-full text-muted hover:bg-active hover:text-ink"><IconX className="size-3" /></button>
         </span>
       ))}
     </div>
@@ -94,6 +105,8 @@ export function SearchPicker({ productId, kind, placeholder, onPick, exclude = [
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const seq = useRef(0);
+  const tr = useT();
+  const { t, tn, intl } = tr;
 
   useEffect(() => {
     const query = q.trim();
@@ -117,7 +130,7 @@ export function SearchPicker({ productId, kind, placeholder, onPick, exclude = [
         <input className={cx(inputClass, "pl-8")} value={q} placeholder={placeholder} aria-label={placeholder} onChange={(e) => setQ(e.target.value)} />
         {busy && <Spinner className="absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted" />}
       </div>
-      {error && <p className="mt-1 text-xs text-warn">{error}</p>}
+      {error && <p className="mt-1 text-xs text-warn">{callErrorText(tr, error)}</p>}
       {shown.length > 0 && (
         <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-inner border border-line bg-raised py-1 shadow-pop">
           {shown.map((h) => (
@@ -128,19 +141,20 @@ export function SearchPicker({ productId, kind, placeholder, onPick, exclude = [
                   <span className="font-medium">{h.name}</span>
                   {h.detail && <span className="block truncate text-xs text-muted">{h.detail}</span>}
                 </span>
-                <span className="shrink-0 text-xs text-muted">{h.type ?? (h.size ? `${Intl.NumberFormat("en", { notation: "compact" }).format(h.size)}+ people` : "")}</span>
+                <span className="shrink-0 text-xs text-muted">{h.type ? t(GEO_TYPE[h.type]) : h.size ? tn(h.size, "{count}+ person", "{count}+ people", { count: Intl.NumberFormat(intl, { notation: "compact" }).format(h.size) }) : ""}</span>
               </button>
             </li>
           ))}
         </ul>
       )}
-      {q.trim().length >= 2 && !busy && !error && !shown.length && <p className="mt-1 text-xs text-muted">Nothing found for “{q.trim()}”.</p>}
+      {q.trim().length >= 2 && !busy && !error && !shown.length && <p className="mt-1 text-xs text-muted">{t("Nothing found for “{query}”.", { query: q.trim() })}</p>}
     </div>
   );
 }
 
 /** Manual placements: platforms, and (optionally) the positions on each. Empty positions = all of that platform. */
 export function PlacementPicker({ value, onChange, objective }: { value: PlacementRule; onChange: (rule: PlacementRule) => void; objective: MetaObjective }) {
+  const { t, tn } = useT();
   const platforms = PLATFORMS.filter((p) => !(objective === "OUTCOME_APP_PROMOTION" && p === "threads"));
   const togglePlatform = (p: (typeof PLATFORMS)[number]) => {
     const on = value.publisher_platforms.includes(p);
@@ -163,15 +177,15 @@ export function PlacementPicker({ value, onChange, objective }: { value: Placeme
         return (
           <div key={p} className="rounded-inner border border-line bg-raised p-2.5">
             <label className="flex items-center gap-2 text-sm font-medium">
-              <input type="checkbox" checked={on} onChange={() => togglePlatform(p)} className="accent-[var(--color-accent)]" />{PLATFORM_LABEL[p]}
-              {on && <span className="text-xs font-normal text-muted">{positions.length ? `${positions.length} placement${positions.length === 1 ? "" : "s"}` : "all placements"}</span>}
+              <input type="checkbox" checked={on} onChange={() => togglePlatform(p)} className="accent-[var(--color-accent)]" />{t(PLATFORM_LABEL[p])}
+              {on && <span className="text-xs font-normal text-muted">{positions.length ? tn(positions.length, "{n} placement", "{n} placements") : t("all placements")}</span>}
             </label>
             {on && (
               <div className="mt-2 flex flex-wrap gap-1.5 pl-6">
                 {POSITIONS[p].map((pos) => (
                   <button key={pos} type="button" onClick={() => togglePosition(p, pos)} aria-pressed={positions.includes(pos)}
                     className={cx("h-6 rounded-full border px-2 text-xs transition-colors", positions.includes(pos) ? "border-hairline bg-control font-medium text-ink" : "border-transparent text-muted hover:bg-hover hover:text-ink")}>
-                    {POSITION_LABEL[pos] ?? pos}
+                    {POSITION_LABEL[pos] ? t(POSITION_LABEL[pos]) : pos}
                   </button>
                 ))}
               </div>
@@ -179,10 +193,13 @@ export function PlacementPicker({ value, onChange, objective }: { value: Placeme
           </div>
         );
       })}
-      <p className="text-xs text-muted">Pick no placements on a platform to use all of them.</p>
+      <p className="text-xs text-muted">{t("Pick no placements on a platform to use all of them.")}</p>
     </div>
   );
 }
+
+/** Meta's kinds of place, from its location search. */
+const GEO_TYPE = { country: m("country"), region: m("region"), city: m("city") } as const;
 
 /** A plain radio list with a hint per option. */
 export function Choice<T extends string>({ value, onChange, options, name }: { value: T | null; onChange: (v: T) => void; options: { value: T; label: ReactNode; hint?: ReactNode; disabled?: boolean }[]; name: string }) {
@@ -200,3 +217,6 @@ export function Choice<T extends string>({ value, onChange, options, name }: { v
     </div>
   );
 }
+
+/** Meta's effective_status in plain words (kept here for the sheet's imports). */
+export { statusWord } from "./launch-words";

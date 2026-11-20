@@ -65,7 +65,7 @@ During setup (step 5, "Add your keys"):
 
 Later, in the app:
 
-1. Open **Settings > API keys**.
+1. Open **Settings > Your keys**.
 2. In the **OpenAI** row, click **Add** (or **Replace** if a key is already there).
 3. Paste the key into the box.
 4. Click **Save and check**.
@@ -101,7 +101,7 @@ key and is the wrong kind.
 - Never paste the key into a chat with an AI helper, an email, a screenshot or a file in your
   GitHub copy. Anyone with the key can spend your credit.
 - To delete or replace a key: open https://platform.openai.com/api-keys, click the **trash** icon
-  next to the key and confirm, then create a new one and paste it into **Settings > API keys >
+  next to the key and confirm, then create a new one and paste it into **Settings > Your keys >
   OpenAI > Replace**.
 - To cap spending, turn off auto recharge on the billing page. The balance is not a hard stop:
   OpenAI may let usage run slightly past zero and take it from your next purchase.

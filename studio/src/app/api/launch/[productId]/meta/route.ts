@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getTranslator } from "@/lib/i18n/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { launch } from "@/lib/server/launch";
 import { relay } from "@/lib/server/radar";
@@ -17,7 +18,10 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/launch/
   const { productId } = await ctx.params;
   const body = await request.json().catch(() => ({}));
   const route = String(body?.route ?? "");
-  if (!ROUTES.has(route)) return Response.json({ error: "Unknown request." }, { status: 400 });
+  if (!ROUTES.has(route)) {
+    const { t } = await getTranslator();
+    return Response.json({ error: t("Unknown request.") }, { status: 400 });
+  }
   const { route: _route, ...rest } = body as Record<string, unknown>;
   void _route;
   return relay(await launch(session, route, { ...rest, productId }, route === "send" ? 90_000 : 30_000));

@@ -4,7 +4,7 @@
 // - Upload an ad: it's read (layout, text slots, brands to keep out); then, once the person confirms the
 //   credits, a clean brand-neutral template image is made from it. Live while that runs.
 // - Browse starter templates: the 15 built-in formats (lib/ad-styles.ts), added for free.
-// - Import from another product: a ready template of another of the person's products, copied here for
+// - Import from another app: a ready template of another of the person's products, copied here for
 //   free (it reuses that template's brand-neutral image) and marked with where it came from.
 // Each card says what the template is for (angle · the product kinds it fits), and an open one starts with
 // whether it fits this product (lib/playground-templates-plan.ts templateFit), as advice, never a block.
@@ -32,6 +32,8 @@ import { Badge, Button, cx, Gear, IconButton, inputClass, Segmented, Spinner } f
 import { CustomTemplateDetail } from "./custom-template";
 import { fmtCredits } from "./playground-form";
 import { StyleDetail, StyleThumb, useStyleContext, type OnUse, type ProductImage } from "./style-library";
+import { useT } from "@/lib/i18n/client";
+import { m } from "@/lib/i18n/translate";
 
 export interface TemplateLibraryProps {
   productId: string;
@@ -67,11 +69,11 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const POLL_MS = 4_000;
 
 const STATUS: Record<TemplateStatus, { label: string; dot: string }> = {
-  analyzing: { label: "Reading", dot: "bg-accent" },
-  analyzed: { label: "To make", dot: "bg-caution" },
-  generating: { label: "Making", dot: "bg-accent" },
-  ready: { label: "Ready", dot: "bg-win" },
-  failed: { label: "Failed", dot: "bg-warn" },
+  analyzing: { label: m("Reading"), dot: "bg-accent" },
+  analyzed: { label: m("To make"), dot: "bg-caution" },
+  generating: { label: m("Making"), dot: "bg-accent" },
+  ready: { label: m("Ready"), dot: "bg-win" },
+  failed: { label: m("Failed"), dot: "bg-warn" },
 };
 
 const newestFirst = (a: ProductTemplate, b: ProductTemplate) => b.createdAt.localeCompare(a.createdAt);
@@ -90,14 +92,17 @@ const remakeEstimate = (t: ProductTemplate, provider: ImageProvider) => {
 async function send(url: string, method: string, body: unknown): Promise<{ ok: boolean; data: Record<string, unknown> }> {
   try {
     const response = await fetch(url, body instanceof FormData ? { method, body } : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    return { ok: response.ok, data: await response.json().catch(() => ({ error: "The server didn't answer. Try again." })) };
+    return { ok: response.ok, data: await response.json().catch(() => ({ error: m("The server didn't answer. Try again.") })) };
   } catch {
-    return { ok: false, data: { error: "The request didn't go through. Check your connection and try again." } };
+    return { ok: false, data: { error: m("The request didn't go through. Check your connection and try again.") } };
   }
 }
+/** The server's message (already in the person's language, or one of send()'s marked fallbacks), else `fallback`. Show it with t(). */
 const errorOf = (data: Record<string, unknown>, fallback: string) => (typeof data.error === "string" && data.error) || fallback;
 
 export function TemplateLibrary({ productId, productImages, onUse, initialOpenId = null, context, imageProvider = "higgsfield", openaiReady = null, openaiPlan = null }: TemplateLibraryProps) {
+  const { t, tn } = useT();
+  const fail = (data: Record<string, unknown>, fallback: string) => notice(t(errorOf(data, fallback)));
   const [provider, setProvider] = useState<ImageProvider>(imageProvider);
   // Reading an uploaded ad needs the AI; making the template from it needs a way to make images.
   const features = useFeatures(productId);
@@ -163,9 +168,9 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
 
   async function upload(files: File[]) {
     const room = MAX_CUSTOM_TEMPLATES - custom.length;
-    if (room <= 0) return notice(`A product's library holds up to ${MAX_CUSTOM_TEMPLATES} of your own templates. Remove one first.`, "The library is full");
+    if (room <= 0) return notice(t("A product's library holds up to {n} of your own templates. Remove one first.", { n: MAX_CUSTOM_TEMPLATES }), t("The library is full"));
     const bad = files.find((f) => !ACCEPT.includes(f.type)) ?? files.find((f) => f.size > MAX_BYTES);
-    if (bad) return notice(!ACCEPT.includes(bad.type) ? `${bad.name} isn't a PNG, JPEG or WebP image.` : `${bad.name} is over 10 MB.`, "Can't use that file");
+    if (bad) return notice(!ACCEPT.includes(bad.type) ? t("{name} isn't a PNG, JPEG or WebP image.", { name: bad.name }) : t("{name} is over 10 MB.", { name: bad.name }), t("Can't use that file"));
     setFilter((f) => (f === "starter" ? "all" : f));
     for (const file of files.slice(0, room)) {
       const item: Pending = { key: `upload-${++uploads.current}`, name: file.name.replace(/\.\w+$/, ""), preview: URL.createObjectURL(file) };
@@ -176,7 +181,7 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
       const { ok, data } = await send(url, "POST", form);
       setPending((list) => list.filter((p) => p.key !== item.key));
       URL.revokeObjectURL(item.preview);
-      if (!ok || !data.template) { await notice(errorOf(data, "Couldn't upload the ad. Try again.")); continue; }
+      if (!ok || !data.template) { await fail(data, m("Couldn't upload the ad. Try again.")); continue; }
       upsert(data.template as ProductTemplate);
     }
     reload().catch(() => {});
@@ -186,7 +191,7 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
     setActing(style.id);
     const { ok, data } = await send(url, "POST", { action: "add-starter", starterId: style.id });
     setActing(null);
-    if (!ok || !data.template) return notice(errorOf(data, "Couldn't add it. Try again."));
+    if (!ok || !data.template) return fail(data, m("Couldn't add it. Try again."));
     upsert(data.template as ProductTemplate);
   }
 
@@ -195,7 +200,7 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
     setActing(t.id);
     const { ok, data } = await send(url, "POST", { action: "import", templateId: t.id });
     setActing(null);
-    if (!ok || !data.template) { await notice(errorOf(data, "Couldn't import it. Try again.")); return false; }
+    if (!ok || !data.template) { await fail(data, m("Couldn't import it. Try again.")); return false; }
     upsert(data.template as ProductTemplate);
     setFilter((f) => (f === "all" || f === t.kind ? f : "all"));
     return true;
@@ -205,38 +210,38 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
    * Price check, the cost dialog, then the remake at the confirmed price, via `via` (the card's pick, or
    * the other provider from a failed card's "Try with … instead"). Nothing is spent without the click.
    */
-  async function makeTemplate(t: ProductTemplate, via: ImageProvider = provider) {
-    setActing(t.id);
-    const planned = await send(url, "POST", { action: "plan-remake", templateId: t.id, provider: via });
+  async function makeTemplate(tpl: ProductTemplate, via: ImageProvider = provider) {
+    setActing(tpl.id);
+    const planned = await send(url, "POST", { action: "plan-remake", templateId: tpl.id, provider: via });
     setActing(null);
-    if (!planned.ok) return notice(errorOf(planned.data, "Couldn't check the price. Try again."));
+    if (!planned.ok) return fail(planned.data, m("Couldn't check the price. Try again."));
     const credits = Number(planned.data.credits);
     const usd = Number(planned.data.usd) || 0;
     const warnings = Array.isArray(planned.data.warnings) ? (planned.data.warnings as string[]) : [];
-    if (!Number.isFinite(credits)) return notice("Couldn't check the price. Try again.");
+    if (!Number.isFinite(credits)) return notice(t("Couldn't check the price. Try again."));
     const ok = await ask({
-      title: "Make this template?",
+      title: t("Make this template?"),
       body: (
         <Facts rows={[
-          ["From", t.name],
-          ["Model", `${gptImageLabel(via)} · 1 image`],
-          ["Aspect", t.analysis?.aspect ?? "4:5"],
+          [t("Template"), tpl.name],
+          [t("Model"), t("{model} · 1 image", { model: gptImageLabel(via) })],
+          [t("Aspect"), tpl.analysis?.aspect ?? "4:5"],
           providerCostRow(via, { credits, usd }),
         ]} note={<>
           {warnings.map((w) => <span key={w} className="block">{w}</span>)}
-          <span className="block">A clean copy of the ad&apos;s layout with its brand, product, people and words taken out, saved to this product&apos;s Library. {via === "openai"
-            ? <>Billed by OpenAI in dollars, estimated from OpenAI&apos;s published prices (checked {OPENAI_IMAGE_PRICING.checked}).</>
-            : <>Prices from Higgsfield&apos;s cost check on {PRICES_CHECKED}; the live price is checked again before it runs.</>}</span>
+          <span className="block">{t("A clean copy of the ad's layout with its brand, product, people and words taken out, saved to this product's Library.")} {via === "openai"
+            ? t("Billed by OpenAI in dollars, estimated from OpenAI's published prices (checked {date}).", { date: OPENAI_IMAGE_PRICING.checked })
+            : t("Prices from Higgsfield's cost check on {date}; the live price is checked again before it runs.", { date: PRICES_CHECKED })}</span>
         </>} />
       ),
-      confirm: via === "openai" ? `Spend ≈${fmtUsd(usd)} at OpenAI` : `Spend ~${fmtCredits(credits)} credits`,
+      confirm: via === "openai" ? t("Spend ≈{usd} at OpenAI", { usd: fmtUsd(usd) }) : t("Spend ~{credits} credits", { credits: fmtCredits(credits) }),
     });
     if (!ok) return;
     if (via !== provider) setProvider(via);
-    setActing(t.id);
-    const { ok: started, data } = await send(url, "POST", { action: "remake", templateId: t.id, confirmedCredits: credits, provider: via, confirmedUsd: usd });
+    setActing(tpl.id);
+    const { ok: started, data } = await send(url, "POST", { action: "remake", templateId: tpl.id, confirmedCredits: credits, provider: via, confirmedUsd: usd });
     setActing(null);
-    if (!started) return notice(errorOf(data, "Couldn't start. Try again."));
+    if (!started) return fail(data, m("Couldn't start. Try again."));
     if (data.template) upsert(data.template as ProductTemplate);
     reload().catch(() => {});
   }
@@ -246,27 +251,27 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
     if (!next || next === t.name) return;
     upsert({ ...t, name: next });
     const { ok, data } = await send(url, "PATCH", { templateId: t.id, name: next });
-    if (!ok) { upsert(t); return notice(errorOf(data, "Couldn't rename it. Try again.")); }
+    if (!ok) { upsert(t); return fail(data, m("Couldn't rename it. Try again.")); }
     if (data.template) upsert(data.template as ProductTemplate);
   }
 
-  async function remove(t: ProductTemplate) {
+  async function remove(tpl: ProductTemplate) {
     const ok = await ask({
-      title: `Remove ${t.name}?`,
-      body: t.kind === "starter"
-        ? "It leaves this product's Library. You can add it again from the starters any time."
-        : t.importedFrom
-        ? `It leaves this product's Library. The original stays in ${t.importedFrom}.`
-        : "The uploaded ad and its template are deleted from this product's storage (unless another product imported it). This can't be undone.",
-      confirm: "Remove", danger: true,
+      title: t("Remove {name}?", { name: tpl.name }),
+      body: tpl.kind === "starter"
+        ? t("It leaves this product's Library. You can add it again from the starters any time.")
+        : tpl.importedFrom
+        ? t("It leaves this product's Library. The original stays in {product}.", { product: tpl.importedFrom })
+        : t("The uploaded ad and its template are deleted from this product's storage (unless another product imported it). This can't be undone."),
+      confirm: t("Remove"), danger: true,
     });
     if (!ok) return;
-    setActing(t.id);
-    const { ok: done, data } = await send(url, "DELETE", { templateId: t.id });
+    setActing(tpl.id);
+    const { ok: done, data } = await send(url, "DELETE", { templateId: tpl.id });
     setActing(null);
-    if (!done) return notice(errorOf(data, "Couldn't remove it. Try again."));
-    drop(t.id);
-    if (openId === t.id) setOpenId(null);
+    if (!done) return fail(data, m("Couldn't remove it. Try again."));
+    drop(tpl.id);
+    if (openId === tpl.id) setOpenId(null);
   }
 
   /** A failed remake goes back through the price check; a failed read is read again (free). */
@@ -275,7 +280,7 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
     setActing(t.id);
     const { ok, data } = await send(url, "POST", { action: "analyze", templateId: t.id });
     setActing(null);
-    if (!ok) return notice(errorOf(data, "Couldn't read it again. Try again."));
+    if (!ok) return fail(data, m("Couldn't read it again. Try again."));
     if (data.template) upsert(data.template as ProductTemplate);
     reload().catch(() => {});
   }
@@ -301,10 +306,10 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
     return (
       <div className="@container mx-auto w-full max-w-[700px]">
         {style
-          ? <StyleDetail key={open.id} style={style} title={open.name} ctx={ctx} loading={loading} productKind={productKind} productImages={productImages} onUse={onUse} onBack={() => setOpenId(null)} productId={productId} />
+          ? <StyleDetail key={open.id} style={style} title={t(open.name)} ctx={ctx} loading={loading} productKind={productKind} productImages={productImages} onUse={onUse} onBack={() => setOpenId(null)} productId={productId} />
           : open.analysis
           ? <CustomTemplateDetail key={open.id} template={open} analysis={open.analysis} ctx={ctx} loading={loading} productKind={productKind} productImages={productImages} onUse={onUse} onBack={() => setOpenId(null)} productId={productId} />
-          : <p className="text-xs text-muted">This template can&apos;t be opened. <button type="button" className="font-medium text-ink underline-offset-2 hover:underline" onClick={() => setOpenId(null)}>Back to the Library</button></p>}
+          : <p className="text-xs text-muted">{t("This template can't be opened.")} <button type="button" className="font-medium text-ink underline-offset-2 hover:underline" onClick={() => setOpenId(null)}>{t("Back to the Library")}</button></p>}
       </div>
     );
   }
@@ -313,8 +318,8 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
   if (loadFailed || listing?.error) {
     return (
       <div className="grid justify-items-center gap-2 rounded-inner border border-line bg-raised px-4 py-8 text-center">
-        <p className="text-xs text-muted">{listing?.error ?? "Couldn't load this product's Library."}</p>
-        <Button size="sm" variant="secondary" onClick={retryLoad}>Try again</Button>
+        <p className="text-xs text-muted">{listing?.error ?? t("Couldn't load this product's Library.")}</p>
+        <Button size="sm" variant="secondary" onClick={retryLoad}>{t("Try again")}</Button>
       </div>
     );
   }
@@ -329,15 +334,15 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
       <>
       <div {...dropHandlers} className={cx("grid justify-items-center rounded-inner border border-dashed px-5 py-9 text-center transition", over ? "border-accent bg-accent-soft ring-2 ring-accent/30" : "border-ink/20")}>
         <span className="text-faint"><IconImage className="size-6" /></span>
-        <p className="mt-3 text-sm font-medium text-ink">This product&apos;s Library is empty</p>
-        <p className="mt-1 max-w-[300px] text-caption text-muted">Upload an ad you like: it&apos;s read and turned into a clean, reusable template for this product. Or start from {AD_STYLES.length} proven formats. Templates stay with this product.</p>
+        <p className="mt-3 text-sm font-medium text-ink">{t("This product's Library is empty")}</p>
+        <p className="mt-1 max-w-[300px] text-caption text-muted">{t("Upload an ad you like: it's read and turned into a clean, reusable template for this product. Or start from {n} proven formats. Templates stay with this product.", { n: AD_STYLES.length })}</p>
         <div className="mt-4 flex flex-wrap justify-center gap-1.5">
-          <Button size="sm" onClick={pickFiles}><IconUpload />Upload an ad</Button>
-          <Button size="sm" variant="secondary" onClick={() => setBrowsing(true)}>Browse starter templates</Button>
-          <Button size="sm" variant="secondary" onClick={() => setImporting(true)}><IconDownload />Import from another product</Button>
+          <Button size="sm" onClick={pickFiles}><IconUpload />{t("Upload an ad")}</Button>
+          <Button size="sm" variant="secondary" onClick={() => setBrowsing(true)}>{t("Browse starter templates")}</Button>
+          <Button size="sm" variant="secondary" onClick={() => setImporting(true)}><IconDownload />{t("Import from another app")}</Button>
         </div>
-        <p className="mt-2.5 text-xs text-faint">or drop an image here · PNG, JPG or WebP up to 10 MB</p>
-        {aiLock && <FeatureLock state={aiLock} className="mt-3">An uploaded ad is read by the AI before it becomes a template</FeatureLock>}
+        <p className="mt-2.5 text-xs text-faint">{t("or drop an image here · PNG, JPG or WebP up to 10 MB")}</p>
+        {aiLock && <FeatureLock state={aiLock} className="mt-3">{t("An uploaded ad is read by the AI before it becomes a template")}</FeatureLock>}
       </div>
       {tail}
       </>
@@ -348,30 +353,30 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
   return (
     <>
     <div {...dropHandlers} className={cx("@container relative rounded-inner transition", over && "ring-2 ring-accent/40 ring-offset-4 ring-offset-card")}>
-      <div className="mb-3 grid gap-2.5">
+      <div className="mb-3 grid grid-cols-1 gap-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-medium text-ink">Template library</h2>
-            <p className="text-xs text-muted">{templates.length} template{templates.length === 1 ? "" : "s"} for this product. Open one, fill in your words and images, and the Playground makes it.</p>
+            <h2 className="text-sm font-medium text-ink">{t("Template library")}</h2>
+            <p className="text-xs text-muted">{tn(templates.length, "{n} template for this app. Open it, add your words and pictures, and it's made in this style.", "{n} templates for this app. Open one, add your words and pictures, and it's made in that style.")}</p>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <Button size="sm" variant="secondary" onClick={() => setImporting(true)}><IconDownload />Import from another product</Button>
-            <Button size="sm" variant="secondary" onClick={() => setBrowsing(true)}><IconPlus />Starters</Button>
-            <Button size="sm" onClick={pickFiles} disabled={custom.length >= MAX_CUSTOM_TEMPLATES}><IconUpload />Upload an ad</Button>
+            <Button size="sm" variant="secondary" onClick={() => setImporting(true)}><IconDownload />{t("Import from another app")}</Button>
+            <Button size="sm" variant="secondary" onClick={() => setBrowsing(true)}><IconPlus />{t("Starters")}</Button>
+            <Button size="sm" onClick={pickFiles} disabled={custom.length >= MAX_CUSTOM_TEMPLATES}><IconUpload />{t("Upload an ad")}</Button>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search templates" aria-label="Search templates"
+          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("Search templates")} aria-label={t("Search templates")}
             className={cx(inputClass, "w-full max-w-[240px]")} />
-          {aiLock && <FeatureLock state={aiLock}>An uploaded ad is read by the AI before it becomes a template</FeatureLock>}
-          <Segmented label="Show" value={filter} onChange={setFilter} options={[
-            { value: "all" as const, label: <>All <span className="text-faint tabular-nums">{templates.length}</span></> },
-            { value: "starter" as const, label: <>Starters <span className="text-faint tabular-nums">{starters.length}</span></> },
-            { value: "custom" as const, label: <>Yours <span className="text-faint tabular-nums">{custom.length}</span></> },
+          {aiLock && <FeatureLock state={aiLock}>{t("An uploaded ad is read by the AI before it becomes a template")}</FeatureLock>}
+          <Segmented label={t("Show")} value={filter} onChange={setFilter} options={[
+            { value: "all" as const, label: <>{t("All")} <span className="text-faint tabular-nums">{templates.length}</span></> },
+            { value: "starter" as const, label: <>{t("Starters")} <span className="text-faint tabular-nums">{starters.length}</span></> },
+            { value: "custom" as const, label: <>{t("Yours")} <span className="text-faint tabular-nums">{custom.length}</span></> },
           ]} />
-          <Segmented label="Format" value={group} onChange={setGroup} options={[
-            { value: "all" as const, label: "Any format" },
-            ...STYLE_GROUPS.map((g) => ({ value: g.id, label: g.label })),
+          <Segmented label={t("Format")} value={group} onChange={setGroup} options={[
+            { value: "all" as const, label: t("Any format") },
+            ...STYLE_GROUPS.map((g) => ({ value: g.id, label: t(g.label) })),
           ]} />
         </div>
       </div>
@@ -379,7 +384,7 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
       <ul className="grid grid-flow-row-dense grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2 @4xl:grid-cols-[repeat(auto-fill,minmax(176px,1fr))]">
         {canUpload && pending.map((p) => (
           <li key={p.key} className="min-w-0">
-            <TileFrame name={p.name} aspect={null} status={null} image={p.preview} dim overlay={<Working label="Uploading…" shimmer />} />
+            <TileFrame name={p.name} aspect={null} status={null} image={p.preview} dim overlay={<Working label={t("Uploading…")} shimmer />} />
           </li>
         ))}
         {shown.map((t) => (
@@ -393,10 +398,10 @@ export function TemplateLibrary({ productId, productImages, onUse, initialOpenId
         ))}
       </ul>
       {!shown.length && (q || group !== "all") && (
-        <p className="py-6 text-center text-xs text-muted">No templates match. <button type="button" onClick={() => { setQuery(""); setGroup("all"); }} className="font-medium text-ink underline-offset-2 hover:underline">Clear the search</button></p>
+        <p className="py-6 text-center text-xs text-muted">{t("No templates match.")} <button type="button" onClick={() => { setQuery(""); setGroup("all"); }} className="font-medium text-ink underline-offset-2 hover:underline">{t("Clear the search")}</button></p>
       )}
       {filter === "starter" && !starters.length && (
-        <p className="py-6 text-center text-xs text-muted">No starters in this Library yet. <button type="button" onClick={() => setBrowsing(true)} className="font-medium text-ink underline-offset-2 hover:underline">Browse the {AD_STYLES.length} starters</button></p>
+        <p className="py-6 text-center text-xs text-muted">{t("No starters in this Library yet.")} <button type="button" onClick={() => setBrowsing(true)} className="font-medium text-ink underline-offset-2 hover:underline">{t("Browse the {n} starters", { n: AD_STYLES.length })}</button></p>
       )}
     </div>
     {tail}
@@ -437,18 +442,19 @@ function TileFrame({ name, aspect, status, image, dim, overlay, onOpen, menu, ed
   /** What it's for, under the name ("Price comparison · Physical, Offer"). */
   caption?: string | null;
 }) {
+  const { t } = useT();
   const picture = (
     <>
       {image
-        ? <StyleThumb src={thumbUrl(image, 640)} alt={name} fallback="No image" className={cx("size-full !object-contain p-2 transition duration-300", dim && "opacity-35 blur-[1px]", onOpen && "group-hover:scale-[1.03]")} />
+        ? <StyleThumb src={thumbUrl(image, 640)} alt={name} fallback={t("No image")} className={cx("size-full !object-contain p-2 transition duration-300", dim && "opacity-35 blur-[1px]", onOpen && "group-hover:scale-[1.03]")} />
           : <span className="block size-full bg-control" />}
       {overlay && <span className="absolute inset-0 grid place-items-center">{overlay}</span>}
       {aspect && <Pill className="absolute top-2 left-2">{aspect}</Pill>}
-      {status && <Pill dot={status.dot} className="absolute top-2 right-2">{status.label}</Pill>}
+      {status && <Pill dot={status.dot} className="absolute top-2 right-2">{t(status.label)}</Pill>}
       {note && <Pill className="absolute bottom-2 left-2 max-w-[calc(100%-1rem)]"><span className="truncate" title={note}>{note}</span></Pill>}
       {onOpen && !overlay && (
         <span className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-3 opacity-0 transition group-hover:opacity-100">
-          <span className="rounded-full border border-hairline bg-raised px-2.5 py-1 text-xs font-medium text-ink shadow-raised">Use template</span>
+          <span className="rounded-full border border-hairline bg-raised px-2.5 py-1 text-xs font-medium text-ink shadow-raised">{t("Use template")}</span>
         </span>
       )}
     </>
@@ -457,7 +463,7 @@ function TileFrame({ name, aspect, status, image, dim, overlay, onOpen, menu, ed
   return (
     <div className="group flex h-full min-w-0 flex-col overflow-hidden rounded-small border border-line bg-card transition hover:border-ink/20">
       {onOpen
-        ? <button type="button" onClick={onOpen} aria-label={`Open ${name}`} className={cx(box, "focus-visible:outline-2 focus-visible:-outline-offset-2")}>{picture}</button>
+        ? <button type="button" onClick={onOpen} aria-label={t("Open {name}", { name })} className={cx(box, "focus-visible:outline-2 focus-visible:-outline-offset-2")}>{picture}</button>
         : <div className={box}>{picture}</div>}
       <div className="flex min-h-11 items-center gap-1 py-1 pr-1 pl-2.5">
         {editing && onRenamed
@@ -474,82 +480,84 @@ function TileFrame({ name, aspect, status, image, dim, overlay, onOpen, menu, ed
   );
 }
 
-function TemplateCard({ template: t, acting, onOpen, onRetry, onRename, onRemove, provider, onTryOther }: {
+function TemplateCard({ template: tpl, acting, onOpen, onRetry, onRename, onRemove, provider, onTryOther }: {
   template: ProductTemplate; acting: boolean; onOpen: () => void; onRetry: () => void; onRename: (name: string) => void; onRemove: () => void;
   /** The Library's provider: Retry uses it; "Try with … instead" the other one (a failed remake only). */
   provider: ImageProvider; onTryOther?: () => void;
 }) {
+  const { t } = useT();
   const [editing, setEditing] = useState(false);
-  const starter = t.kind === "starter";
-  const status = starter ? { label: "Starter", dot: "bg-faint" } : STATUS[t.status];
-  const image = t.status === "ready" ? imageOf(t) : t.sourceUrl ?? imageOf(t);
-  const overlay = t.status === "analyzing" ? <Working label="Reading the ad…" shimmer />
-    : t.status === "generating" ? <Working label="Making the template…" />
-    : t.status === "failed" ? (
+  const starter = tpl.kind === "starter";
+  const status = starter ? { label: m("Starter"), dot: "bg-faint" } : STATUS[tpl.status];
+  const image = tpl.status === "ready" ? imageOf(tpl) : tpl.sourceUrl ?? imageOf(tpl);
+  const overlay = tpl.status === "analyzing" ? <Working label={t("Reading the ad…")} shimmer />
+    : tpl.status === "generating" ? <Working label={t("Making the template…")} />
+    : tpl.status === "failed" ? (
       <span className="grid justify-items-center gap-1.5 px-3 text-center">
         <IconX className="size-5 text-warn" />
-        <span className="line-clamp-3 text-xs leading-4 text-label" title={t.error ?? undefined}>{t.error || (t.analysis ? "Making the template failed." : "Reading the ad failed.")}</span>
-        <Button size="sm" variant="secondary" disabled={acting} onClick={onRetry}>{acting ? <Spinner className="size-3.5" /> : null}Retry</Button>
-        {onTryOther && <Button size="sm" variant="ghost" disabled={acting} onClick={onTryOther} title="Same model (GPT Image 2.5), the other provider; you confirm the price first">{tryOtherLabel(provider)}</Button>}
+        <span className="line-clamp-3 text-xs leading-4 text-label" title={tpl.error ? t(tpl.error) : undefined}>{tpl.error ? t(tpl.error) : tpl.analysis ? t("Making the template failed.") : t("Reading the ad failed.")}</span>
+        <Button size="sm" variant="secondary" disabled={acting} onClick={onRetry}>{acting ? <Spinner className="size-3.5" /> : null}{t("Retry")}</Button>
+        {onTryOther && <Button size="sm" variant="ghost" disabled={acting} onClick={onTryOther} title={t("Same model (GPT Image 2.5), the other provider; you confirm the price first")}>{tryOtherLabel(provider)}</Button>}
       </span>
     ) : null;
   return (
     <TileFrame
-      name={t.name} aspect={aspectOf(t)} status={status} image={image} dim={t.status !== "ready"} overlay={overlay}
-      onOpen={t.status === "ready" ? onOpen : undefined}
+      name={starter ? t(tpl.name) : tpl.name} aspect={aspectOf(tpl)} status={status} image={image} dim={tpl.status !== "ready"} overlay={overlay}
+      onOpen={tpl.status === "ready" ? onOpen : undefined}
       editing={editing} onRenamed={(name) => { setEditing(false); if (name) onRename(name); }}
       menu={<CardMenu disabled={acting} onRename={() => setEditing(true)} onRemove={onRemove} />}
-      note={t.importedFrom ? `From ${t.importedFrom}` : null}
-      caption={guidanceCaption(guidanceOf(t)) ?? [GROUP_LABEL[groupOf(t) ?? ""] ?? null, starter ? "Starter" : t.importedFrom ? "Imported" : "Yours"].filter(Boolean).join(" · ")}
+      note={tpl.importedFrom ? t("From {product}", { product: tpl.importedFrom }) : null}
+      caption={guidanceCaption(guidanceOf(tpl), t) ?? [GROUP_LABEL[groupOf(tpl) ?? ""] ? t(GROUP_LABEL[groupOf(tpl) ?? ""]) : null, starter ? t("Starter") : tpl.importedFrom ? t("Imported") : t("Yours")].filter(Boolean).join(" · ")}
     />
   );
 }
 
 /** Read and waiting for the person: what was found, and "Make template" (which confirms the credits first). */
-function AnalyzedCard({ template: t, acting, onMake, onRename, onRemove, provider, onProvider, productId, openaiReady, openaiPlan, lock }: {
+function AnalyzedCard({ template: tpl, acting, onMake, onRename, onRemove, provider, onProvider, productId, openaiReady, openaiPlan, lock }: {
   template: ProductTemplate; acting: boolean; onMake: () => void; onRename: (name: string) => void; onRemove: () => void;
   provider: ImageProvider; onProvider: (provider: ImageProvider) => void; productId: string; openaiReady: boolean | null; openaiPlan: OpenAiImagePlan | null;
   /** Set when this install can't make images yet: shown in place of "Make template". */
   lock: FeatureState | null;
 }) {
+  const { t, tn } = useT();
   const [editing, setEditing] = useState(false);
-  const a = t.analysis;
+  const a = tpl.analysis;
   const fields = a?.fields ?? [];
   const shownFields = fields.slice(0, 4);
-  const estimate = remakeEstimate(t, provider);
+  const estimate = remakeEstimate(tpl, provider);
   return (
     <div className="flex h-full min-w-0 gap-3 rounded-small border border-line bg-card p-2.5">
       <div className="relative w-[92px] shrink-0 self-start overflow-hidden rounded-inner border border-line bg-control">
-        {t.sourceUrl
-          ? <StyleThumb src={thumbUrl(t.sourceUrl, 200)} alt={`${t.name}, the uploaded ad`} fallback="No image" className="aspect-[4/5] w-full object-top" />
+        {tpl.sourceUrl
+          ? <StyleThumb src={thumbUrl(tpl.sourceUrl, 200)} alt={t("{name}, the uploaded ad", { name: tpl.name })} fallback={t("No image")} className="aspect-[4/5] w-full object-top" />
             : <span className="block aspect-[4/5] w-full bg-control" />}
-        <Pill dot={STATUS.analyzed.dot} className="absolute bottom-1.5 left-1.5">{STATUS.analyzed.label}</Pill>
+        <Pill dot={STATUS.analyzed.dot} className="absolute bottom-1.5 left-1.5">{t(STATUS.analyzed.label)}</Pill>
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div className="flex h-7 items-center gap-1.5">
           {editing
-            ? <RenameInput name={t.name} onDone={(name) => { setEditing(false); if (name) onRename(name); }} />
-            : <span className="min-w-0 truncate text-sm font-medium text-ink" title={t.name}>{t.name}</span>}
+            ? <RenameInput name={tpl.name} onDone={(name) => { setEditing(false); if (name) onRename(name); }} />
+            : <span className="min-w-0 truncate text-sm font-medium text-ink" title={tpl.name}>{tpl.name}</span>}
           {a && !editing && <Badge className="shrink-0 tabular-nums">{a.aspect}</Badge>}
           <span className="ml-auto" />
           <CardMenu disabled={acting} onRename={() => setEditing(true)} onRemove={onRemove} />
         </div>
-        {guidanceCaption(a) && <p className="-mt-1.5 truncate text-xs text-muted" title={a?.bestFor}>{guidanceCaption(a)}</p>}
+        {guidanceCaption(a, t) && <p className="-mt-1.5 truncate text-xs text-muted" title={a?.bestFor}>{guidanceCaption(a, t)}</p>}
         <div className="grid gap-0.5">
-          <span className="text-xs font-medium text-muted">{fields.length ? `${fields.length} text slot${fields.length === 1 ? "" : "s"}` : "No text on the image"}</span>
+          <span className="text-xs font-medium text-muted">{fields.length ? tn(fields.length, "{n} text slot", "{n} text slots") : t("No text on the image")}</span>
           {shownFields.map((f) => (
             <span key={f.key} className="flex min-w-0 gap-1.5 text-xs leading-4">
               <span className="shrink-0 text-label">{f.label}</span>
-              <span className="min-w-0 truncate text-muted" title={f.example}>{f.sensitive ? "your own, sourced" : f.example}</span>
+              <span className="min-w-0 truncate text-muted" title={f.example}>{f.sensitive ? t("your own, sourced") : f.example}</span>
             </span>
           ))}
-          {fields.length > shownFields.length && <span className="text-xs leading-4 text-faint">+{fields.length - shownFields.length} more</span>}
+          {fields.length > shownFields.length && <span className="text-xs leading-4 text-faint">{t("+{n} more", { n: fields.length - shownFields.length })}</span>}
         </div>
-        {a?.brands.length ? <p className="line-clamp-2 text-xs leading-4 text-muted"><span className="font-medium text-label">Kept out</span> {a.brands.join(", ")}</p> : null}
+        {a?.brands.length ? <p className="line-clamp-2 text-xs leading-4 text-muted"><span className="font-medium text-label">{t("Kept out")}</span> {a.brands.join(", ")}</p> : null}
         {lock ? <FeatureLock state={lock} className="mt-auto" /> : <>
           <ImageProviderPicker value={provider} onChange={onProvider} productId={productId} openaiReady={openaiReady} plan={openaiPlan} quality={TEMPLATE_REMAKE_OPTIONS.quality} resolution={TEMPLATE_REMAKE_OPTIONS.resolution} compact className="mt-auto" />
           <Button size="sm" onClick={onMake} disabled={acting || !a} className="self-start">
-            {acting ? <><Spinner className="size-3.5" />Checking the price…</> : <>Make template<span className="font-normal opacity-60">· {costLabel(provider, estimate)}</span></>}
+            {acting ? <><Spinner className="size-3.5" />{t("Checking the price…")}</> : <>{t("Make template")}<span className="font-normal opacity-60">· {costLabel(provider, estimate)}</span></>}
           </Button>
         </>}
       </div>
@@ -558,10 +566,11 @@ function AnalyzedCard({ template: t, acting, onMake, onRename, onRemove, provide
 }
 
 function RenameInput({ name, onDone }: { name: string; onDone: (name: string | null) => void }) {
+  const { t } = useT();
   const done = useRef(false);
   const finish = (value: string | null) => { if (done.current) return; done.current = true; onDone(value); };
   return (
-    <input autoFocus defaultValue={name} maxLength={80} aria-label="Template name"
+    <input autoFocus defaultValue={name} maxLength={80} aria-label={t("Template name")}
       onFocus={(e) => e.currentTarget.select()}
       onBlur={(e) => finish(e.currentTarget.value)}
       onKeyDown={(e) => { if (e.key === "Enter") finish(e.currentTarget.value); if (e.key === "Escape") finish(null); }}
@@ -571,6 +580,7 @@ function RenameInput({ name, onDone }: { name: string; onDone: (name: string | n
 
 /** "…" with Rename and Remove. */
 function CardMenu({ disabled, onRename, onRemove }: { disabled?: boolean; onRename: () => void; onRemove: () => void }) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -584,11 +594,11 @@ function CardMenu({ disabled, onRename, onRemove }: { disabled?: boolean; onRena
   const item = "flex w-full items-center gap-2 rounded-control px-2 py-1.5 text-left text-sm transition hover:bg-active focus-visible:bg-active focus-visible:outline-none [&_svg]:size-3.5";
   return (
     <div ref={box} className="relative shrink-0">
-      <IconButton size="sm" label="More" disabled={disabled} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} />
+      <IconButton size="sm" label={t("More")} disabled={disabled} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} />
       {open && (
         <div role="menu" className="page-in absolute right-0 bottom-full z-20 mb-1 w-36 rounded-card border border-hairline bg-raised p-1 shadow-pop">
-          <button type="button" role="menuitem" onClick={() => { setOpen(false); onRename(); }} className={cx(item, "text-ink")}><IconPencil />Rename</button>
-          <button type="button" role="menuitem" onClick={() => { setOpen(false); onRemove(); }} className={cx(item, "text-warn")}><IconTrash />Remove</button>
+          <button type="button" role="menuitem" onClick={() => { setOpen(false); onRename(); }} className={cx(item, "text-ink")}><IconPencil />{t("Rename")}</button>
+          <button type="button" role="menuitem" onClick={() => { setOpen(false); onRemove(); }} className={cx(item, "text-warn")}><IconTrash />{t("Remove")}</button>
         </div>
       )}
     </div>
@@ -596,9 +606,10 @@ function CardMenu({ disabled, onRename, onRemove }: { disabled?: boolean; onRena
 }
 
 function LibrarySkeleton() {
+  const { t } = useT();
   return (
     <div aria-busy="true">
-      <span className="sr-only">Loading the Library</span>
+      <span className="sr-only">{t("Loading the Library")}</span>
       <div className="mb-3 flex items-center justify-between"><Bone className="h-7 w-52 rounded-control" /><Bone className="h-7 w-20 rounded-control" /></div>
       <div className="grid grid-cols-2 gap-2 @3xl:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
@@ -616,38 +627,39 @@ function LibrarySkeleton() {
 
 /** The 15 built-in formats, grouped as before, each added to this product's Library with one click. */
 function StarterSheet({ added, acting, onAdd, onClose }: { added: Set<string>; acting: string | null; onAdd: (style: AdStyle) => void; onClose: () => void }) {
+  const { t } = useT();
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => { closeRef.current?.focus(); }, []);
   return (
     <PanelPortal onClose={onClose}>
       <div className={cx(PANEL_OVERLAY, "z-[70]")} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-        <div role="dialog" aria-modal="true" aria-label="Starter templates" className={cx(PANEL, "page-in @container max-w-[600px]")}>
+        <div role="dialog" aria-modal="true" aria-label={t("Starter templates")} className={cx(PANEL, "page-in @container max-w-[600px]")}>
           <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-line bg-card px-4 py-3">
             <div className="min-w-0">
-              <h2 className="text-sm font-medium">Starter templates</h2>
-              <p className="mt-0.5 text-xs text-muted">{AD_STYLES.length} proven Meta ad formats. Free to add; they stay in this product&apos;s Library. <span className="tabular-nums">{added.size} added</span></p>
+              <h2 className="text-sm font-medium">{t("Starter templates")}</h2>
+              <p className="mt-0.5 text-xs text-muted">{t("{n} proven Meta ad formats. Free to add; they stay in this product's Library.", { n: AD_STYLES.length })} <span className="tabular-nums">{t("{n} added", { n: added.size })}</span></p>
             </div>
-            <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="grid size-7 shrink-0 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink"><IconX className="size-4" /></button>
+            <button ref={closeRef} type="button" onClick={onClose} aria-label={t("Close")} className="grid size-7 shrink-0 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink"><IconX className="size-4" /></button>
           </header>
           <div className="grid gap-4 p-4">
             {STYLE_GROUPS.map((g) => (
-              <section key={g.id} aria-label={g.label}>
-                <h3 className="mb-2 text-xs font-medium text-muted">{g.label}</h3>
+              <section key={g.id} aria-label={t(g.label)}>
+                <h3 className="mb-2 text-xs font-medium text-muted">{t(g.label)}</h3>
                 <ul className="grid grid-cols-2 gap-2.5 @lg:grid-cols-3">
                   {AD_STYLES.filter((s) => s.group === g.id).map((s) => {
                     const isAdded = added.has(s.id);
                     return (
                       <li key={s.id} className="flex min-w-0 flex-col overflow-hidden rounded-small border border-line bg-card">
                         <div className="relative aspect-[4/5] w-full overflow-hidden border-b border-line bg-control">
-                          <StyleThumb src={s.thumbImage} alt={`${s.name} example`} className="size-full object-top" />
+                          <StyleThumb src={s.thumbImage} alt={t("{name} example", { name: t(s.name) })} className="size-full object-top" />
                           <Pill className="absolute top-2 left-2">{s.aspects.join(" · ")}</Pill>
                         </div>
                         <div className="flex flex-1 flex-col gap-1 p-2.5">
-                          <span className="truncate text-xs font-medium text-ink" title={s.name}>{s.name}</span>
-                          {guidanceCaption(s) && <span className="-mt-1 truncate text-xs text-faint">{guidanceCaption(s)}</span>}
-                          <p className="line-clamp-2 min-h-8 text-xs leading-4 text-muted">{s.tagline}</p>
+                          <span className="truncate text-xs font-medium text-ink" title={t(s.name)}>{t(s.name)}</span>
+                          {guidanceCaption(s, t) && <span className="-mt-1 truncate text-xs text-faint">{guidanceCaption(s, t)}</span>}
+                          <p className="line-clamp-2 min-h-8 text-xs leading-4 text-muted">{t(s.tagline)}</p>
                           <Button size="sm" variant={isAdded ? "ghost" : "secondary"} disabled={isAdded || acting === s.id} onClick={() => onAdd(s)} className="mt-1.5 w-full">
-                            {isAdded ? <><IconCheck />Added</> : acting === s.id ? <><Spinner className="size-3.5" />Adding…</> : <><IconPlus />Add to library</>}
+                            {isAdded ? <><IconCheck />{t("Added")}</> : acting === s.id ? <><Spinner className="size-3.5" />{t("Adding…")}</> : <><IconPlus />{t("Add to library")}</>}
                           </Button>
                         </div>
                       </li>
@@ -671,6 +683,7 @@ function StarterSheet({ added, acting, onAdd, onClose }: { added: Set<string>; a
  * it's filled in for this product's brand like any other.
  */
 function ImportSheet({ url, acting, onImport, onClose }: { url: string; acting: string | null; onImport: (t: ImportableTemplate) => Promise<boolean>; onClose: () => void }) {
+  const { t } = useT();
   const [listing, reload] = useCached<OthersListing>(url);
   const [loadFailed, setLoadFailed] = useState(false);
   const [done, setDone] = useState<Set<string>>(() => new Set());
@@ -686,51 +699,51 @@ function ImportSheet({ url, acting, onImport, onClose }: { url: string; acting: 
   return (
     <PanelPortal onClose={onClose}>
       <div className={cx(MODAL_OVERLAY, "z-[70]")} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-        <div role="dialog" aria-modal="true" aria-label="Import from another product" className={cx(MODAL, "page-in @container max-w-[640px]")}>
+        <div role="dialog" aria-modal="true" aria-label={t("Import from another app")} className={cx(MODAL, "page-in @container max-w-[640px]")}>
           <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-line bg-card px-4 py-3">
             <div className="min-w-0">
-              <h2 className="text-sm font-medium">Import from another product</h2>
-              <p className="mt-0.5 text-xs text-muted">Ready templates from your other products. Free: the template image is reused, nothing new is made. You fill it in for this product as usual.</p>
+              <h2 className="text-sm font-medium">{t("Import from another app")}</h2>
+              <p className="mt-0.5 text-xs text-muted">{t("Ready templates from your other products. Free: the template image is reused, nothing new is made. You fill it in for this product as usual.")}</p>
             </div>
-            <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" className="grid size-7 shrink-0 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink"><IconX className="size-4" /></button>
+            <button ref={closeRef} type="button" onClick={onClose} aria-label={t("Close")} className="grid size-7 shrink-0 place-items-center rounded-control text-muted transition hover:bg-hover hover:text-ink"><IconX className="size-4" /></button>
           </header>
           <div className="grid gap-4 p-4">
             {!listing && !loadFailed ? (
               <div aria-busy="true" className="grid grid-cols-2 gap-2.5 @lg:grid-cols-3">
-                <span className="sr-only">Loading your other products</span>
+                <span className="sr-only">{t("Loading your other products")}</span>
                 {[0, 1, 2].map((i) => <Bone key={i} className="aspect-[4/5] w-full rounded-small" />)}
               </div>
             ) : loadFailed || listing?.error ? (
               <div className="grid justify-items-center gap-2 py-6 text-center">
-                <p className="text-xs text-muted">{listing?.error ?? "Couldn't load your other products."}</p>
-                <Button size="sm" variant="secondary" onClick={load}>Try again</Button>
+                <p className="text-xs text-muted">{listing?.error ?? t("Couldn't load your other products.")}</p>
+                <Button size="sm" variant="secondary" onClick={load}>{t("Try again")}</Button>
               </div>
             ) : !groups.length ? (
-              <p className="py-8 text-center text-xs text-muted">No templates in your other products yet.</p>
+              <p className="py-8 text-center text-xs text-muted">{t("No templates in your other products yet.")}</p>
             ) : groups.map((g) => (
               <section key={g.productId} aria-label={g.productName}>
                 <h3 className="mb-2 flex items-baseline gap-1.5 text-xs font-medium text-muted">
                   <span className="truncate">{g.productName}</span><span className="text-faint tabular-nums">{g.templates.length}</span>
                 </h3>
                 <ul className="grid grid-cols-2 gap-2.5 @lg:grid-cols-3">
-                  {g.templates.map((t) => {
-                    const isAdded = t.added || done.has(t.id);
-                    const image = imageOf(t);
+                  {g.templates.map((tpl) => {
+                    const isAdded = tpl.added || done.has(tpl.id);
+                    const image = imageOf(tpl);
                     return (
-                      <li key={t.id} className="flex min-w-0 flex-col overflow-hidden rounded-small border border-line bg-card">
+                      <li key={tpl.id} className="flex min-w-0 flex-col overflow-hidden rounded-small border border-line bg-card">
                         <div className="relative aspect-[4/5] w-full overflow-hidden border-b border-line bg-control">
                           {image
-                            ? <StyleThumb src={thumbUrl(image, 480)} alt={t.name} fallback="No image" className="size-full object-top" />
+                            ? <StyleThumb src={thumbUrl(image, 480)} alt={tpl.name} fallback={t("No image")} className="size-full object-top" />
                               : <span className="block size-full bg-control" />}
-                          {aspectOf(t) && <Pill className="absolute top-2 left-2">{aspectOf(t)}</Pill>}
+                          {aspectOf(tpl) && <Pill className="absolute top-2 left-2">{aspectOf(tpl)}</Pill>}
                         </div>
                         <div className="flex flex-1 flex-col gap-1 p-2.5">
                           <span className="flex min-w-0 items-center gap-1.5">
-                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink" title={t.name}>{t.name}</span>
-                            <Badge className="shrink-0">{t.kind === "starter" ? "Starter" : "Custom"}</Badge>
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink" title={tpl.kind === "starter" ? t(tpl.name) : tpl.name}>{tpl.kind === "starter" ? t(tpl.name) : tpl.name}</span>
+                            <Badge className="shrink-0">{tpl.kind === "starter" ? t("Starter") : t("Custom")}</Badge>
                           </span>
-                          <Button size="sm" variant={isAdded ? "ghost" : "secondary"} disabled={isAdded || acting === t.id} onClick={() => take(t)} className="mt-1.5 w-full">
-                            {isAdded ? <><IconCheck />In this Library</> : acting === t.id ? <><Spinner className="size-3.5" />Importing…</> : <><IconDownload />Import</>}
+                          <Button size="sm" variant={isAdded ? "ghost" : "secondary"} disabled={isAdded || acting === tpl.id} onClick={() => take(tpl)} className="mt-1.5 w-full">
+                            {isAdded ? <><IconCheck />{t("In this Library")}</> : acting === tpl.id ? <><Spinner className="size-3.5" />{t("Importing…")}</> : <><IconDownload />{t("Import")}</>}
                           </Button>
                         </div>
                       </li>

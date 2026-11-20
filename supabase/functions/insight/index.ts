@@ -19,11 +19,13 @@ import {
   appStoreCountry, appStoreId, cleanInsight, parseAppStorePageReviews, parseReviewFeed, reviewsFeedUrl, type AppStoreReview, cssColors, INSIGHT_SCHEMA, INSIGHT_SYSTEM, isPublicUrl, linkKind, linksOf, playPackage, rankSubpages, socialsFromLinks,
   readPage, sitemapLinks, type ColorCandidate, type PageRead,
 } from "./core.ts";
-import { createAuth, HttpError } from "../_shared/auth.ts";
+import { HttpError } from "../_shared/auth.ts";
 import { keyRefusal } from "../_shared/ai/judge.ts";
 import { modelOverrides, resolveModels } from "../_shared/ai/models.ts";
-import { addKeyMessage, createKeys } from "../_shared/keys.ts";
-import { resolveLimits, withinWallClock } from "../_shared/limits.ts";
+import { addKeyMessage } from "../_shared/keys.ts";
+import { tenantLocale, withLanguage } from "../_shared/language.ts";
+import { withinWallClock } from "../_shared/limits.ts";
+import { createTenancy, type Tenant } from "../_shared/tenant.ts";
 import { createMarket } from "./market.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
@@ -65,24 +67,34 @@ const CORS = {
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-/** The signed-in caller's user id; 403 unless this install lets them in. */
-async function signedInUser(req: Request): Promise<string> {
-  return (await auth.member(req)).id;
+interface Caller { id: string; tenant: Tenant }
+
+/** The signed-in caller and their tenant; 403 unless this install lets them in. */
+async function signedInUser(req: Request): Promise<Caller> {
+  const { id, tenant } = await tenancy.member(req);
+  return { id, tenant };
+}
+
+/** Accounts mode without a session: nobody's keys are described to a stranger. */
+async function health(req: Request) {
+  const tenant = await tenancy.healthTenant(req);
+  if (!tenant) return { ok: true, mode: "accounts" };
+  return { ok: true, openai: Boolean(await openAiKey(tenant)) };
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   const route = new URL(req.url).pathname.replace(/\/+$/, "").split("/").pop();
   try {
-    if (route === "health") return json({ ok: true, openai: Boolean(await openAiKey()) });
+    if (route === "health") return json(await health(req));
     const user = await signedInUser(req);
     const input = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     if (route === "start") return json(await start(user, String(input.productId ?? "")));
     if (route === "sort") return json(await sortRoute(user, String(input.productId ?? ""), input.all === true));
     if (route === "images") return json(await imagesRoute(user, String(input.productId ?? "")));
-    if (route === "reviews") return json(await reviewsRoute(user, String(input.productId ?? "")));
+    if (route === "reviews") return json(await reviewsRoute(user.id, String(input.productId ?? "")));
     // Market: competitors' apps, top charts and review summaries (market.ts).
-    const marketAnswer = route ? market.handle(route, user, input) : null;
+    const marketAnswer = route ? market.handle(route, user.id, { ...input, locale: input.locale ?? user.tenant.locale ?? undefined }) : null;
     if (marketAnswer) return json(await marketAnswer);
     return json({ error: "Not found" }, 404);
   } catch (error) {
@@ -95,27 +107,27 @@ Deno.serve(async (req) => {
 
 // MARK: Keys
 
-/** Every key comes from the shared reader (edge function secret first, then Vault). */
-const secrets = createKeys(db);
-const auth = createAuth(db);
-const market = createMarket({ db, keys: secrets, install: () => auth.install() });
+/**
+ * Whose keys, settings and limits a request uses (_shared/tenant.ts): the install's in install and legacy
+ * mode; the caller's own account's in accounts mode.
+ */
+const tenancy = createTenancy(db);
+const market = createMarket({ db, tenant: (userId) => tenancy.for(userId) });
 
-async function openAiKey(): Promise<string | null> {
-  return (await secrets.get("OPENAI_API_KEY")) ?? null;
+async function openAiKey(tenant: Tenant): Promise<string | null> {
+  return (await tenant.keys.get("OPENAI_API_KEY")) ?? null;
 }
 
 /**
  * The model that reads pages and images (they go in one request, so it is the vision model): an
  * environment variable or stored key, else Settings > Models, else the default (_shared/ai/models.ts).
  */
-const readerModel = async () => resolveModels((await auth.install())?.settings?.models, await modelOverrides(secrets)).vision;
+const readerModel = async (tenant: Tenant) => resolveModels(tenant.settings?.models, await modelOverrides(tenant.keys)).vision;
 
-/** What the Supabase plan allows (_shared/limits.ts); the old numbers on an install with no install row. */
-const planLimits = async () => resolveLimits(await auth.install(), (name) => Deno.env.get(name));
 /** The longest one OpenAI request waits (a profile with images at medium effort can take minutes). */
 const ASK_MS = 240_000;
 /** How long an OpenAI request may wait now, so it ends before the plan's time limit: `startedAt` is when this invocation's work began. */
-const askBudget = async (startedAt: number) => withinWallClock(await planLimits(), ASK_MS, Date.now() - startedAt);
+const askBudget = (tenant: Tenant, startedAt: number) => withinWallClock(tenant.limits, ASK_MS, Date.now() - startedAt);
 
 // MARK: Start
 
@@ -125,7 +137,7 @@ interface ProductRow {
   known_competitors: string[] | null; brand_kit: Record<string, unknown> | null; insight_status: string | null; insight_started_at: string | null;
 }
 
-async function start(user: string, productId: string) {
+async function start({ id: user, tenant }: Caller, productId: string) {
   if (!/^[0-9a-f-]{36}$/i.test(productId)) throw new HttpError(404, "This product doesn't exist.");
   const { data: product } = await db.from("products")
     .select("id, user_id, name, kind, description, website, links, audience, price_tier, sales_channel, region, answers, known_competitors, brand_kit, insight_status, insight_started_at")
@@ -136,9 +148,9 @@ async function start(user: string, productId: string) {
   if (product.insight_status === "running" && product.insight_started_at && Date.now() - Date.parse(product.insight_started_at) < STALE_MS) {
     return { status: "running", alreadyRunning: true };
   }
-  if (!(await openAiKey())) throw new UserError(`The AI reader needs an OpenAI key. ${addKeyMessage("OPENAI_API_KEY")}`);
+  if (!(await openAiKey(tenant))) throw new UserError(`The AI reader needs an OpenAI key. ${addKeyMessage("OPENAI_API_KEY")}`);
   await db.from("products").update({ insight_status: "running", insight_message: `Opening ${links.length} link${links.length === 1 ? "" : "s"}…`, insight_started_at: new Date().toISOString() }).eq("id", product.id);
-  EdgeRuntime.waitUntil(run(product, links).catch(async (error) => {
+  EdgeRuntime.waitUntil(run(tenant, product, links).catch(async (error) => {
     console.error("insight", error);
     await db.from("products").update({ insight_status: "failed", insight_message: error instanceof UserError ? error.message : `Couldn't finish: ${errorText(error)}` }).eq("id", product.id);
   }));
@@ -345,7 +357,7 @@ async function crawl(product: Pick<ProductRow, "id">, links: string[]): Promise<
   return { sources, pages, colors, app };
 }
 
-async function run(product: ProductRow, links: string[]) {
+async function run(tenant: Tenant, product: ProductRow, links: string[]) {
   const startedAt = Date.now();
   const { sources, pages, colors, app } = await crawl(product, links);
   const readCount = sources.filter((s) => s.ok).length;
@@ -387,9 +399,9 @@ async function run(product: ProductRow, links: string[]) {
   if (images.length) parts.push(`IMAGES ATTACHED, in order: ${images.map((img, i) => `${i + 1}. ${img.label}`).join("; ")}`);
 
   await progress(product.id, `Read ${readCount} source${readCount === 1 ? "" : "s"}. Writing your product profile…`);
-  const model = await readerModel();
-  let answer = await ask(model, parts.join("\n\n"), images.map((i) => i.url), INSIGHT_SHAPE, startedAt);
-  if (answer === "image_error") answer = await ask(model, parts.join("\n\n").replace(/IMAGES ATTACHED[^\n]*/, ""), [], INSIGHT_SHAPE, startedAt);
+  const model = await readerModel(tenant);
+  let answer = await ask(tenant, model, parts.join("\n\n"), images.map((i) => i.url), INSIGHT_SHAPE, startedAt);
+  if (answer === "image_error") answer = await ask(tenant, model, parts.join("\n\n").replace(/IMAGES ATTACHED[^\n]*/, ""), [], INSIGHT_SHAPE, startedAt);
   if (answer === "image_error") throw new UserError("OpenAI couldn't read the answer. Try again.");
 
   // Customer reviews, verbatim (never fails the run): quoted word for word in review-style ads.
@@ -416,15 +428,17 @@ async function run(product: ProductRow, links: string[]) {
   let sortNote = "";
   try {
     await progress(product.id, "Saving your product's images from the site and listing…");
-    saved = await collectAssets(product, pages, app);
+    saved = await collectAssets(tenant, product, pages, app);
     if (saved) {
       await progress(product.id, `Sorting ${saved} new image${saved === 1 ? "" : "s"}…`);
-      await sortAssets(product.id, { name: product.name, summary: insight.summary, category: insight.category }, model);
+      await sortAssets(tenant, product.id, { name: product.name, summary: insight.summary, category: insight.category }, model);
     }
   } catch (error) {
     console.error("insight assets", error);
     // A refused key is said, not swallowed: the images stay unsorted until the key works.
     if (error instanceof UserError && /refused the key/.test(error.message)) sortNote = ` The images weren't sorted: ${error.message}`;
+    // So is a full store: nothing was saved, and the note says what to free up.
+    if (error instanceof StorageFull) sortNote = ` The images weren't saved: ${error.message}`;
   }
 
   await db.from("products").update({
@@ -465,11 +479,17 @@ async function fetchImage(start: string, maxBytes = ASSET_BYTES): Promise<Uint8A
 
 const sha = async (text: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 20);
 
+/** No room to save files (the project's storage, or in accounts mode the account's). */
+class StorageFull extends UserError {}
+
 /**
  * Saves the product's pictures: App Store screenshots, each page's social preview and the pictures on
  * the pages (home first), skipping icons, tiny images and ones already saved. Returns how many were added.
+ * With storage full, nothing is fetched or saved: StorageFull, with what to free up.
  */
-async function collectAssets(product: Pick<ProductRow, "id" | "user_id">, pages: PageRead[], app: AppListing | null): Promise<number> {
+async function collectAssets(tenant: Tenant, product: Pick<ProductRow, "id" | "user_id">, pages: PageRead[], app: AppListing | null): Promise<number> {
+  const room = await tenancy.room(tenant).catch(() => null);
+  if (room?.level === "full") throw new StorageFull(tenancy.fullNote(room));
   const { data: existing } = await db.from("product_assets").select("source_url").eq("product_id", product.id);
   // Saved images are keyed by their original (page pictures arrive already unwrapped and unsized).
   const known = new Set(((existing ?? []) as { source_url: string | null }[]).map((r) => r.source_url).filter(Boolean));
@@ -515,7 +535,7 @@ async function collectAssets(product: Pick<ProductRow, "id" | "user_id">, pages:
  * it finds useless are hidden only when they were collected, never the user's uploads. `all` re-sorts
  * everything; otherwise only images not sorted yet. A kind the user set (kind_locked) stays.
  */
-async function sortAssets(productId: string, about: { name: string; summary?: string; category?: string }, model: string, all = false, startedAt = Date.now()): Promise<number> {
+async function sortAssets(tenant: Tenant, productId: string, about: { name: string; summary?: string; category?: string }, model: string, all = false, startedAt = Date.now()): Promise<number> {
   let query = db.from("product_assets").select("id, url, source, source_url, label, kind, kind_locked").eq("product_id", productId).eq("hidden", false).order("created_at").limit(60);
   if (!all) query = query.is("sorted_at", null);
   const { data } = await query;
@@ -523,14 +543,14 @@ async function sortAssets(productId: string, about: { name: string; summary?: st
   let sorted = 0;
   for (let i = 0; i < assets.length; i += 20) {
     // Too little of the plan's time left for another batch: the rest stay unsorted for the next sort.
-    if (i > 0 && await askBudget(startedAt) < 30_000) break;
+    if (i > 0 && askBudget(tenant, startedAt) < 30_000) break;
     const batch = assets.slice(i, i + 20);
     const text = [
       `PRODUCT: ${about.name}${about.category ? ` (${about.category})` : ""}${about.summary ? `\n${about.summary}` : ""}`,
       "IMAGES, in the order attached:",
       ...batch.map((a, n) => `${n + 1}. id ${a.id} · ${a.source === "upload" ? "uploaded by the owner" : `from ${a.source_url ?? a.source}`}${a.label ? ` · "${a.label}"` : ""}`),
     ].join("\n");
-    const answer = await ask(model, text, batch.map((a) => a.url), { system: SORT_SYSTEM, schema: SORT_SCHEMA, name: "product_images", detail: "low" }, startedAt);
+    const answer = await ask(tenant, model, text, batch.map((a) => a.url), { system: SORT_SYSTEM, schema: SORT_SCHEMA, name: "product_images", detail: "low" }, startedAt);
     if (answer === "image_error") continue;
     for (const item of (Array.isArray(answer.items) ? answer.items : []) as Record<string, any>[]) {
       const asset = batch.find((a) => a.id === item.id);
@@ -555,7 +575,7 @@ async function sortAssets(productId: string, about: { name: string; summary?: st
  * The `images` route: reads the product's links again only for their pictures (no new profile) and
  * saves and sorts the new ones, in the background; progress shows as an insight run.
  */
-async function imagesRoute(user: string, productId: string) {
+async function imagesRoute({ id: user, tenant }: Caller, productId: string) {
   if (!/^[0-9a-f-]{36}$/i.test(productId)) throw new HttpError(404, "This product doesn't exist.");
   const { data: product } = await db.from("products")
     .select("id, user_id, name, kind, description, website, links, audience, price_tier, sales_channel, region, answers, known_competitors, brand_kit, insight_status, insight_started_at, insight")
@@ -572,10 +592,10 @@ async function imagesRoute(user: string, productId: string) {
     try {
       const { pages, app } = await crawl(product, links);
       await progress(product.id, "Saving your product's images…");
-      const saved = await collectAssets(product, pages, app);
-      if (saved && await openAiKey()) {
+      const saved = await collectAssets(tenant, product, pages, app);
+      if (saved && await openAiKey(tenant)) {
         await progress(product.id, `Sorting ${saved} new image${saved === 1 ? "" : "s"}…`);
-        await sortAssets(product.id, { name: product.name, summary: product.insight?.summary, category: product.insight?.category }, await readerModel(), false, startedAt);
+        await sortAssets(tenant, product.id, { name: product.name, summary: product.insight?.summary, category: product.insight?.category }, await readerModel(tenant), false, startedAt);
       }
       message = saved ? `Found ${saved} new image${saved === 1 ? "" : "s"} on your site.` : "No new images found on your site.";
     } catch (error) {
@@ -610,13 +630,13 @@ async function reviewsRoute(user: string, productId: string) {
 }
 
 /** The `sort` route: the owner asks the AI to sort their product's images (new ones, or all). */
-async function sortRoute(user: string, productId: string, all: boolean) {
+async function sortRoute({ id: user, tenant }: Caller, productId: string, all: boolean) {
   if (!/^[0-9a-f-]{36}$/i.test(productId)) throw new HttpError(404, "This product doesn't exist.");
   const { data: product } = await db.from("products").select("id, name, insight").eq("id", productId).eq("user_id", user).maybeSingle<{ id: string; name: string; insight: { summary?: string; category?: string } | null }>();
   if (!product) throw new HttpError(404, "This product doesn't exist.");
-  if (!(await openAiKey())) throw new UserError(`Sorting needs an OpenAI key. ${addKeyMessage("OPENAI_API_KEY")}`);
-  const model = await readerModel();
-  const sorted = await sortAssets(product.id, { name: product.name, summary: product.insight?.summary, category: product.insight?.category }, model, all);
+  if (!(await openAiKey(tenant))) throw new UserError(`Sorting needs an OpenAI key. ${addKeyMessage("OPENAI_API_KEY")}`);
+  const model = await readerModel(tenant);
+  const sorted = await sortAssets(tenant, product.id, { name: product.name, summary: product.insight?.summary, category: product.insight?.category }, model, all);
   return { sorted };
 }
 
@@ -624,8 +644,8 @@ async function sortRoute(user: string, productId: string, all: boolean) {
 interface AskShape { system: string; schema: unknown; name: string; detail?: "low" | "auto" }
 const INSIGHT_SHAPE: AskShape = { system: INSIGHT_SYSTEM, schema: INSIGHT_SCHEMA, name: "product_insight" };
 
-async function ask(model: string, text: string, images: string[], shape: AskShape = INSIGHT_SHAPE, startedAt = Date.now()): Promise<Record<string, any> | "image_error"> {
-  const key = await openAiKey();
+async function ask(tenant: Tenant, model: string, text: string, images: string[], shape: AskShape = INSIGHT_SHAPE, startedAt = Date.now()): Promise<Record<string, any> | "image_error"> {
+  const key = await openAiKey(tenant);
   if (!key) throw new UserError(`The AI reader needs an OpenAI key. ${addKeyMessage("OPENAI_API_KEY")}`);
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -633,12 +653,13 @@ async function ask(model: string, text: string, images: string[], shape: AskShap
     body: JSON.stringify({
       model, reasoning: { effort: "medium" },
       input: [
-        { role: "system", content: shape.system },
+        // The profile and the image notes are read by the person: in their language (quoted phrases stay as written).
+        { role: "system", content: withLanguage(shape.system, await tenantLocale(db, tenant)) },
         { role: "user", content: [{ type: "input_text", text }, ...images.map((url) => ({ type: "input_image", image_url: url, ...(shape.detail ? { detail: shape.detail } : {}) }))] },
       ],
       text: { format: { type: "json_schema", name: shape.name, strict: true, schema: shape.schema } },
     }),
-    signal: AbortSignal.timeout(await askBudget(startedAt)),
+    signal: AbortSignal.timeout(askBudget(tenant, startedAt)),
   }).catch(() => null);
   if (!response) throw new UserError("OpenAI didn't answer in time. Try again in a moment.");
   const data = await response.json().catch(() => ({}));

@@ -9,14 +9,15 @@
 // Plain TypeScript with no runtime APIs: the browser, the API routes and the Node tests share it.
 import { placementById, type Placement, type PlacementId } from "./meta-formats";
 import type { ProductAsset } from "./product-assets";
+import { m } from "./i18n/translate";
 
 export type LogoPosition = "top_left" | "top_right" | "bottom_left" | "bottom_right" | "bottom_center";
 export const LOGO_POSITIONS: { id: LogoPosition; label: string; where: string }[] = [
-  { id: "top_left", label: "Top left", where: "top-left corner" },
-  { id: "top_right", label: "Top right", where: "top-right corner" },
-  { id: "bottom_left", label: "Bottom left", where: "bottom-left corner" },
-  { id: "bottom_right", label: "Bottom right", where: "bottom-right corner" },
-  { id: "bottom_center", label: "Bottom centre", where: "bottom centre" },
+  { id: "top_left", label: m("Top left"), where: m("top-left corner") },
+  { id: "top_right", label: m("Top right"), where: m("top-right corner") },
+  { id: "bottom_left", label: m("Bottom left"), where: m("bottom-left corner") },
+  { id: "bottom_right", label: m("Bottom right"), where: m("bottom-right corner") },
+  { id: "bottom_center", label: m("Bottom centre"), where: m("bottom centre") },
 ];
 export const DEFAULT_LOGO_POSITION: LogoPosition = "top_left";
 const isPosition = (v: unknown): v is LogoPosition => LOGO_POSITIONS.some((p) => p.id === v);
@@ -115,8 +116,8 @@ export function logoCandidates(assets: Pick<ProductAsset, "url" | "kind" | "labe
   const logos = assets
     .filter((a) => a.kind === "logo" && !a.hidden && /^https:\/\//i.test(a.url))
     .sort((a, b) => score(a) - score(b) || Date.parse(b.created_at) - Date.parse(a.created_at))
-    .map((a): LogoCandidate => ({ url: a.url, label: a.label || "Our logo", source: "asset", width: a.width, height: a.height }));
-  const icon: LogoCandidate[] = iconUrl && /^https:\/\//i.test(iconUrl) && !logos.some((l) => l.url === iconUrl) ? [{ url: iconUrl, label: "App icon (brand kit)", source: "icon" }] : [];
+    .map((a): LogoCandidate => ({ url: a.url, label: a.label || m("Our logo"), source: "asset", width: a.width, height: a.height }));
+  const icon: LogoCandidate[] = iconUrl && /^https:\/\//i.test(iconUrl) && !logos.some((l) => l.url === iconUrl) ? [{ url: iconUrl, label: m("App icon (brand kit)"), source: "icon" }] : [];
   return [...logos, ...icon];
 }
 

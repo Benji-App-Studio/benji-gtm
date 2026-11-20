@@ -4,6 +4,7 @@
 // from the tokens, so they follow the theme. Every chart takes plain numbers and a formatter.
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { cx, stagger } from "./ui";
+import { useT } from "@/lib/i18n/client";
 
 type Format = (n: number) => string;
 const plain: Format = (n) => `${Math.round(n * 10) / 10}`;
@@ -256,6 +257,7 @@ export function LineChart({ labels, series, band, target, targetLabel, domain, y
 export function HeatGrid({ columns, rows, format = plain, steps, className }: {
   columns: string[]; rows: { label: string; values: number[] }[]; format?: Format; steps?: number[]; className?: string;
 }) {
+  const { t } = useT();
   const all = rows.flatMap((r) => r.values);
   const cuts = steps ?? [0.25, 0.5, 0.75].map((q) => [...all].sort((a, b) => a - b)[Math.floor(q * (all.length - 1))]);
   const level = (v: number) => cuts.filter((c) => v > c).length; // 0..3
@@ -266,7 +268,7 @@ export function HeatGrid({ columns, rows, format = plain, steps, className }: {
       <div className="grid min-w-[560px] items-center gap-2" style={{ gridTemplateColumns: `minmax(80px,auto) repeat(${columns.length}, minmax(64px,1fr)) minmax(64px,auto)` }}>
         <span />
         {columns.map((c, i) => <span key={c} className="pl-1"><span className="block text-xs text-muted">{c}</span><span className="block text-sm font-medium tabular-nums">{format(colTotals[i])}</span></span>)}
-        <span className="self-end text-right text-xs text-muted">Total</span>
+        <span className="self-end text-right text-xs text-muted">{t("Total")}</span>
         {rows.map((row, r) => (
           <Fragment key={row.label}>
             <span className="text-sm font-medium">{row.label}</span>
@@ -302,8 +304,9 @@ export function Timeline({ steps, className }: { steps: { date: string; title: s
 
 /** A bar of dots, filled up to a count ("29 jobs" in "Where to act first"). */
 export function DotMeter({ count, total = count, tone = "warn", className }: { count: number; total?: number; tone?: "warn" | "accent" | "win"; className?: string }) {
+  const { t } = useT();
   return (
-    <span className={cx("flex flex-wrap gap-[5px]", className)} aria-label={`${count} of ${total}`}>
+    <span className={cx("flex flex-wrap gap-[5px]", className)} aria-label={t("{n} of {total}", { n: count, total })}>
       {Array.from({ length: total }, (_, i) => <span key={i} className={cx("size-[9px] rounded-full", i < count ? (tone === "warn" ? "bg-heat-2" : tone === "win" ? "bg-win/60" : "bg-accent-muted") : "bg-control")} />)}
     </span>
   );

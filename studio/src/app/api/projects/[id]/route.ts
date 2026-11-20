@@ -4,14 +4,17 @@ import { estimate } from "@/lib/server/analysis";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { PLATFORMS, type Candidate, type Platform } from "@/lib/types";
 import { dbFailure } from "@/lib/server/errors";
+import { getTranslator } from "@/lib/i18n/server";
+import { ownApp, productLookup, requestedApp } from "@/lib/server/own-app";
 
 /** A project and its run history (newest first). Live changes arrive over Realtime. */
 export async function GET(_request: NextRequest, ctx: RouteContext<"/api/projects/[id]">) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const { id } = await ctx.params;
   const { data } = await session.supabase.from("projects").select("*").eq("id", id).maybeSingle<ProjectRow>();
-  if (!data) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!data) return Response.json({ error: t("Not found") }, { status: 404 });
   const row = data;
   const { data: runs } = await session.supabase.from("runs").select(RUN_SUMMARY_COLUMNS).eq("project_id", id).order("started_at", { ascending: false }).returns<RunSummary[]>();
   return Response.json({ project: toProject(row), runs: runs ?? [], estimate: estimate(row) });
@@ -23,11 +26,21 @@ const cleanHandle = (value: unknown) => String(value ?? "").trim().replace(/^@/,
 export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/projects/[id]">) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const { id } = await ctx.params;
   const { data: row } = await session.supabase.from("projects").select("*").eq("id", id).maybeSingle<ProjectRow>();
-  if (!row) return Response.json({ error: "Not found" }, { status: 404 });
-  if (row.status === "analyzing" || row.status === "discovering") return Response.json({ error: "Wait for the current step to finish." }, { status: 409 });
+  if (!row) return Response.json({ error: t("Not found") }, { status: 404 });
   const body = await request.json().catch(() => ({}));
+  // "Assign to app": ties the analysis to one of this person's apps (or to none). Allowed at any step.
+  const assign = requestedApp(body);
+  if (assign) {
+    const productId = assign.productId === null ? null : await ownApp(productLookup(session.supabase), assign.productId);
+    if (assign.productId !== null && !productId) return Response.json({ error: t("Choose one of your apps.") }, { status: 400 });
+    const { data: saved, error } = await session.supabase.from("projects").update({ product_id: productId }).eq("id", id).select().single<ProjectRow>();
+    if (error || !saved) return dbFailure("project assign", error, t("Couldn't move it. Try again."), 500, {}, t);
+    return Response.json({ project: toProject(saved), estimate: estimate(saved) });
+  }
+  if (row.status === "analyzing" || row.status === "discovering") return Response.json({ error: t("Wait for the current step to finish.") }, { status: 409 });
   let candidates = row.candidates;
   const settings = { ...row.settings };
   if (Array.isArray(body.candidates)) {
@@ -67,7 +80,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/projec
   if (typeof body.brandInstagram === "string") settings.brandInstagram = body.brandInstagram.trim().replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//, "").split(/[/?]/)[0].slice(0, 60) || undefined;
   if (Array.isArray(body.keywords)) settings.keywords = body.keywords.map((k: unknown) => String(k).trim()).filter(Boolean).slice(0, 8);
   const { data: saved, error } = await session.supabase.from("projects").update({ candidates, settings }).eq("id", id).select().single<ProjectRow>();
-  if (error || !saved) return dbFailure("project save", error, "Couldn't save. Try again.");
+  if (error || !saved) return dbFailure("project save", error, t("Couldn't save. Try again."), 500, {}, t);
   return Response.json({ project: toProject(saved), estimate: estimate(saved) });
 }
 

@@ -16,6 +16,8 @@ import { providerOfJob, readOpenAiImagePlan } from "@/lib/image-provider";
 import { readImageProvider } from "@/lib/server/image-provider";
 import { confirmedCreditsOf } from "@/lib/playground-templates-plan";
 import { caughtFailure, dbFailure } from "@/lib/server/errors";
+import { getTranslator } from "@/lib/i18n/server";
+import type { Translator } from "@/lib/i18n/translate";
 
 // The Playground's API. Generations (images, and Seedance videos in video mode) run on the creative
 // pipeline (creative_batches tagged settings.source = "playground"); outputs land in the `creatives`
@@ -35,16 +37,17 @@ type JobRow = {
 const usdOf = (v: unknown) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
 type CreativeRow = { id: string; batch_id: string; job_id: string | null; kind: "image" | "video"; url: string; thumbnail_url: string | null; duration_sec: number | null; width: number | null; height: number | null; aspect: string; model: string | null; created_at: string; qa_status: string; approval: string };
 
-const notFound = () => Response.json({ error: "This workspace doesn't exist." }, { status: 404 });
+const notFound = (t: Translator["t"]) => Response.json({ error: t("This workspace doesn't exist.") }, { status: 404 });
 
 /** The workspace's playground history (newest first), its pickers and whether the backends are on. */
 export async function GET(_request: NextRequest, ctx: RouteContext<"/api/playground/[productId]">) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const { productId } = await ctx.params;
-  if (!UUID.test(productId)) return notFound();
+  if (!UUID.test(productId)) return notFound(t);
   const [workspace, brand] = await Promise.all([getWorkspace(productId, session.supabase).catch(() => null), brandFor(session, productId).catch(() => null)]);
-  if (!workspace || !brand) return notFound();
+  if (!workspace || !brand) return notFound(t);
   const { supabase } = session;
 
   const [batches, assets, research, health, imageProvider] = await Promise.all([
@@ -93,7 +96,7 @@ export async function GET(_request: NextRequest, ctx: RouteContext<"/api/playgro
     items,
     productImages: (assets.data ?? []).map((a) => ({ url: a.url, label: a.label, kind: a.kind })),
     researchImages: research,
-    ...(batches.error ? { error: "The creative studio's tables aren't in the database yet (migration 20261002500000)." } : {}),
+    ...(batches.error ? { error: t("The creative studio's tables aren't in the database yet (migration 20261002500000).") } : {}),
   };
   return Response.json(body);
 }
@@ -123,37 +126,38 @@ async function researchImages(session: Session, productId: string): Promise<Play
 export async function POST(request: NextRequest, ctx: RouteContext<"/api/playground/[productId]">) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const { productId } = await ctx.params;
-  if (!UUID.test(productId)) return notFound();
+  if (!UUID.test(productId)) return notFound(t);
   const { data: product } = await session.supabase.from("products").select("id").eq("id", productId).maybeSingle();
-  if (!product) return notFound();
+  if (!product) return notFound(t);
   const body = await request.json().catch(() => ({}));
 
   if (body.action === "ticket") {
     const ext = UPLOAD_TYPES[body.contentType];
-    if (!ext) return Response.json({ error: "Use a PNG, JPEG or WebP image." }, { status: 400 });
+    if (!ext) return Response.json({ error: t("Use a PNG, JPEG or WebP image.") }, { status: 400 });
     const full = await refuseWhenFull(session, "upload", { fileBytes: Number(body.size) || 0 });
     if (full) return full;
     const path = `${session.user.id}/${productId}/playground/inputs/${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
     const bucket = session.supabase.storage.from(WORKSPACE_BUCKET);
     const { data, error } = await bucket.createSignedUploadUrl(path);
-    if (error) return Response.json({ error: `Couldn't start the upload: ${error.message}` }, { status: 500 });
+    if (error) return Response.json({ error: t("Couldn't start the upload: {message}", { message: error.message }) }, { status: 500 });
     return Response.json({ bucket: WORKSPACE_BUCKET, path: data.path, token: data.token, url: bucket.getPublicUrl(data.path).data.publicUrl });
   }
 
-  if (body.action !== "plan" && body.action !== "start") return Response.json({ error: "Unknown action." }, { status: 400 });
+  if (body.action !== "plan" && body.action !== "start") return Response.json({ error: t("Unknown action.") }, { status: 400 });
   // Style Library examples are this site's own files: links on the public origin, then the usual checks.
   const raw = resolveStyleAssets(body.request);
   const problem = playgroundRequestProblem(raw);
-  if (problem) return Response.json({ error: problem }, { status: 400 });
+  if (problem) return Response.json({ error: t(problem) }, { status: 400 });
   const req: PlaygroundRequest = normalizePlaygroundRequest(raw);
   const options: PlaygroundOptions = normalizePlaygroundOptions(body.options);
 
   if (body.action === "plan") {
     // The same merged brand the batch is made from (lib/server/brand.ts), so the preview prompt matches.
     const brand = await brandFor(session, productId).catch(() => null);
-    if (!brand) return notFound();
-    const plan = planPlayground(req, options, { ...brand.kit, system: brand.system });
+    if (!brand) return notFound(t);
+    const plan = planPlayground(req, options, { ...brand.kit, system: brand.system }, t);
     return Response.json({
       credits: plan.credits, usd: plan.usd ?? 0, provider: req.mode === "video" ? "higgsfield" : options.provider, openaiModel: (plan.jobs[0]?.params.openai as { model?: string } | undefined)?.model ?? null,
       jobs: plan.jobs.length, backend: plan.jobs[0]?.backend ?? "auto", warnings: plan.warnings, errors: plan.errors, prompt: plan.jobs[0]?.prompt ?? "",
@@ -162,13 +166,13 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/playgro
 
   // Never spend without the price the person saw and confirmed.
   const confirmedCredits = Number.isFinite(body.confirmedCredits) ? Number(body.confirmedCredits) : undefined;
-  if (confirmedCredits === undefined) return Response.json({ error: "Confirm the estimated cost first." }, { status: 400 });
+  if (confirmedCredits === undefined) return Response.json({ error: t("Confirm the estimated cost first.") }, { status: 400 });
   try {
-    const started = await createBatch(session, productId, playgroundBatchRequest(req, options), { confirmedCredits, confirmedUsd: confirmedCreditsOf(body.confirmedUsd) });
+    const started = await createBatch(session, productId, playgroundBatchRequest(req, options), { confirmedCredits, confirmedUsd: confirmedCreditsOf(body.confirmedUsd), t });
     return Response.json({ batchId: started.batchId, jobIds: started.jobIds, credits: started.credits, usd: started.usd ?? 0, warnings: started.warnings });
   } catch (error) {
     if (error instanceof BatchError) return Response.json({ error: error.message, credits: error.plan?.credits }, { status: error.status });
-    return caughtFailure("playground start", error, "Couldn't start. Try again.");
+    return caughtFailure("playground start", error, t("Couldn't start. Try again."), 500, {}, t);
   }
 }
 
@@ -180,8 +184,9 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/playgro
 export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/playground/[productId]">) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const { productId } = await ctx.params;
-  if (!UUID.test(productId)) return notFound();
+  if (!UUID.test(productId)) return notFound(t);
   const body = await request.json().catch(() => ({}));
   const { supabase } = session;
 
@@ -189,18 +194,18 @@ export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/playg
   if (typeof body.creativeId === "string" && UUID.test(body.creativeId)) {
     const { data: creative } = await supabase.from("creatives").select("id, batch_id, storage_path, poster_path").eq("id", body.creativeId).eq("product_id", productId)
       .maybeSingle<{ id: string; batch_id: string | null; storage_path: string; poster_path: string | null }>();
-    if (!creative) return Response.json({ error: "This result doesn't exist." }, { status: 404 });
-    if (!creative.batch_id || !(await isPlaygroundBatch(session, productId, creative.batch_id))) return Response.json({ error: "Only Playground results can be deleted here." }, { status: 400 });
+    if (!creative) return Response.json({ error: t("This result doesn't exist.") }, { status: 404 });
+    if (!creative.batch_id || !(await isPlaygroundBatch(session, productId, creative.batch_id))) return Response.json({ error: t("Only Remix results can be deleted here.") }, { status: 400 });
     const { error } = await supabase.from("creatives").delete().eq("id", creative.id);
-    if (error) return dbFailure("playground delete result", error, "Couldn't delete the result. Try again.", 400);
+    if (error) return dbFailure("playground delete result", error, t("Couldn't delete the result. Try again."), 400, {}, t);
     const files = [creative.storage_path, creative.poster_path].filter((p): p is string => Boolean(p) && p!.startsWith(`${productId}/`) && !p!.includes(".."));
     if (files.length) await supabase.storage.from(CREATIVES_BUCKET).remove(files);
     batchId = creative.batch_id;
   } else if (typeof body.batchId === "string" && UUID.test(body.batchId)) {
-    if (!(await isPlaygroundBatch(session, productId, body.batchId))) return Response.json({ error: "This generation doesn't exist." }, { status: 404 });
+    if (!(await isPlaygroundBatch(session, productId, body.batchId))) return Response.json({ error: t("This generation doesn't exist.") }, { status: 404 });
     batchId = body.batchId;
   } else {
-    return Response.json({ error: "Which result?" }, { status: 400 });
+    return Response.json({ error: t("Which result?") }, { status: 400 });
   }
 
   // The generation itself, once it holds nothing more (its jobs go with it).
@@ -209,7 +214,7 @@ export async function DELETE(request: NextRequest, ctx: RouteContext<"/api/playg
     supabase.from("creative_jobs").select("id", { count: "exact", head: true }).eq("batch_id", batchId!).in("status", [...ACTIVE_JOB_STATUSES]),
   ]);
   if (!left && !active) await supabase.from("creative_batches").delete().eq("id", batchId!);
-  else if (typeof body.batchId === "string") return Response.json({ error: active ? "It's still being made: cancel its queued jobs first." : "Delete its results first." }, { status: 409 });
+  else if (typeof body.batchId === "string") return Response.json({ error: active ? t("It's still being made: cancel its queued jobs first.") : t("Delete its results first.") }, { status: 409 });
   return Response.json({ deleted: true, batchRemoved: !left && !active });
 }
 

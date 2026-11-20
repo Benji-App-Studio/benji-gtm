@@ -4,7 +4,11 @@
 //
 // Plain TypeScript, safe in the browser. When the install can't be read (`install` is null) nothing is
 // locked: the page works as before and the backend's own message explains a missing key.
-import { keySpec } from "./install/key-catalog";
+//
+// Words: pass the page's { t, intl } (useT) as featureState's last argument to get title, body, action and
+// the missing labels in the viewer's language; without it they are English (the tests read those).
+import { fill, m, type Translator } from "./i18n/translate";
+import { isKeyOf, isPerAppBase, keySpec } from "./install/key-catalog";
 import type { InstallState } from "./install/types";
 import type { ConnectionKey, WorkspaceConnections } from "./workspace-schema";
 
@@ -24,6 +28,8 @@ export type Feature =
   | "measure.meta"
   | "measure.revenuecat"
   | "measure.appstack"
+  | "measure.mixpanel"
+  | "measure.superwall"
   | "market.summary"
   | "market.play";
 
@@ -37,43 +43,63 @@ interface Need {
 }
 
 const NEEDS: Record<Feature, Need> = {
-  ai: { what: "read ads and posts, write the analysis and check creatives", keys: [["OPENAI_API_KEY"]] },
-  "research.collect": { what: "collect competitors' posts and ads automatically", keys: [["APIFY_TOKEN"]] },
-  "research.metaApi": { what: "pull ads from Meta's Ad Library API", keys: [["META_AD_LIBRARY_TOKEN"]] },
-  "research.google": { what: "collect competitors' Google search and YouTube ads", keys: [["APIFY_TOKEN"]] },
-  "research.tiktokEu": { what: "collect competitors' TikTok ads shown in Europe", keys: [["APIFY_TOKEN"]] },
-  "research.tiktokTopAds": { what: "collect TikTok's top ads by keyword", keys: [["APIFY_TOKEN"]] },
-  "research.tiktokLibrary": { what: "pull TikTok ads from TikTok's official API", keys: [["TIKTOK_RESEARCH_CLIENT_KEY", "TIKTOK_RESEARCH_CLIENT_SECRET"]] },
-  "studio.images": { what: "generate images", keys: [["HIGGSFIELD_API_KEY"], ["OPENAI_API_KEY"]] },
-  "studio.video": { what: "generate videos", keys: [["HIGGSFIELD_API_KEY"]] },
-  "studio.runner": { what: "make creator-style videos and cut-outs with the desktop runner", keys: [["CREATIVES_RUNNER_SECRET"]] },
+  ai: { what: m("read ads and posts, write the analysis and check creatives"), keys: [["OPENAI_API_KEY"]] },
+  "research.collect": { what: m("collect competitors' posts and ads automatically"), keys: [["APIFY_TOKEN"]] },
+  "research.metaApi": { what: m("pull ads from Meta's Ad Library API"), keys: [["META_AD_LIBRARY_TOKEN"]] },
+  "research.google": { what: m("collect competitors' Google search and YouTube ads"), keys: [["APIFY_TOKEN"]] },
+  "research.tiktokEu": { what: m("collect competitors' TikTok ads shown in Europe"), keys: [["APIFY_TOKEN"]] },
+  "research.tiktokTopAds": { what: m("collect TikTok's top ads by keyword"), keys: [["APIFY_TOKEN"]] },
+  "research.tiktokLibrary": { what: m("pull TikTok ads from TikTok's official API"), keys: [["TIKTOK_RESEARCH_CLIENT_KEY", "TIKTOK_RESEARCH_CLIENT_SECRET"]] },
+  "studio.images": { what: m("generate images"), keys: [["HIGGSFIELD_API_KEY"], ["OPENAI_API_KEY"]] },
+  "studio.video": { what: m("generate videos"), keys: [["HIGGSFIELD_API_KEY"]] },
+  "studio.runner": { what: m("make creator-style videos and cut-outs with the desktop runner"), keys: [["CREATIVES_RUNNER_SECRET"]] },
   "drive.export": {
-    what: "export creatives to Google Drive", keys: [["GOOGLE_SERVICE_ACCOUNT_JSON"]],
-    connections: [{ key: "storage", field: "driveFolderId", label: "a Google Drive folder" }],
+    what: m("export creatives to Google Drive"), keys: [["GOOGLE_SERVICE_ACCOUNT_JSON"]],
+    connections: [{ key: "storage", field: "driveFolderId", label: m("a Google Drive folder") }],
   },
   launch: {
-    what: "send ads to Meta as paused drafts", keys: [["META_SYSTEM_USER_TOKEN", "META_APP_SECRET"]],
-    connections: [{ key: "meta", field: "adAccountId", label: "your Meta ad account" }, { key: "meta", field: "pageId", label: "your Facebook Page" }],
+    what: m("send ads to Meta as paused drafts"), keys: [["META_SYSTEM_USER_TOKEN", "META_APP_SECRET"]],
+    connections: [{ key: "meta", field: "adAccountId", label: m("your Meta ad account") }, { key: "meta", field: "pageId", label: m("your Facebook Page") }],
   },
   "measure.meta": {
-    what: "read ad spend from Meta", keys: [["META_SYSTEM_USER_TOKEN", "META_APP_SECRET"]],
-    connections: [{ key: "meta", field: "adAccountId", label: "your Meta ad account" }],
+    what: m("read ad spend from Meta"), keys: [["META_SYSTEM_USER_TOKEN", "META_APP_SECRET"]],
+    connections: [{ key: "meta", field: "adAccountId", label: m("your Meta ad account") }],
   },
   "measure.revenuecat": {
-    what: "read trials and revenue from RevenueCat", keys: [["REVENUECAT_API_KEY"]],
-    connections: [{ key: "revenuecat", field: "projectId", label: "your RevenueCat project" }],
+    what: m("read trials and revenue from RevenueCat"), keys: [["REVENUECAT_API_KEY"]],
+    connections: [{ key: "revenuecat", field: "projectId", label: m("your RevenueCat project") }],
   },
   "measure.appstack": {
-    what: "read installs from AppStack", keys: [["APPSTACK_API_KEY"]],
-    connections: [{ key: "appstack", field: "appId", label: "your AppStack app" }],
+    what: m("read installs from AppStack"), keys: [["APPSTACK_API_KEY"]],
+    connections: [{ key: "appstack", field: "appId", label: m("your AppStack app") }],
+  },
+  "measure.mixpanel": {
+    what: m("read your funnel, retention and active users from Mixpanel"), keys: [["MIXPANEL_SERVICE_ACCOUNT"]],
+    connections: [{ key: "mixpanel", field: "projectId", label: m("your Mixpanel project") }],
+  },
+  "measure.superwall": {
+    what: m("read paywall views and purchases from Superwall"), keys: [["SUPERWALL_API_KEY"]],
+    connections: [{ key: "superwall", field: "applicationId", label: m("your Superwall app") }],
   },
   // Market reads the App Store with no key; these two are its extras.
-  "market.summary": { what: "write the AI summaries of app reviews and top charts", keys: [["OPENAI_API_KEY"]] },
-  "market.play": { what: "read Google Play reviews (Google has no free official API)", keys: [["APIFY_TOKEN"]] },
+  "market.summary": { what: m("write the AI summaries of app reviews and top charts"), keys: [["OPENAI_API_KEY"]] },
+  "market.play": { what: m("read Google Play reviews (Google has no free official API)"), keys: [["APIFY_TOKEN"]] },
 };
+
+/**
+ * Why a feature is (or isn't) ready, as data, for pages that pick their own words: "ready", "unknown"
+ * (the install couldn't be read), "add-key" (this person adds the key), "ask-owner" (a member: only the
+ * owner can add it) or "add-connection" (the key is set; this app's connection isn't). Never compare
+ * title, body or action: those are said in the viewer's language.
+ */
+export type FeatureReason = "ready" | "unknown" | "add-key" | "ask-owner" | "add-connection";
 
 export interface FeatureState {
   feature: Feature;
+  /** Why it is locked, or "ready". Optional for states built elsewhere; featureState always sets it. */
+  reason?: FeatureReason;
+  /** The keys still to add by name (OPENAI_API_KEY…), whatever the language; missingKeys has their labels. */
+  missingKeyNames?: string[];
   /** True when everything it needs is there, and also when the install couldn't be read. */
   ok: boolean;
   /** The install couldn't be read, so nothing is known (and nothing is locked). */
@@ -92,13 +118,15 @@ export interface FeatureState {
 }
 
 const KEYS_HREF = "/app/settings/keys";
-const label = (name: string) => keySpec(name)?.label ?? name;
-const list = (items: string[]) => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
+const englishList = (items: string[]) => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
+/** How a feature's sentences are said: the page's t and locale, or English. */
+export type Say = Pick<Translator, "t" | "intl">;
+const ENGLISH = { t: (text: string, vars?: Record<string, string | number>) => fill(text, vars, "en"), list: englishList };
 
 const isSet = (install: InstallState, name: string): boolean => {
   if (install.keys[name]?.set) return true;
-  // AppStack also takes one key per app (APPSTACK_API_KEY_<APP>).
-  return name === "APPSTACK_API_KEY" && Object.entries(install.keys).some(([key, state]) => key.startsWith("APPSTACK_API_KEY_") && state.set);
+  // AppStack and RevenueCat also take one key per app (APPSTACK_API_KEY_<APP>, REVENUECAT_API_KEY_<PROJECT>).
+  return isPerAppBase(name) && Object.entries(install.keys).some(([key, state]) => key !== name && isKeyOf(name, key) && state.set);
 };
 
 /** The keys a feature needs with this install's settings (the AI's key follows the chosen provider). */
@@ -111,44 +139,52 @@ export function featureState(
   feature: Feature,
   install: InstallState | null | undefined,
   app?: { id: string; connections?: WorkspaceConnections | null } | null,
+  say?: Say,
 ): FeatureState {
   const need = NEEDS[feature];
-  if (!install) return { feature, ok: true, unknown: true, missingKeys: [], missingConnections: [], title: "", body: "", href: KEYS_HREF, action: "" };
+  const { t, list } = say ? { t: say.t, list: (items: string[]) => new Intl.ListFormat(say.intl, { type: "conjunction" }).format(items) } : ENGLISH;
+  const label = (name: string) => t(keySpec(name)?.label ?? name);
+  if (!install) return { feature, ok: true, unknown: true, reason: "unknown", missingKeys: [], missingKeyNames: [], missingConnections: [], title: "", body: "", href: KEYS_HREF, action: "" };
 
   const ways = keyWays(feature, install);
   const satisfied = ways.some((way) => way.every((name) => isSet(install, name)));
-  const missingKeys = satisfied ? [] : ways[0].filter((name) => !isSet(install, name)).map(label);
+  const missingKeyNames = satisfied ? [] : ways[0].filter((name) => !isSet(install, name));
+  const missingKeys = missingKeyNames.map(label);
 
   const connections = app?.connections ?? null;
   const missingConnections = (need.connections ?? [])
     .filter((c) => !app || !(connections?.[c.key] as Record<string, string | undefined> | undefined)?.[c.field])
-    .map((c) => c.label);
+    .map((c) => t(c.label));
   // Without an app in hand (an install-wide screen) only the keys are judged.
   const connectionGaps = app ? missingConnections : [];
 
   const ok = missingKeys.length === 0 && connectionGaps.length === 0;
-  const owner = !install.owned || install.role === "owner";
+  // In accounts mode every account adds its own keys: "Add the key…", never "Ask the owner…".
+  const owner = install.mode === "accounts" || !install.owned || install.role === "owner";
   let title = "", body = "", href = KEYS_HREF, action = "";
+  let reason: FeatureReason = "ready";
   if (missingKeys.length) {
-    const alternatives = ways.length > 1 ? ` (or ${list(ways.slice(1).map((way) => list(way.map(label))))})` : "";
-    title = `Connect ${list(missingKeys)} to ${need.what}`;
+    reason = owner ? "add-key" : "ask-owner";
+    const others = ways.length > 1 ? ways.slice(1).map((way) => list(way.map(label))).join(" / ") : "";
+    title = t("Connect {keys} to {what}", { keys: list(missingKeys), what: t(need.what) });
     body = owner
-      ? `Add the key in Settings > API keys${alternatives}. It is checked when you save it.`
-      : `Ask the owner of this workspace to add the key in Settings > API keys${alternatives}.`;
-    action = "Add the key";
+      ? (others ? t("Add the key in Settings › Your keys (or {others}). It is checked when you save it.", { others }) : t("Add the key in Settings › Your keys. It is checked when you save it."))
+      : (others ? t("Ask the owner of this workspace to add the key in Settings › Your keys (or {others}).", { others }) : t("Ask the owner of this workspace to add the key in Settings › Your keys."));
+    action = t("Add the key");
   } else if (connectionGaps.length) {
-    title = `Add ${list(connectionGaps)} to ${need.what}`;
-    body = "Fill it in under this app's connections. The key is already set.";
-    href = `/app/settings/apps/${app!.id}`;
-    action = "Open connections";
+    reason = "add-connection";
+    title = t("Add {items} to {what}", { items: list(connectionGaps), what: t(need.what) });
+    body = t("Fill it in under this app's connections. The key is already set.");
+    href = `/app/w/${app!.id}/settings?tab=connections`;
+    action = t("Open connections");
   }
-  return { feature, ok, unknown: false, missingKeys, missingConnections: connectionGaps, title, body, href, action };
+  return { feature, ok, unknown: false, reason, missingKeys, missingKeyNames, missingConnections: connectionGaps, title, body, href, action };
 }
 
 /** The first feature in the list that isn't ready, or null when all are. */
-export function firstLocked(features: Feature[], install: InstallState | null | undefined, app?: { id: string; connections?: WorkspaceConnections | null } | null): FeatureState | null {
+export function firstLocked(features: Feature[], install: InstallState | null | undefined, app?: { id: string; connections?: WorkspaceConnections | null } | null, say?: Say): FeatureState | null {
   for (const feature of features) {
-    const state = featureState(feature, install, app);
+    const state = featureState(feature, install, app, say);
     if (!state.ok) return state;
   }
   return null;
@@ -161,11 +197,13 @@ export const PAGE_FEATURES: Partial<Record<string, Feature[]>> = {
 
 /** The optional things an app can unlock, in the order the overview offers them. */
 export const UNLOCKABLE: { feature: Feature; label: string }[] = [
-  { feature: "research.collect", label: "Collect competitors' posts and ads automatically" },
-  { feature: "studio.images", label: "Generate images in Studio and Playground" },
-  { feature: "studio.video", label: "Generate videos" },
-  { feature: "launch", label: "Send ads to Meta as paused drafts" },
-  { feature: "measure.meta", label: "See ad spend in Measure" },
-  { feature: "measure.revenuecat", label: "See trials and revenue in Measure" },
-  { feature: "measure.appstack", label: "See installs per ad in Measure" },
+  { feature: "research.collect", label: m("Collect competitors' posts and ads automatically") },
+  { feature: "studio.images", label: m("Generate images in the Studio") },
+  { feature: "studio.video", label: m("Generate videos") },
+  { feature: "launch", label: m("Send ads to Meta as paused drafts") },
+  { feature: "measure.meta", label: m("See ad spend in Measure") },
+  { feature: "measure.revenuecat", label: m("See trials and revenue in Measure") },
+  { feature: "measure.appstack", label: m("See installs per ad in Measure") },
+  { feature: "measure.superwall", label: m("See paywall conversion by paywall and placement in Measure") },
+  { feature: "measure.mixpanel", label: m("See your funnel, retention and active users in Measure") },
 ];

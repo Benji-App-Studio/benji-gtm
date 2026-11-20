@@ -3,7 +3,8 @@
 // the workspace rules out (its POLICY.md rule, or the brand kit's forbidden claims). Issues start
 // with the rule id, like the QA agent's output.
 import type { Claim } from "./angles";
-import type { AppContext, FormatCard } from "./types";
+import type { AppContext, FormatCard, UiText } from "./types";
+import { fill, m } from "../i18n/translate";
 
 const SHINGLE = 6;
 const words = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}\s']/gu, " ").split(/\s+/).filter(Boolean);
@@ -43,20 +44,25 @@ export function namesToAvoid(card: Pick<FormatCard, "examples">, app: Pick<AppCo
  * (`viewer`), since the prompt itself says what the presenter must not be.
  */
 export function policyIssues(texts: string[], card: Pick<FormatCard, "examples" | "hookLine">, app: Pick<AppContext, "competitorNames" | "brandKit" | "name">, claims: Claim[], viewer: string[] = texts): string[] {
+  return policyFindings(texts, card, app, claims, viewer).map((f) => fill(f.text, f.vars));
+}
+
+/** The same issues as templates and values, for translating where they're shown. */
+export function policyFindings(texts: string[], card: Pick<FormatCard, "examples" | "hookLine">, app: Pick<AppContext, "competitorNames" | "brandKit" | "name">, claims: Claim[], viewer: string[] = texts): UiText[] {
   const text = texts.filter(Boolean).join("\n");
-  const issues: string[] = [];
+  const issues: UiText[] = [];
   for (const name of namesToAvoid(card, app)) {
-    if (new RegExp(`(^|[^\\p{L}\\p{N}])@?${escape(name)}($|[^\\p{L}\\p{N}])`, "iu").test(text)) issues.push(`IP-5: Names a competitor or their creator (“${name}”).`);
+    if (new RegExp(`(^|[^\\p{L}\\p{N}])@?${escape(name)}($|[^\\p{L}\\p{N}])`, "iu").test(text)) issues.push({ text: m("IP-5: Names a competitor or their creator (“{name}”)."), vars: { name } });
   }
   const ours = new Set<string>();
   for (const t of texts) shingles(t).forEach((s) => ours.add(s));
   for (const source of [card.hookLine, ...card.examples.map((e) => e.hook)]) {
     const hit = [...shingles(source)].find((s) => ours.has(s));
-    if (hit) { issues.push(`IP-2: Reuses ${SHINGLE}+ words of a competitor's line (“${hit}…”). Rewrite it in your own words.`); break; }
+    if (hit) { issues.push({ text: m("IP-2: Reuses {n}+ words of a competitor's line (“{hit}…”). Rewrite it in your own words."), vars: { n: SHINGLE, hit } }); break; }
   }
   const seen = viewer.filter(Boolean).join("\n");
   for (const claim of claims) {
-    if (claim.text.trim() && claimPattern(claim.text).test(seen)) issues.push(`${claim.rule}: Uses “${claim.text.replace(/\*$/, "…")}”, which the policy rules out.`);
+    if (claim.text.trim() && claimPattern(claim.text).test(seen)) issues.push({ text: m("{rule}: Uses “{claim}”, which the policy rules out."), vars: { rule: claim.rule, claim: claim.text.replace(/\*$/, "…") } });
   }
   return issues;
 }

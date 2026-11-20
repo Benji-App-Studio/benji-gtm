@@ -4,15 +4,17 @@
 // page, still with reduced motion). Wrap a page's placeholder in <Skeleton>: it marks the region busy
 // and gives screen readers a "Loading" label; the shapes themselves are hidden from them.
 import type { CSSProperties, ReactNode } from "react";
+import { m } from "@/lib/i18n/translate";
+import { Said } from "./said";
 import { Card, cx, headerBarClass } from "./ui";
 
 // MARK: Region
 
-/** The busy region: aria-busy plus a visually hidden label. Every page placeholder goes in one. */
-export function Skeleton({ label = "Loading", className, style, children }: { label?: string; className?: string; style?: CSSProperties; children: ReactNode }) {
+/** The busy region: aria-busy plus a visually hidden label (said in the viewer's language; mark it with m()). Every page placeholder goes in one. */
+export function Skeleton({ label = m("Loading"), className, style, children }: { label?: string; className?: string; style?: CSSProperties; children: ReactNode }) {
   return (
     <div aria-busy="true" className={className} style={style}>
-      <span className="sr-only">{label}</span>
+      <span className="sr-only"><Said text={label} /></span>
       {children}
     </div>
   );

@@ -15,61 +15,66 @@ import {
   ago, averageOf, cadence, compact, priceText, ratingChange, ratingTrend, type MarketDetail, type ReviewSummary,
 } from "@/lib/market";
 import { workspaceHref } from "@/lib/workspace-schema";
+import { researchHref } from "@/lib/nav-model";
+import { useT } from "@/lib/i18n/client";
+import { joinSentences } from "@/lib/i18n/join";
 import { IconExternal, IconRefresh, IconSparkles, IconTrash } from "../icons";
 import { Button, Card, columnClass, cx, DeltaChip, EmptyState, ErrorNote, Page, PageHeader, Spinner } from "../ui";
 import { reloadMarket } from "./market-view";
 import { AppIcon, marketAction, marketAppUrl, NotSetUp, SummarySections } from "./parts";
 import { MarketBodySkeleton } from "../page-skeletons";
-import { UI_LOCALE } from "@/lib/ui-locale";
 
-const day = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleDateString(UI_LOCALE, { day: "numeric", month: "short", year: "numeric" }) : "");
+const day = (iso: string | null | undefined, intl: string) => (iso ? new Date(iso).toLocaleDateString(intl, { day: "numeric", month: "short", year: "numeric" }) : "");
 
 export function MarketAppView({ productId, appId }: { productId: string; appId: string }) {
   const router = useRouter();
+  const tr = useT();
+  const { t, tn, intl, locale } = tr;
+  const when = (iso: string | null | undefined) => ago(iso, undefined, tr);
   const productName = useProductName(productId);
   const [detail, reload] = useCached<MarketDetail & { error?: string }>(marketAppUrl(productId, appId));
   const features = useFeatures(productId);
   const ai = features.state("market.summary");
   const [busy, setBusy] = useState<"refresh" | "summary" | "remove" | null>(null);
-  const marketHref = workspaceHref(productId, "market");
-  const crumbs = [{ label: productName ?? "App", href: workspaceHref(productId) }, { label: "Market", href: marketHref }];
+  const marketHref = researchHref(productId, "app-store");
+  const crumbs = [{ label: productName ?? t("App"), href: workspaceHref(productId) }, { label: t("Research"), href: researchHref(productId) }, { label: t("App stores"), href: marketHref }];
 
-  const header = (title: ReactNode, rest: Partial<Parameters<typeof PageHeader>[0]> = {}) => <PageHeader crumbs={[...crumbs, { label: detail?.app?.name ?? "App" }]} title={title} {...rest} />;
-  if (!detail) return <Page>{header("App")}<MarketBodySkeleton /></Page>;
-  if (detail.error) return <Page className={columnClass}>{header("App")}<ErrorNote>{detail.error}</ErrorNote></Page>;
-  if (!detail.setup || !detail.app) return <Page>{header("App")}<NotSetUp message={detail.message} /></Page>;
+  const header = (title: ReactNode, rest: Partial<Parameters<typeof PageHeader>[0]> = {}) => <PageHeader crumbs={[...crumbs, { label: detail?.app?.name ?? t("App") }]} title={title} {...rest} />;
+  if (!detail) return <Page>{header(t("App"))}<MarketBodySkeleton /></Page>;
+  if (detail.error) return <Page className={columnClass}>{header(t("App"))}<ErrorNote>{detail.error}</ErrorNote></Page>;
+  if (!detail.setup || !detail.app) return <Page>{header(t("App"))}<NotSetUp message={detail.message} /></Page>;
   const app = detail.app;
 
   const run = async (action: "refresh" | "summary") => {
     // Paid steps say what they cost first: a summary at OpenAI, a Google Play refresh at Apify (App Store refreshes are free).
     if (action === "summary") {
       const reviews = Math.min(detail.reviewCount, 300);
-      if (!(await confirmSpend({ title: `Summarize ${app.name}'s reviews?`, payer: "OpenAI", usd: reviewSummaryUsd(reviews),
-        rows: [["Reviews read", `The newest ${reviews.toLocaleString(UI_LOCALE)}`], ["Writes", "What users love, complain about, ask for and say about price"]] }))) return;
+      if (!(await confirmSpend({ title: t("Summarize {name}'s reviews?", { name: app.name }), payer: "OpenAI", usd: reviewSummaryUsd(reviews),
+        rows: [[t("Reviews read"), t("The newest {n}", { n: reviews })], [t("Writes"), t("What users love, complain about, ask for and say about price")]] }))) return;
     } else if (app.store === "google_play") {
-      if (!(await confirmSpend({ title: `Refresh ${app.name}?`, payer: "Apify", usd: PLAY_REFRESH_USD,
-        rows: [["Reads", "Its newest 150 Google Play reviews"]], note: "App Store apps refresh free." }))) return;
+      if (!(await confirmSpend({ title: t("Refresh {name}?", { name: app.name }), payer: "Apify", usd: PLAY_REFRESH_USD,
+        rows: [[t("Reads"), t("Its newest 150 Google Play reviews")]], note: t("App Store apps refresh free.") }))) return;
     }
     setBusy(action);
-    const answer = await marketAction<{ message?: string | null }>(productId, action, { appId });
+    const answer = await marketAction<{ message?: string | null }>(productId, action, { appId }, t);
     setBusy(null);
-    if (answer.error) { await notice(answer.error, action === "refresh" ? "Couldn't refresh this app" : "Couldn't summarize the reviews"); return; }
+    if (answer.error) { await notice(answer.error, action === "refresh" ? t("Couldn't refresh this app") : t("Couldn't summarize the reviews")); return; }
     await Promise.all([reload(), reloadMarket(productId)]);
-    if (answer.message) await notice(answer.message, "Refreshed");
+    if (answer.message) await notice(answer.message, t("Refreshed"));
   };
   const remove = async () => {
-    if (!(await ask({ title: `Stop tracking ${app.name}?`, body: "Its snapshots, reviews and summary are deleted. You can track it again later.", confirm: "Stop tracking", danger: true }))) return;
+    if (!(await ask({ title: t("Stop tracking {name}?", { name: app.name }), body: t("Its snapshots, reviews and summary are deleted. You can track it again later."), confirm: t("Stop tracking"), danger: true }))) return;
     setBusy("remove");
-    const answer = await marketAction(productId, "untrack", { appId });
+    const answer = await marketAction(productId, "untrack", { appId }, t);
     setBusy(null);
-    if (answer.error) { await notice(answer.error, "Couldn't stop tracking it"); return; }
+    if (answer.error) { await notice(answer.error, t("Couldn't stop tracking it")); return; }
     await reloadMarket(productId);
     router.push(marketHref);
   };
 
   const trend = ratingTrend(detail.snapshots);
   const change = ratingChange(detail.snapshots);
-  const ships = cadence(detail.releases);
+  const ships = cadence(detail.releases, undefined, tr);
   const summary = detail.summary?.summary as ReviewSummary | undefined;
   const latestRank = detail.snapshots.find((s) => s.rank != null);
   const play = app.store === "google_play";
@@ -80,11 +85,11 @@ export function MarketAppView({ productId, appId }: { productId: string; appId: 
       {header(
         <span className="flex min-w-0 items-center gap-3"><AppIcon url={app.icon_url} name={app.name} className="size-10" /><span className="min-w-0">{app.name}</span></span>,
         {
-          subtitle: [app.developer, app.category, priceText(app), play ? "Google Play" : null].filter(Boolean).join(" · ") || undefined,
+          subtitle: [app.developer, app.category, priceText(app, tr), play ? "Google Play" : null].filter(Boolean).join(" · ") || undefined,
           actions: (
             <>
-              {app.url && <a href={app.url} target="_blank" rel="noreferrer" className="inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-label transition-colors hover:bg-hover hover:text-ink [&_svg]:size-3.5"><IconExternal /><span className="max-sm:sr-only">Store page</span></a>}
-              <Button size="sm" variant="secondary" onClick={() => run("refresh")} disabled={busy !== null}>{busy === "refresh" ? <Spinner className="size-3" /> : <IconRefresh />}{busy === "refresh" ? "Reading…" : "Refresh"}</Button>
+              {app.url && <a href={app.url} target="_blank" rel="noreferrer" className="inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium text-label transition-colors hover:bg-hover hover:text-ink [&_svg]:size-3.5"><IconExternal /><span className="max-sm:sr-only">{t("Store page")}</span></a>}
+              <Button size="sm" variant="secondary" onClick={() => run("refresh")} disabled={busy !== null}>{busy === "refresh" ? <Spinner className="size-3" /> : <IconRefresh />}{busy === "refresh" ? t("Reading…") : t("Refresh")}</Button>
             </>
           ),
         },
@@ -93,43 +98,45 @@ export function MarketAppView({ productId, appId }: { productId: string; appId: 
       {app.refresh_message && <ErrorNote>{app.refresh_message}</ErrorNote>}
 
       <dl className="grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-card p-4 sm:grid-cols-4">
-        <Fact label={play ? "Rating of recent reviews" : "Rating"} value={rating != null ? rating.toFixed(1) : "–"}
-          note={<>{play ? `${detail.reviewCount} reviews read` : `${compact(app.rating_count)} ratings`}{change && change.delta !== 0 && <DeltaChip className="ml-1.5" value={Math.abs(change.delta).toFixed(2)} direction={change.delta > 0 ? "up" : "down"} />}</>} />
-        <Fact label="Version" value={app.version ? `v${app.version}` : "–"} note={app.store_updated_at ? `updated ${ago(app.store_updated_at)}` : "not known"} />
-        <Fact label="Ships" value={ships.medianDays != null ? `${Math.round(ships.medianDays)} days` : "–"} note={ships.medianDays != null ? "between releases (median)" : ships.releases ? "one release seen" : "no releases seen"} />
-        <Fact label="Chart rank" value={app.chart_rank ? `#${app.chart_rank}` : "–"} note={app.chart_label ?? (latestRank?.chart ? latestRank.chart : "not in a chart you opened")} />
+        <Fact label={play ? t("Rating of recent reviews") : t("Rating")} value={rating != null ? rating.toFixed(1) : "–"}
+          note={<>{play ? tn(detail.reviewCount, "{n} review read", "{n} reviews read") : t("{count} ratings", { count: compact(app.rating_count) })}{change && change.delta !== 0 && <DeltaChip className="ml-1.5" value={Math.abs(change.delta).toFixed(2)} direction={change.delta > 0 ? "up" : "down"} />}</>} />
+        <Fact label={t("Version")} value={app.version ? `v${app.version}` : "–"} note={app.store_updated_at ? t("updated {ago}", { ago: when(app.store_updated_at) }) : t("not known")} />
+        <Fact label={t("Ships")} value={ships.medianDays != null ? tn(Math.round(ships.medianDays), "{n} day", "{n} days") : "–"} note={ships.medianDays != null ? t("between releases (median)") : ships.releases ? t("one release seen") : t("no releases seen")} />
+        <Fact label={t("Chart rank")} value={app.chart_rank ? `#${app.chart_rank}` : "–"} note={app.chart_label ?? (latestRank?.chart ? latestRank.chart : t("not in a chart you opened"))} />
       </dl>
       <p className="mt-2 text-xs text-muted">
-        {app.released_at && `First released ${day(app.released_at)}. `}
-        {app.refreshed_at ? `Read ${ago(app.refreshed_at)}.` : "Not read yet: press Refresh."} The trend fills in as you refresh on different days.
+        {joinSentences(locale,
+          app.released_at && t("First released {date}.", { date: day(app.released_at, intl) }),
+          app.refreshed_at ? t("Read {ago}.", { ago: when(app.refreshed_at) }) : t("Not read yet: press Refresh."),
+          t("The trend fills in as you refresh on different days."))}
       </p>
 
-      <Section title="Rating over time">
+      <Section title={t("Rating over time")}>
         {trend.length >= 2
-          ? <LineChart height={180} labels={trend.map((p) => new Date(`${p.day}T12:00:00Z`).toLocaleDateString(UI_LOCALE, { day: "numeric", month: "short", timeZone: "UTC" }))}
-              series={[{ key: "rating", label: "Rating", values: trend.map((p) => p.rating), color: "accent" }]}
+          ? <LineChart height={180} labels={trend.map((p) => new Date(`${p.day}T12:00:00Z`).toLocaleDateString(intl, { day: "numeric", month: "short", timeZone: "UTC" }))}
+              series={[{ key: "rating", label: t("Rating"), values: trend.map((p) => p.rating), color: "accent" }]}
               domain={[Math.max(0, Math.min(...trend.map((p) => p.rating)) - 0.2), Math.min(5, Math.max(...trend.map((p) => p.rating)) + 0.2)]}
-              format={(v) => v.toFixed(1)} tip={(i) => [trend[i].day, `${trend[i].rating.toFixed(2)}★`, trend[i].count ? `${compact(trend[i].count)} ratings` : ""].filter(Boolean)} />
-          : <p className="text-sm text-muted">{trend.length ? `${trend[0].rating.toFixed(2)} on ${day(trend[0].day)}. ` : ""}A trend needs snapshots from two different days: refresh again tomorrow.</p>}
+              format={(v) => v.toFixed(1)} tip={(i) => [trend[i].day, `${trend[i].rating.toFixed(2)}★`, trend[i].count ? t("{count} ratings", { count: compact(trend[i].count) }) : ""].filter(Boolean)} />
+          : <p className="text-sm text-muted">{trend.length ? `${t("{rating} on {date}.", { rating: trend[0].rating.toFixed(2), date: day(trend[0].day, intl) })} ` : ""}{t("A trend needs snapshots from two different days: refresh again tomorrow.")}</p>}
       </Section>
 
-      <Section title="Reviews by stars" note={detail.reviewCount ? `${detail.reviewCount} recent reviews read` : undefined}>
-        {detail.reviewCount ? <Stars stars={detail.stars} /> : <p className="text-sm text-muted">No reviews read yet. Some apps get none in Apple&apos;s feed; Refresh tries again.</p>}
+      <Section title={t("Reviews by stars")} note={detail.reviewCount ? tn(detail.reviewCount, "{n} recent review read", "{n} recent reviews read") : undefined}>
+        {detail.reviewCount ? <Stars stars={detail.stars} /> : <p className="text-sm text-muted">{t("No reviews read yet. Some apps get none in Apple's feed; Refresh tries again.")}</p>}
       </Section>
 
-      <Section title="What users say" note={detail.summary ? `From ${detail.summary.review_count ?? 0} reviews, ${ago(detail.summary.created_at)}` : undefined}
+      <Section title={t("What users say")} note={detail.summary ? tn(detail.summary.review_count ?? 0, "From {n} review, {ago}", "From {n} reviews, {ago}", { ago: when(detail.summary.created_at) }) : undefined}
         action={ai.ok || ai.unknown
-          ? detail.reviewCount >= 5 && <Button size="sm" variant={summary ? "secondary" : "primary"} onClick={() => run("summary")} disabled={busy !== null}>{busy === "summary" ? <Spinner className="size-3" /> : <IconSparkles />}{busy === "summary" ? "Reading reviews…" : summary ? "Summarize again" : `Summarize ${Math.min(detail.reviewCount, 300)} reviews`}</Button>
+          ? detail.reviewCount >= 5 && <Button size="sm" variant={summary ? "secondary" : "primary"} onClick={() => run("summary")} disabled={busy !== null}>{busy === "summary" ? <Spinner className="size-3" /> : <IconSparkles />}{busy === "summary" ? t("Reading reviews…") : summary ? t("Summarize again") : t("Summarize {n} reviews", { n: Math.min(detail.reviewCount, 300) })}</Button>
           : summary && <FeatureLock state={ai} />}>
         {/* A summary already written stays readable without the key; only a new one needs it. */}
         {summary
           ? <SummarySections summary={summary} />
           : !ai.ok && !ai.unknown
             ? <FeatureLock state={ai} />
-            : <p className="text-sm text-muted">{detail.reviewCount >= 5 ? "The AI groups these reviews into what users love, complain about, ask for and say about price, each with real quotes." : "There are too few reviews to summarize yet."}</p>}
+            : <p className="text-sm text-muted">{detail.reviewCount >= 5 ? t("The AI groups these reviews into what users love, complain about, ask for and say about price, each with real quotes.") : t("There are too few reviews to summarize yet.")}</p>}
       </Section>
 
-      <Section title="Releases" note={ships.label}>
+      <Section title={t("Releases")} note={ships.label}>
         {detail.releases.length
           ? (
             <ul className="divide-y divide-line">
@@ -137,34 +144,34 @@ export function MarketAppView({ productId, appId }: { productId: string; appId: 
                 <li key={r.version} className="py-2.5">
                   <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                     <p className="text-sm font-medium tabular-nums">v{r.version}</p>
-                    <p className="text-xs text-muted">{r.released_at ? `${r.source === "reviews" ? "by " : ""}${day(r.released_at)}` : "date unknown"}{r.source === "reviews" && " · seen in reviews"}</p>
+                    <p className="text-xs text-muted">{r.released_at ? (r.source === "reviews" ? t("by {date}", { date: day(r.released_at, intl) }) : day(r.released_at, intl)) : t("date unknown")}{r.source === "reviews" && ` · ${t("seen in reviews")}`}</p>
                   </div>
                   {r.notes && <p className="mt-1 line-clamp-3 text-caption whitespace-pre-line text-muted">{r.notes}</p>}
                 </li>
               ))}
             </ul>
           )
-          : <p className="text-sm text-muted">No releases seen yet.</p>}
+          : <p className="text-sm text-muted">{t("No releases seen yet.")}</p>}
       </Section>
 
-      <Section title="Newest reviews">
+      <Section title={t("Newest reviews")}>
         {detail.reviews.length
           ? (
             <ul className="divide-y divide-line">
               {detail.reviews.slice(0, 12).map((r) => (
                 <li key={r.store_review_id} className="py-2.5">
-                  <p className="text-xs text-muted"><span className="font-medium text-ink">{r.rating}★</span>{[r.version && `v${r.version}`, r.reviewed_at && day(r.reviewed_at), r.country?.toUpperCase()].filter(Boolean).map((p) => ` · ${p}`).join("")}</p>
+                  <p className="text-xs text-muted"><span className="font-medium text-ink">{r.rating}★</span>{[r.version && `v${r.version}`, r.reviewed_at && day(r.reviewed_at, intl), r.country?.toUpperCase()].filter(Boolean).map((p) => ` · ${p}`).join("")}</p>
                   {r.title && <p className="mt-0.5 text-sm font-medium">{r.title}</p>}
                   <p className="mt-0.5 line-clamp-4 text-sm text-label">{r.body}</p>
                 </li>
               ))}
             </ul>
           )
-          : <EmptyState className="py-6" title="No reviews yet" body="Refresh reads the newest reviews from the US, UK, Canadian and Australian stores." />}
+          : <EmptyState className="py-6" title={t("No reviews yet")} body={t("Refresh reads the newest reviews from the US, UK, Canadian and Australian stores.")} />}
       </Section>
 
       <div className="mt-10 border-t border-line pt-4">
-        <Button size="sm" variant="ghost" onClick={remove} disabled={busy !== null} className="text-warn hover:text-warn"><IconTrash />Stop tracking</Button>
+        <Button size="sm" variant="ghost" onClick={remove} disabled={busy !== null} className="text-warn hover:text-warn"><IconTrash />{t("Stop tracking")}</Button>
       </div>
     </Page>
   );

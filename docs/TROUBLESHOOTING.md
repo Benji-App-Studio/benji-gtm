@@ -100,7 +100,7 @@ and click **Save and check**. Each key has a step-by-step guide:
 [Google Drive](keys/google-drive.md), [TikTok](keys/tiktok.md).
 
 **A page says "Connect … to use …" or shows "Add the key".** That feature needs a key you have not
-added yet. The button takes you to **Settings > API keys**.
+added yet. The button takes you to **Settings > Your keys**.
 
 ## Signing in
 
@@ -132,6 +132,10 @@ with a button for the next step:
 - **"Can't reach your Supabase project"**: Supabase paused the project, or this Mac is offline. Press
   **Open your Supabase dashboard**, press **Resume project** if the project says it is paused, wait
   until it is running again, then press **Try again**.
+- **"Turn off CAPTCHA for this project"**: CAPTCHA protection is on in Supabase (Authentication >
+  Attack Protection). It is meant for a public sign-up page online and blocks the app from signing you
+  in by itself on your Mac. Turn it off there, save, then press **Try again**. On an online copy with
+  public sign-up you can keep it on (set `CAPTCHA_PROVIDER` and `CAPTCHA_SITE_KEY` on the deployment).
 
 **It asks me to set up again.** See "If the app asks you to set up again" in [UPDATING.md](UPDATING.md).
 
@@ -163,8 +167,8 @@ eye on it so nothing breaks halfway.
 | What | Where it comes from | Typical size |
 | --- | --- | --- |
 | Competitors' ad media | Saved copies of competitors' ad images and videos, made when you collect or import ads, so they don't expire | Images 0.1–0.5 MB, videos 5–50 MB each |
-| Generated creatives | Images and videos made in Studio, Playground and "Make this for your app" | Images 2–5 MB, videos 5–30 MB |
-| Uploads and brand files | Your product images, logo, screenshots, fonts and Playground uploads | Under 1 MB each |
+| Generated creatives | Images and videos made in Studio (Create, Remix and Templates) and "Make this for your app" | Images 2–5 MB, videos 5–30 MB |
+| Uploads and brand files | Your product images, logo, screenshots, fonts and Remix uploads | Under 1 MB each |
 
 Videos are almost always what fills a free plan: 20 competitor videos can be a third of 1 GB.
 

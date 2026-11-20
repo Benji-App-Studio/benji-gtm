@@ -1,6 +1,7 @@
 import "server-only";
 import type { ProductKind, ProductRow, Stage } from "@/lib/db";
 import { PLATFORMS } from "@/lib/types";
+import { m } from "@/lib/i18n/translate";
 import { syncCompetitors } from "./competitors";
 import type { Session } from "./auth";
 
@@ -14,16 +15,16 @@ export function productInput(body: Record<string, unknown>, partial = false): Pa
   const out: Partial<ProductRow> = {};
   if (!partial || "name" in body) {
     const name = text(body.name, 120);
-    if (!name) return "Give your product a name.";
+    if (!name) return m("Give your product a name.");
     out.name = name;
   }
   if (!partial || "kind" in body) {
-    if (!KINDS.includes(body.kind as ProductKind)) return "Choose what you're building.";
+    if (!KINDS.includes(body.kind as ProductKind)) return m("Choose what you're building.");
     out.kind = body.kind as ProductKind;
   }
   if (!partial || "description" in body) {
     const description = text(body.description, 2000);
-    if (description.length < 15) return "Describe your product in a sentence or two.";
+    if (description.length < 15) return m("Describe your product in a sentence or two.");
     out.description = description;
   }
   if ("website" in body) out.website = text(body.website, 300) || null;

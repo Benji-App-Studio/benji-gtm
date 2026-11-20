@@ -3,6 +3,7 @@
 // `research` writes them.
 import type { MediaStatus } from "./ad-media";
 import type { CompetitorSource, CompetitorSuggestion } from "./competitors";
+import { fill, m, type Translator } from "./i18n/translate";
 import { UI_LOCALE } from "./ui-locale";
 
 export type AdNetwork = "meta" | "tiktok" | "google";
@@ -134,9 +135,9 @@ export interface AdLibraryDetails {
 
 /** Meta's CTA types in words. */
 export const CTA_TYPE_LABEL: Record<string, string> = {
-  DOWNLOAD: "Download", INSTALL_MOBILE_APP: "Install now", USE_APP: "Use app", SIGN_UP: "Sign up", LEARN_MORE: "Learn more", SHOP_NOW: "Shop now",
-  SEE_DETAILS: "See details", GET_OFFER: "Get offer", BOOK_TRAVEL: "Book now", SUBSCRIBE: "Subscribe", ORDER_NOW: "Order now", CONTACT_US: "Contact us",
-  APPLY_NOW: "Apply now", GET_QUOTE: "Get quote", WATCH_MORE: "Watch more", VIEW_INSTAGRAM_PROFILE: "View Instagram profile", SEND_MESSAGE: "Send message",
+  DOWNLOAD: m("Download"), INSTALL_MOBILE_APP: m("Install now"), USE_APP: m("Use app"), SIGN_UP: m("Sign up"), LEARN_MORE: m("Learn more"), SHOP_NOW: m("Shop now"),
+  SEE_DETAILS: m("See details"), GET_OFFER: m("Get offer"), BOOK_TRAVEL: m("Book now"), SUBSCRIBE: m("Subscribe"), ORDER_NOW: m("Order now"), CONTACT_US: m("Contact us"),
+  APPLY_NOW: m("Apply now"), GET_QUOTE: m("Get quote"), WATCH_MORE: m("Watch more"), VIEW_INSTAGRAM_PROFILE: m("View Instagram profile"), SEND_MESSAGE: m("Send message"),
 };
 
 export interface PaidAdRow {
@@ -199,7 +200,7 @@ export const PAID_AD_COLUMNS = "id, product_id, watch_id, is_own, library, netwo
 /** What an edit changed: the copy's parts, the link, or the media files. */
 export type AdChange = "body" | "headline" | "description" | "cta" | "link" | "media";
 
-export const AD_CHANGE_LABEL: Record<AdChange, string> = { body: "Primary text", headline: "Headline", description: "Description", cta: "Button", link: "Link", media: "Media" };
+export const AD_CHANGE_LABEL: Record<AdChange, string> = { body: m("Primary text"), headline: m("Headline"), description: m("Description"), cta: m("Button"), link: m("Link"), media: m("Media") };
 
 /**
  * An earlier version of an edited ad (`paid_ad_versions`, migration 20261003700000_paid_ad_versions): the
@@ -459,7 +460,7 @@ export function rankAds(ads: PaidAdRow[], now = Date.now()): RankedAdRow[] {
 }
 
 export const MEDIA_LABEL: Record<AdMediaType, string> = {
-  video: "Video", image: "Image", carousel: "Carousel", dco: "Dynamic", text: "Text", unknown: "Unknown",
+  video: m("Video"), image: m("Image"), carousel: m("Carousel"), dco: m("Dynamic"), text: m("Text"), unknown: m("Unknown"),
 };
 
 export const PLACEMENT_LABEL: Record<string, string> = {
@@ -468,21 +469,21 @@ export const PLACEMENT_LABEL: Record<string, string> = {
 };
 
 export const SOURCE_LABEL: Record<AdSource, string> = {
-  meta_api: "Meta Ad Library API", meta_apify: "Meta ads (Apify)", meta_mcp: "Meta Ads import", meta_local: "Ad Library extension",
-  tiktok_library: "TikTok Ad Library", tiktok_creative_center: "TikTok Top Ads", tiktok_apify: "TikTok Ad Library (Apify)", google_apify: "Google Ads Transparency",
+  meta_api: m("Meta Ad Library API"), meta_apify: m("Meta ads (Apify)"), meta_mcp: m("Meta Ads import"), meta_local: m("Ad Library extension"),
+  tiktok_library: m("TikTok Ad Library"), tiktok_creative_center: m("TikTok Top Ads"), tiktok_apify: m("TikTok Ad Library (Apify)"), google_apify: m("Google Ads Transparency"),
 };
 
 export const NETWORK_LABEL: Record<AdNetwork, string> = { meta: "Meta", tiktok: "TikTok", google: "Google" };
 
 /** Ad formats the reader can pick on top of the organic library (mirrors AD_FORMATS in the engine). */
 export const AD_FORMAT_LABEL: Record<string, string> = {
-  hook_demo: "Hook + demo", static_benefit: "Static benefit image", reddit_style: "Reddit-style post", tweet_style: "Tweet-style screenshot",
-  ai_ugc: "AI / actor UGC", before_after: "Before / after", us_vs_them: "Us vs them", quiz_funnel: "Quiz / result reveal",
-  testimonial_review: "Reviews / social proof", green_screen: "Green screen", founder_story: "Founder / expert to camera",
-  storytime: "Storytime", how_to_steps: "How-to steps", proof_then_method: "I did X, here's how", listicle: "Listicle", myth_vs_reality: "Myth vs reality",
-  news_update: "News / update", explainer: "Explainer", expert_answers: "Expert answers", hack_or_secret: "Hack / secret", comparison: "This vs that",
-  pov_skit: "POV skit", day_in_life: "Day in the life", reaction: "Reaction", silent_text: "Silent text", product_demo: "Product demo",
-  ugc_testimonial: "UGC testimonial", challenge_or_test: "I tested it", behind_the_scenes: "Behind the scenes", motivational: "Motivation", no_clear_format: "No clear format",
+  hook_demo: m("Hook + demo"), static_benefit: m("Static benefit image"), reddit_style: m("Reddit-style post"), tweet_style: m("Tweet-style screenshot"),
+  ai_ugc: m("AI / actor UGC"), before_after: m("Before / after"), us_vs_them: m("Us vs them"), quiz_funnel: m("Quiz / result reveal"),
+  testimonial_review: m("Reviews / social proof"), green_screen: m("Green screen"), founder_story: m("Founder / expert to camera"),
+  storytime: m("Storytime"), how_to_steps: m("How-to steps"), proof_then_method: m("I did X, here's how"), listicle: m("Listicle"), myth_vs_reality: m("Myth vs reality"),
+  news_update: m("News / update"), explainer: m("Explainer"), expert_answers: m("Expert answers"), hack_or_secret: m("Hack / secret"), comparison: m("This vs that"),
+  pov_skit: m("POV skit"), day_in_life: m("Day in the life"), reaction: m("Reaction"), silent_text: m("Silent text"), product_demo: m("Product demo"),
+  ugc_testimonial: m("UGC testimonial"), challenge_or_test: m("I tested it"), behind_the_scenes: m("Behind the scenes"), motivational: m("Motivation"), no_clear_format: m("No clear format"),
 };
 
 // MARK: Files from the Ad Library extension
@@ -529,7 +530,7 @@ export function summarizeScrape(file: LocalScrape) {
     types[kind in types ? kind : "other"]++;
   }
   return {
-    pageName: file.advertiser?.page_name || "Unknown advertiser",
+    pageName: file.advertiser?.page_name || m("Unknown advertiser"),
     pageId: file.advertiser?.page_id ?? null,
     ads: ads.length,
     active: file.summary?.active_ads ?? ads.filter((ad) => /^active$/i.test(String(ad.status ?? ""))).length,
@@ -620,10 +621,11 @@ export const SCRAPE_COOLDOWN_MS = 6 * 3_600_000;
 export const SCRAPE_GAP_MINUTES = 30;
 /** More runs than this in a day get a warning (the extension asks to confirm past 20). */
 export const SCRAPE_DAILY_WARN = 10;
-export const SCRAPE_RULE = "The extension collects one competitor at a time, at least 30 minutes apart, and stops for 6 hours if Meta shows a block sign. It runs in its own small window: keep part of it visible while you work elsewhere.";
-const PARALLEL_WHY = "Parallel or back-to-back sessions from one connection are a common reason Meta blocks it for hours.";
+export const SCRAPE_RULE = m("The extension collects one competitor at a time, at least 30 minutes apart, and stops for 6 hours if Meta shows a block sign. It runs in its own small window: keep part of it visible while you work elsewhere.");
+const PARALLEL_WHY = m("Parallel or back-to-back sessions from one connection are a common reason Meta blocks it for hours.");
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** English when no translator is passed (the Node tests and server code). */
+const english: Translator["t"] = (text, vars) => fill(text, vars);
 const isBlocked = (reason: string | null | undefined) => /^blocked/i.test(reason ?? "");
 
 /** When the cooldown ends: 6 hours after the run started (the block came during it, so this is the earliest). */
@@ -633,17 +635,17 @@ export function cooldownUntil(scrapedAt: string | null | undefined): Date | null
 }
 
 /** What the import dialog says about the file's run: one summary line, other warnings, and whether Meta blocked it. */
-export function runSafetySummary(file: Pick<LocalScrape, "run_safety" | "stopped_reason" | "scraped_at">) {
+export function runSafetySummary(file: Pick<LocalScrape, "run_safety" | "stopped_reason" | "scraped_at">, t: Translator["t"] = english) {
   const s = file.run_safety;
   const parts: string[] = [];
-  if (s?.concurrent_runs) parts.push(`ran while ${s.concurrent_runs} other scrape${s.concurrent_runs === 1 ? " was" : "s were"} open`);
-  if (s?.minutes_since_previous_run != null && s.minutes_since_previous_run < SCRAPE_GAP_MINUTES) parts.push(`started ${s.minutes_since_previous_run} min after the previous run`);
-  if (s && s.runs_today > SCRAPE_DAILY_WARN) parts.push(`run ${s.runs_today} today`);
-  if (s?.overrides.length) parts.push(`overrides used: ${s.overrides.join(", ")}`);
+  if (s?.concurrent_runs) parts.push(s.concurrent_runs === 1 ? t("ran while {n} other scrape was open", { n: s.concurrent_runs }) : t("ran while {n} other scrapes were open", { n: s.concurrent_runs }));
+  if (s?.minutes_since_previous_run != null && s.minutes_since_previous_run < SCRAPE_GAP_MINUTES) parts.push(t("started {n} min after the previous run", { n: s.minutes_since_previous_run }));
+  if (s && s.runs_today > SCRAPE_DAILY_WARN) parts.push(t("run {n} today", { n: s.runs_today }));
+  if (s?.overrides.length) parts.push(t("overrides used: {list}", { list: s.overrides.join(", ") }));
   // The file's own warnings repeat the first three; keep only the others (a challenge, say).
   const other = (s?.warnings ?? []).filter((w) => !/^(Ran while|Started \d+ min after|Run \d+ today)/i.test(w));
   const blocked = isBlocked(file.stopped_reason);
-  return { line: parts.length ? `This run: ${parts.join(" · ")}` : null, other, blocked, until: blocked ? cooldownUntil(file.scraped_at) : null };
+  return { line: parts.length ? t("This run: {list}", { list: parts.join(" · ") }) : null, other, blocked, until: blocked ? cooldownUntil(file.scraped_at) : null };
 }
 
 export interface ScrapeWarning {
@@ -658,7 +660,7 @@ export interface ScrapeWarning {
  * (one import per run; a file imported twice counts once). `newestId` is the newest import behind a
  * warning, so a dismissed card comes back only when a newer run warns.
  */
-export function scrapeWarnings(runs: LocalRunRow[], now = Date.now(), formatTime: (d: Date) => string = (d) => d.toLocaleString(UI_LOCALE)): { warnings: ScrapeWarning[]; newestId: string | null } {
+export function scrapeWarnings(runs: LocalRunRow[], now = Date.now(), formatTime: (d: Date) => string = (d) => d.toLocaleString(UI_LOCALE), t: Translator["t"] = english): { warnings: ScrapeWarning[]; newestId: string | null } {
   const seen = new Set<string>();
   const list = runs
     .map((r) => ({ ...r, at: Date.parse(r.input?.scraped_at ?? r.started_at) }))
@@ -679,9 +681,11 @@ export function scrapeWarnings(runs: LocalRunRow[], now = Date.now(), formatTime
     const page = blocked[0].input?.page_name;
     warnings.push({
       kind: "blocked",
-      title: `Meta blocked a run${page ? ` (${page})` : ""} in the last 6 hours. Cooldown until ${formatTime(until)}.`,
-      why: "The extension stopped and started a 6-hour cooldown. Visiting the Ad Library again from the same connection before it ends can stretch the block.",
-      todo: `Don't collect again before ${formatTime(until)}; the extension refuses until then. After that, one run at a time, at least 30 min apart.`,
+      title: page
+        ? t("Meta blocked a run ({page}) in the last 6 hours. Cooldown until {time}.", { page, time: formatTime(until) })
+        : t("Meta blocked a run in the last 6 hours. Cooldown until {time}.", { time: formatTime(until) }),
+      why: t("The extension stopped and started a 6-hour cooldown. Visiting the Ad Library again from the same connection before it ends can stretch the block."),
+      todo: t("Don't collect again before {time}; the extension refuses until then. After that, one run at a time, at least 30 min apart.", { time: formatTime(until) }),
     });
     blocked.forEach((r) => behind.add(r.id));
   }
@@ -702,9 +706,9 @@ export function scrapeWarnings(runs: LocalRunRow[], now = Date.now(), formatTime
   if (gap != null) {
     warnings.push({
       kind: "back_to_back",
-      title: `Runs started less than 30 min apart (${gap} min at the closest).`,
-      why: PARALLEL_WHY,
-      todo: "Leave at least 30 min between runs. The extension asks you to confirm a sooner one; keep that for when you really need it.",
+      title: t("Runs started less than 30 min apart ({n} min at the closest).", { n: gap }),
+      why: t(PARALLEL_WHY),
+      todo: t("Leave at least 30 min between runs. The extension asks you to confirm a sooner one; keep that for when you really need it."),
     });
   }
 
@@ -712,9 +716,9 @@ export function scrapeWarnings(runs: LocalRunRow[], now = Date.now(), formatTime
   if (overlapping.length) {
     warnings.push({
       kind: "overlap",
-      title: `${overlapping.length === 1 ? "A run" : `${overlapping.length} runs`} overlapped another one on the same machine.`,
-      why: PARALLEL_WHY,
-      todo: "Collect one competitor at a time: wait for the open run to finish before starting the next.",
+      title: overlapping.length === 1 ? t("A run overlapped another one on the same machine.") : t("{n} runs overlapped another one on the same machine.", { n: overlapping.length }),
+      why: t(PARALLEL_WHY),
+      todo: t("Collect one competitor at a time: wait for the open run to finish before starting the next."),
     });
     overlapping.forEach((r) => behind.add(r.id));
   }
@@ -723,9 +727,9 @@ export function scrapeWarnings(runs: LocalRunRow[], now = Date.now(), formatTime
   if (most > SCRAPE_DAILY_WARN) {
     warnings.push({
       kind: "many",
-      title: `${plural(most, "run")} in a day.`,
-      why: "Frequent visits to the Ad Library from one connection can get it challenged, and a challenge means a 6-hour cooldown.",
-      todo: "Collect each advertiser once a day at most and spread runs out. Past 20 runs in a day the extension asks you to confirm.",
+      title: most === 1 ? t("{n} run in a day.", { n: most }) : t("{n} runs in a day.", { n: most }),
+      why: t("Frequent visits to the Ad Library from one connection can get it challenged, and a challenge means a 6-hour cooldown."),
+      todo: t("Collect each advertiser once a day at most and spread runs out. Past 20 runs in a day the extension asks you to confirm."),
     });
     list.forEach((r) => behind.add(r.id));
   }
@@ -748,25 +752,27 @@ export const LOST_TEST_DAYS = 21;
 export const RECENT_STOP_DAYS = 14;
 
 export type QuickFilter = "long" | "new" | "variants" | "top" | "partnership" | "no_low" | "stopped" | "lost_test" | "fatigued";
+// The numbers are written out so each label is one sentence to translate (research-insights.test.ts checks
+// they still match the constants above). Render with t(label) and t(title).
 export const QUICK_FILTERS: { id: QuickFilter; label: string; title: string }[] = [
-  { id: "long", label: `Long runners (${LONG_RUNNER_DAYS}+ days)`, title: "Still live and started 30+ days ago: an advertiser that keeps paying for an ad is telling you it works" },
-  { id: "new", label: "New this week", title: "Started in the last 7 days" },
-  { id: "variants", label: `Many variants (${MANY_VARIANTS}+)`, title: "Meta shows 3 or more ads using this creative" },
-  { id: "top", label: `Top ${TOP_IMPRESSIONS} by Meta's impressions order`, title: "In the first 25 under Meta's \"total impressions\" sort when the advertiser's ads were collected" },
-  { id: "partnership", label: "Partnership ads", title: "Run with a creator or another Page (Meta's branded content): who they pay to post for them" },
-  { id: "no_low", label: "Hide low impressions", title: "Leave out ads Meta marks \"Low impression count\" (under 100 impressions)" },
-  { id: "stopped", label: "Recently stopped", title: `Stopped in the last ${RECENT_STOP_DAYS} days: gone from the Ad Library since an earlier import` },
-  { id: "lost_test", label: `Stopped within ${LOST_TEST_DAYS} days`, title: `Stopped after running under ${LOST_TEST_DAYS} days: most likely a test that lost` },
-  { id: "fatigued", label: `Stopped after ${LONG_RUNNER_DAYS}+ days`, title: `Ran ${LONG_RUNNER_DAYS}+ days, then stopped: a former winner that wore out` },
+  { id: "long", label: m("Long runners (30+ days)"), title: m("Still live and started 30+ days ago: an advertiser that keeps paying for an ad is telling you it works") },
+  { id: "new", label: m("New this week"), title: m("Started in the last 7 days") },
+  { id: "variants", label: m("Many variants (3+)"), title: m("Meta shows 3 or more ads using this creative") },
+  { id: "top", label: m("Top 25 by Meta's impressions order"), title: m("In the first 25 under Meta's \"total impressions\" sort when the advertiser's ads were collected") },
+  { id: "partnership", label: m("Partnership ads"), title: m("Run with a creator or another Page (Meta's branded content): who they pay to post for them") },
+  { id: "no_low", label: m("Hide low impressions"), title: m("Leave out ads Meta marks \"Low impression count\" (under 100 impressions)") },
+  { id: "stopped", label: m("Recently stopped"), title: m("Stopped in the last 14 days: gone from the Ad Library since an earlier import") },
+  { id: "lost_test", label: m("Stopped within 21 days"), title: m("Stopped after running under 21 days: most likely a test that lost") },
+  { id: "fatigued", label: m("Stopped after 30+ days"), title: m("Ran 30+ days, then stopped: a former winner that wore out") },
 ];
 /** The quick filters that only match stopped ads (turning one on turns "Active only" off). */
 export const STOPPED_FILTERS: QuickFilter[] = ["stopped", "lost_test", "fatigued"];
 /** Our own ads' "Top": nothing gets paused there, so age alone puts old ads first; the rank is judged against age instead. */
 export const OWN_TOP_FILTER = {
-  label: "Top: beats its age",
-  title: `Meta's impressions rank at least ${OUTPERFORM_MIN} places better than an ad of its age usually gets (expected rank ≈ 184.6 − 40.3·ln(days+1), fitted to the account once it has ${RANK_FIT_MIN}+ ranked ads)`,
+  label: m("Top: beats its age"),
+  title: m("Meta's impressions rank at least 10 places better than an ad of its age usually gets (expected rank ≈ 184.6 − 40.3·ln(days+1), fitted to the account once it has 15+ ranked ads)"),
 };
-export const SIGNALS_NOTE = "Meta doesn't share spend or conversions for these ads outside the EU; long runs, many variants and Meta's impressions order are the best signals of what's working.";
+export const SIGNALS_NOTE = m("Meta doesn't share spend or conversions for these ads outside the EU; long runs, many variants and Meta's impressions order are the best signals of what's working.");
 
 /**
  * Whether an ad passes a quick filter. "Top" for our own ads means it beats its age curve by
@@ -792,7 +798,7 @@ export function passes(ad: Pick<PaidAdRow, "active" | "started_at" | "variants" 
 
 export type TypeGroup = "video" | "image" | "carousel" | "dco" | "other";
 export const TYPE_GROUPS: { id: TypeGroup; label: string }[] = [
-  { id: "video", label: "Video" }, { id: "image", label: "Image" }, { id: "carousel", label: "Carousel" }, { id: "dco", label: "Dynamic (DCO)" }, { id: "other", label: "Other" },
+  { id: "video", label: m("Video") }, { id: "image", label: m("Image") }, { id: "carousel", label: m("Carousel") }, { id: "dco", label: m("Dynamic (DCO)") }, { id: "other", label: m("Other") },
 ];
 /** The creative-type group an ad is listed under: a carousel or dynamic ad of videos (`is_video`) under Video. */
 export const typeGroup = (type: AdMediaType, isVideo?: boolean | null): TypeGroup =>
@@ -814,9 +820,9 @@ export function summarizeAds(ads: Pick<PaidAdRow, "active" | "started_at" | "sto
 /** The "Launched" filter: one calendar day ("0" today, "1" yesterday … "6"), or a window ("le2" the last 3 days, "le6" under 7 days). */
 export type LaunchWindow = "" | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "le2" | "le6";
 export const LAUNCH_WINDOWS: { id: Exclude<LaunchWindow, "">; label: string }[] = [
-  { id: "0", label: "Today" }, { id: "1", label: "Yesterday" },
-  { id: "2", label: "2 days ago" }, { id: "3", label: "3 days ago" }, { id: "4", label: "4 days ago" }, { id: "5", label: "5 days ago" }, { id: "6", label: "6 days ago" },
-  { id: "le2", label: "Last 3 days" }, { id: "le6", label: "Under 7 days" },
+  { id: "0", label: m("Today") }, { id: "1", label: m("Yesterday") },
+  { id: "2", label: m("2 days ago") }, { id: "3", label: m("3 days ago") }, { id: "4", label: m("4 days ago") }, { id: "5", label: m("5 days ago") }, { id: "6", label: m("6 days ago") },
+  { id: "le2", label: m("Last 3 days") }, { id: "le6", label: m("Under 7 days") },
 ];
 const LAUNCH_IDS = LAUNCH_WINDOWS.map((w) => w.id);
 
@@ -885,16 +891,16 @@ export interface AdPreset { id: string; label: string; title: string; view: Part
 /** "Due for a refresh": our live ads running this long, likely wearing out. */
 export const REFRESH_DAYS = 45;
 export const AD_PRESETS: AdPreset[] = [
-  { id: "winners", label: "Proven winners", title: `Live and running ${LONG_RUNNER_DAYS}+ days, strongest first: what they keep paying for`, view: { quick: ["long"], sort: "score" } },
-  { id: "scaling", label: "Being scaled", title: `Live creatives with ${MANY_VARIANTS}+ copies running: what they're putting more money behind`, view: { quick: ["variants"], sort: "variants" } },
-  { id: "early", label: "New and already scaled", title: `Launched this week and already ${MANY_VARIANTS}+ copies: an early bet worth watching`, view: { quick: ["new", "variants"], sort: "variants" } },
-  { id: "fresh", label: "Launched this week", title: "Their newest tests, newest first", view: { launched: "le6", sort: "newest" } },
-  { id: "statics", label: "Winning statics", title: `Image ads live ${LONG_RUNNER_DAYS}+ days`, view: { media: "image", quick: ["long"], sort: "score" } },
-  { id: "videos", label: "Winning videos", title: `Video ads live ${LONG_RUNNER_DAYS}+ days`, view: { media: "video", quick: ["long"], sort: "score" } },
-  { id: "creators", label: "Creator ads that last", title: `Partnership ads (run with a creator's or another Page) live ${LONG_RUNNER_DAYS}+ days`, view: { quick: ["partnership", "long"], sort: "score" } },
-  { id: "fatigued", label: "Worn-out winners", title: `Ran ${LONG_RUNNER_DAYS}+ days, then stopped: what worked until it didn't, and angles they may come back to`, view: { quick: ["fatigued"], activeOnly: false, sort: "days" } },
-  { id: "lost", label: "Lost tests", title: `Stopped within ${LOST_TEST_DAYS} days: what didn't work for them`, view: { quick: ["lost_test"], activeOnly: false, sort: "newest" } },
-  { id: "refresh", label: "Due for a refresh", title: `Our ads live ${REFRESH_DAYS}+ days, oldest first: likely wearing out, so make the next version before they stop`, view: { minDays: REFRESH_DAYS, sort: "days" }, side: "ours" },
+  { id: "winners", label: m("Proven winners"), title: m("Live and running 30+ days, strongest first: what they keep paying for"), view: { quick: ["long"], sort: "score" } },
+  { id: "scaling", label: m("Being scaled"), title: m("Live creatives with 3+ copies running: what they're putting more money behind"), view: { quick: ["variants"], sort: "variants" } },
+  { id: "early", label: m("New and already scaled"), title: m("Launched this week and already 3+ copies: an early bet worth watching"), view: { quick: ["new", "variants"], sort: "variants" } },
+  { id: "fresh", label: m("Launched this week"), title: m("Their newest tests, newest first"), view: { launched: "le6", sort: "newest" } },
+  { id: "statics", label: m("Winning statics"), title: m("Image ads live 30+ days"), view: { media: "image", quick: ["long"], sort: "score" } },
+  { id: "videos", label: m("Winning videos"), title: m("Video ads live 30+ days"), view: { media: "video", quick: ["long"], sort: "score" } },
+  { id: "creators", label: m("Creator ads that last"), title: m("Partnership ads (run with a creator's or another Page) live 30+ days"), view: { quick: ["partnership", "long"], sort: "score" } },
+  { id: "fatigued", label: m("Worn-out winners"), title: m("Ran 30+ days, then stopped: what worked until it didn't, and angles they may come back to"), view: { quick: ["fatigued"], activeOnly: false, sort: "days" } },
+  { id: "lost", label: m("Lost tests"), title: m("Stopped within 21 days: what didn't work for them"), view: { quick: ["lost_test"], activeOnly: false, sort: "newest" } },
+  { id: "refresh", label: m("Due for a refresh"), title: m("Our ads live 45+ days, oldest first: likely wearing out, so make the next version before they stop"), view: { minDays: REFRESH_DAYS, sort: "days" }, side: "ours" },
 ];
 /** The presets offered on a side. */
 export const presetsFor = (side: AdView["side"]) => AD_PRESETS.filter((p) => !p.side || p.side === side);

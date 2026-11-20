@@ -156,7 +156,42 @@ const maskEmail = (email: string): string => email.replace(/^(.).*(@.*)$/, "$1**
 const ownerExists = (email: string | null) =>
   new ProvisionError("owner_exists", `This project already has its owner (${maskEmail(email ?? "another account")}). Sign in as the owner instead.`);
 
-export interface OwnerInput { email: string; password: string; appOrigin: string; limits: InstallLimits; workspaceName?: string }
+export interface OwnerInput {
+  email: string; password: string; appOrigin: string; limits: InstallLimits; workspaceName?: string;
+  /** Where a deployed copy is reachable from the internet. Left out: read from the environment (publicOriginFromEnv). */
+  publicOrigin?: string | null;
+}
+
+/** An http(s) address reduced to its origin, or null. */
+export function cleanPublicOrigin(value: string | null | undefined): string | null {
+  const text = value?.trim();
+  if (!text) return null;
+  try {
+    const url = new URL(text.includes("://") ? text : `https://${text}`);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A deployed copy's public address, from the same settings the app reads (lib/install/config.ts). */
+export function publicOriginFromEnv(): string | null {
+  const env = process.env;
+  return cleanPublicOrigin(env["NEXT_PUBLIC_PUBLIC_ORIGIN"] || env["PUBLIC_ORIGIN"] || env["VERCEL_PROJECT_PRODUCTION_URL"] || null);
+}
+
+/**
+ * The project's Site URL and redirect allow-list. The local addresses (with their localhost/127.0.0.1
+ * twin) are always allowed. A copy with a public address also allows `<public>/auth/confirm**`, where the
+ * password-reset, confirmation and Google sign-in links come back, and uses it as the Site URL, so a link
+ * Supabase can't match never falls back to a local address.
+ */
+export function authUrlConfig(currentAllowList: string | null | undefined, appOrigin: string, publicOrigin: string | null): { site_url: string; uri_allow_list: string } {
+  const allowed = new Set((currentAllowList ?? "").split(",").map((entry) => entry.trim()).filter(Boolean));
+  for (const origin of localOrigins(appOrigin)) allowed.add(`${origin}/**`);
+  if (publicOrigin) allowed.add(`${publicOrigin}/auth/confirm**`);
+  return { site_url: publicOrigin ?? new URL(appOrigin).origin, uri_allow_list: [...allowed].join(",") };
+}
 
 /**
  * Creates the owner's account (already confirmed, so no email is needed), records them as the owner
@@ -196,9 +231,8 @@ export async function createOwner(api: ManagementApi, project: ProjectApi, ref: 
 
   emit({ step: "owner", status: "running", message: "Closing sign-up so only you can get in." });
   const current = await api.getAuthConfig(ref);
-  const allowed = new Set((current.uri_allow_list ?? "").split(",").map((entry) => entry.trim()).filter(Boolean));
-  for (const origin of localOrigins(input.appOrigin)) allowed.add(`${origin}/**`);
-  await api.updateAuthConfig(ref, { site_url: new URL(input.appOrigin).origin, uri_allow_list: [...allowed].join(","), disable_signup: true });
+  const publicOrigin = input.publicOrigin === undefined ? publicOriginFromEnv() : cleanPublicOrigin(input.publicOrigin);
+  await api.updateAuthConfig(ref, { ...authUrlConfig(current.uri_allow_list, input.appOrigin, publicOrigin), disable_signup: true });
 
   emit({ step: "owner", status: "done", message: created ? "Your account is ready. Sign-up is closed to everyone else." : "This email already had an account in the project, so its password was kept. Sign-up is closed to everyone else." });
   return { userId: user.id, created };

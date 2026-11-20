@@ -6,6 +6,8 @@
 // toward the empty ones, and the batch form warns when a new batch repeats an existing one's level,
 // format and hook. Advice only: nothing is blocked. Plain TypeScript (browser, API routes, Node tests).
 
+import { m } from "./i18n/translate";
+
 export type AwarenessLevel = 1 | 2 | 3 | 4 | 5;
 
 export interface AwarenessInfo {
@@ -25,28 +27,28 @@ export interface AwarenessInfo {
 
 export const AWARENESS: AwarenessInfo[] = [
   {
-    level: 1, id: "unaware", label: "Unaware", knows: "Doesn't know they have the problem, or hasn't named it", sells: "the problem",
-    formula: "Story → pain → (product or offer lightly, or not at all)",
+    level: 1, id: "unaware", label: m("Unaware"), knows: m("Doesn't know they have the problem, or hasn't named it"), sells: m("the problem"),
+    formula: m("Story → pain → (product or offer lightly, or not at all)"),
     job: "Lead with a story or a relatable moment that names the feeling before anything is sold. The product appears lightly or not at all, never in the opening beat: no logo up front, no feature list, no price.",
   },
   {
-    level: 2, id: "problem-aware", label: "Problem-aware", knows: "Feels the pain, doesn't know a fix exists", sells: "the category, not the brand yet",
-    formula: "Problem → agitate → bridge to a type of solution",
+    level: 2, id: "problem-aware", label: m("Problem-aware"), knows: m("Feels the pain, doesn't know a fix exists"), sells: m("the category, not the brand yet"),
+    formula: m("Problem → agitate → bridge to a type of solution"),
     job: "Name the pain sharply and make it felt, then bridge to the kind of fix that exists. Don't jump to brand features or the offer before the pain lands.",
   },
   {
-    level: 3, id: "solution-aware", label: "Solution-aware", knows: "Knows solutions exist and is comparing approaches", sells: "the mechanism",
-    formula: "How it works, and why this way beats the other ways",
+    level: 3, id: "solution-aware", label: m("Solution-aware"), knows: m("Knows solutions exist and is comparing approaches"), sells: m("the mechanism"),
+    formula: m("How it works, and why this way beats the other ways"),
     job: "Show how it works: the unique mechanism, and why this approach beats the alternatives the viewer is weighing.",
   },
   {
-    level: 4, id: "product-aware", label: "Product-aware", knows: "Knows the brand, weighing it against rivals", sells: "why us",
-    formula: "Comparison, proof, reviews, the differentiator",
+    level: 4, id: "product-aware", label: m("Product-aware"), knows: m("Knows the brand, weighing it against rivals"), sells: m("why us"),
+    formula: m("Comparison, proof, reviews, the differentiator"),
     job: "Prove why us: real reviews or ratings, a comparison with the old way (no rival logos), the differentiator, made to look distinct.",
   },
   {
-    level: 5, id: "most-aware", label: "Most aware", knows: "Ready to buy, needs a reason to act now", sells: "the offer",
-    formula: "Price ladder, bundle, deadline, guarantee. No education.",
+    level: 5, id: "most-aware", label: m("Most aware"), knows: m("Ready to buy, needs a reason to act now"), sells: m("the offer"),
+    formula: m("Price ladder, bundle, deadline, guarantee. No education."),
     job: "Sell the offer only: the price, the deal, the guarantee or the reason to act now, word for word from the brand's offers. No education.",
   },
 ];

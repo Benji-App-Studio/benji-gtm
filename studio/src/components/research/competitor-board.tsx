@@ -6,15 +6,14 @@
 // collected, as a compact grid that folds away. Opening one marks it "waiting for a file" until an import for that Page lands.
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useT } from "@/lib/i18n/client";
 import { adLibraryLink, FRESH_DAYS, freshness, STALE_DAYS, type Freshness, type PaidAdRow, type WatchRow } from "@/lib/research";
 import { IconChevronDown, IconExternal } from "../icons";
 import { Button, Card, cx, segmentClass, segmentTrackClass, Spinner, StatusPill } from "../ui";
 import { PageLogo } from "./page-logo";
 import { readStored, storageKey } from "@/lib/storage-keys";
-import { UI_LOCALE } from "@/lib/ui-locale";
 
 const FRESH_DOT: Record<Freshness, string> = { fresh: "bg-win", due: "bg-caution", stale: "bg-warn", never: "bg-faint" };
-const FRESH_HINT = `Green: collected in the last ${FRESH_DAYS} days · orange: ${FRESH_DAYS + 1}–${STALE_DAYS} days · pink: older`;
 
 /** A yes/no kept in this browser (the section's open state). */
 function useRemembered(key: string, initial: boolean) {
@@ -33,12 +32,12 @@ function useRemembered(key: string, initial: boolean) {
 }
 
 /** "today", "yesterday", "5 days ago", "3 weeks ago". */
-function ago(at: string, now: number) {
+function ago(at: string, now: number, t: ReturnType<typeof useT>["t"]) {
   const days = Math.floor((now - Date.parse(at)) / 86_400_000);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 21) return `${days} days ago`;
-  return `${Math.round(days / 7)} weeks ago`;
+  if (days <= 0) return t("today");
+  if (days === 1) return t("yesterday");
+  if (days < 21) return t("{n} days ago", { n: days });
+  return t("{n} weeks ago", { n: Math.round(days / 7) });
 }
 
 /** Which competitors were opened in the Ad Library and when, per product, kept across reloads in this browser. */
@@ -94,6 +93,8 @@ export function CompetitorBoard({ productId, watchlist, ads, lastImports, ours, 
   /** Collect ads: opens the collect dialog for this competitor. */
   onCollect?: (w: WatchRow) => void;
 }) {
+  const { t, tn } = useT();
+  const freshHint = t("Green: collected in the last {fresh} days · orange: {from}–{stale} days · pink: older", { fresh: FRESH_DAYS, from: FRESH_DAYS + 1, stale: STALE_DAYS });
   const [adding, setAdding] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
   const [opened, markOpened] = useOpened(productId);
@@ -125,33 +126,32 @@ export function CompetitorBoard({ productId, watchlist, ads, lastImports, ours, 
 
   const followed = rows.filter((r) => r.w.enabled);
   const due = followed.filter((r) => r.fresh !== "fresh");
-  const noun = ours ? "Page" : "competitor";
   const [open, setOpen] = useRemembered(storageKey(`research.board.${ours ? "ours" : "theirs"}`), true);
   const [onlyDue, setOnlyDue] = useState(false);
   const list = onlyDue ? due : rows;
   // What the link on each row says: "Open" with a saved Page, "Search" without one.
   const exact = followed.some((r) => r.link.exact), searched = followed.some((r) => !r.link.exact);
-  const openWord = exact && searched ? "Open or Search" : searched ? "Search" : "Open";
+  const openWord = exact && searched ? t("Open or Search") : searched ? t("Search") : t("Open");
 
   return (
     <Card className="mb-4 overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2">
         <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex h-7 min-w-0 items-center gap-2 rounded-control pr-2 pl-1 text-left transition-colors hover:bg-hover">
           <IconChevronDown className={cx("size-3.5 shrink-0 text-muted transition", !open && "-rotate-90")} />
-          <span className="text-sm font-medium">{ours ? "Our Pages" : "Competitors"}</span>
+          <span className="text-sm font-medium">{ours ? t("Our Pages") : t("Competitors")}</span>
           <span className="text-xs text-muted tabular-nums">{rows.length}</span>
           {followed.length > 0 && (
-            <StatusPill tone={due.length ? "caution" : "win"} className="ml-1">{due.length ? `${due.length} need${due.length === 1 ? "s" : ""} updating` : "All up to date"}</StatusPill>
+            <StatusPill tone={due.length ? "caution" : "win"} className="ml-1">{due.length ? tn(due.length, "{n} needs updating", "{n} need updating") : t("All up to date")}</StatusPill>
           )}
         </button>
         <div className="flex items-center gap-1.5">
           {open && due.length > 0 && due.length < rows.length && (
-            <div className={segmentTrackClass} role="group" aria-label="Which to show">
-              <button type="button" aria-pressed={!onlyDue} onClick={() => setOnlyDue(false)} className={segmentClass(!onlyDue)}>All</button>
-              <button type="button" aria-pressed={onlyDue} onClick={() => setOnlyDue(true)} className={segmentClass(onlyDue)}>Needs update</button>
+            <div className={segmentTrackClass} role="group" aria-label={t("Which to show")}>
+              <button type="button" aria-pressed={!onlyDue} onClick={() => setOnlyDue(false)} className={segmentClass(!onlyDue)}>{t("All")}</button>
+              <button type="button" aria-pressed={onlyDue} onClick={() => setOnlyDue(true)} className={segmentClass(onlyDue)}>{t("Needs update")}</button>
             </div>
           )}
-          <Button variant="secondary" size="sm" onClick={onManage}>{rows.length ? "Add or edit" : `Add ${noun}s`}</Button>
+          <Button variant="secondary" size="sm" onClick={onManage}>{rows.length ? t("Add or edit") : ours ? t("Add Pages") : t("Add competitors")}</Button>
         </div>
       </div>
 
@@ -165,51 +165,51 @@ export function CompetitorBoard({ productId, watchlist, ads, lastImports, ours, 
                   // Opened since its last update: waiting for the file to be dropped.
                   const waiting = openedAt != null && (!r.updatedAt || openedAt > Date.parse(r.updatedAt)) && now - openedAt < 2 * 86_400_000;
                   // Never followed (typed in the app's profile, nothing collected yet): its Follow button says it, so no "Paused".
-                  const status = !r.w.enabled ? (r.ads || r.updatedAt ? "Paused" : null) : waiting ? "Opened · drop its file" : r.updatedAt ? ago(r.updatedAt, now) : "Never collected";
+                  const status = !r.w.enabled ? (r.ads || r.updatedAt ? t("Paused") : null) : waiting ? t("Opened · drop its file") : r.updatedAt ? ago(r.updatedAt, now, t) : t("Never collected");
                   const pageId = r.w.page_id;
                   return (
                     <li key={r.w.id} className={cx("flex min-h-11 min-w-0 items-center gap-2.5 rounded-control px-2 py-1.5 transition-colors", waiting ? "bg-accent-soft" : "hover:bg-hover")}>
-                      <span className={cx("relative shrink-0", !r.w.enabled && "opacity-60")} title={FRESH_HINT}>
+                      <span className={cx("relative shrink-0", !r.w.enabled && "opacity-60")} title={freshHint}>
                         <PageLogo pageId={r.pageId} name={r.w.name} />
                         <span className={cx("absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-card", waiting ? "bg-accent" : FRESH_DOT[r.fresh])} aria-hidden />
                       </span>
-                      <button type="button" disabled={!r.ads} onClick={() => onShowAds(r.filterName)} title={r.ads ? `Show ${r.w.name}'s ads` : undefined}
+                      <button type="button" disabled={!r.ads} onClick={() => onShowAds(r.filterName)} title={r.ads ? t("Show {name}'s ads", { name: r.w.name }) : undefined}
                         className={cx("min-w-0 flex-1 rounded-xs text-left enabled:hover:[&>p:first-child]:underline disabled:cursor-default", !r.w.enabled && "opacity-60")}>
                         <p className="truncate text-sm font-medium" title={r.w.name}>{r.w.name}</p>
                         <p className={cx("truncate text-xs", waiting ? "text-accent" : "text-muted")}>
-                          <span className="tabular-nums">{r.ads.toLocaleString(UI_LOCALE)}</span> ads{r.ads > 0 && <> · <span className="tabular-nums">{r.live.toLocaleString(UI_LOCALE)}</span> live</>}{r.ads > 0 && sourcesOf && sourcesOf(r.w).length > 0 && <> · {sourcesOf(r.w).join(", ")}</>}{status && <> · {status}</>}
+                          <span className="tabular-nums">{tn(r.ads, "{n} ad", "{n} ads")}</span>{r.ads > 0 && <> · <span className="tabular-nums">{t("{n} live", { n: r.live })}</span></>}{r.ads > 0 && sourcesOf && sourcesOf(r.w).length > 0 && <> · {sourcesOf(r.w).join(", ")}</>}{status && <> · {status}</>}
                         </p>
                       </button>
                       {r.untracked && pageId && (
-                        <Button size="sm" variant="ghost" disabled={adding !== null} title={`Not on the list yet: add ${r.w.name} to keep track of it`}
+                        <Button size="sm" variant="ghost" disabled={adding !== null} title={t("Not on the list yet: add {name} to keep track of it", { name: r.w.name })}
                           onClick={async () => { setAdding(r.w.id); await onAdd(r.w.name, pageId); setAdding(null); }}>
-                          {adding === r.w.id ? <Spinner /> : "Add"}
+                          {adding === r.w.id ? <Spinner /> : t("Add")}
                         </Button>
                       )}
                       {!r.w.enabled && !r.untracked && (
-                        <Button size="sm" variant="ghost" disabled={adding !== null} title={`Follow ${r.w.name}: keeps track of when its ads were last collected`}
+                        <Button size="sm" variant="ghost" disabled={adding !== null} title={t("Follow {name}: keeps track of when its ads were last collected", { name: r.w.name })}
                           onClick={async () => { setAdding(r.w.id); await onFollow(r.w); setAdding(null); }}>
-                          {adding === r.w.id ? <Spinner /> : "Follow"}
+                          {adding === r.w.id ? <Spinner /> : t("Follow")}
                         </Button>
                       )}
                       {onCollect && !r.untracked && (
-                        <Button size="sm" variant="ghost" onClick={() => onCollect(r.w)} title={`Collect ${r.w.name}'s ads with the sources that are on: you see what it costs first`}>Collect</Button>
+                        <Button size="sm" variant="ghost" onClick={() => onCollect(r.w)} title={t("Collect {name}'s ads with the sources that are on: you see what it costs first", { name: r.w.name })}>{t("Collect")}</Button>
                       )}
                       <a href={r.link.url} target="_blank" rel="noopener noreferrer" onClick={() => markOpened(r.w.id)}
-                        title={r.link.exact ? `Open ${r.w.name}'s ads in the Meta Ad Library` : `No Page saved: searches the Ad Library for “${r.w.search_terms || r.w.name}”. Add its Page link under Add or edit to open its own page.`}
-                        aria-label={`Open ${r.w.name} in the Ad Library`}
+                        title={r.link.exact ? t("Open {name}'s ads in the Meta Ad Library", { name: r.w.name }) : t("No Page saved: searches the Ad Library for “{terms}”. Add its Page link under Add or edit to open its own page.", { terms: r.w.search_terms || r.w.name })}
+                        aria-label={t("Open {name} in the Ad Library", { name: r.w.name })}
                         className={cx("inline-flex h-7 shrink-0 items-center gap-1 rounded-control px-2 text-xs font-medium transition-colors [&_svg]:size-3.5",
                           r.w.enabled && r.fresh !== "fresh" && !waiting ? "bg-accent-soft text-accent hover:bg-accent-soft/70" : "border border-hairline bg-raised text-ink hover:bg-hover")}>
-                        {r.link.exact ? "Open" : "Search"}<IconExternal />
+                        {r.link.exact ? t("Open") : t("Search")}<IconExternal />
                       </a>
                     </li>
                   );
                 })}
               </ul>
             )
-            : <p className="text-sm text-muted">{ours ? "Add your own Facebook Page to see your ads next to theirs." : "Add the competitors whose ads you want to follow. Then open each one in the Ad Library and collect its ads."}</p>}
+            : <p className="text-sm text-muted">{ours ? t("Add your own Facebook Page to see your ads next to theirs.") : t("Add the competitors whose ads you want to follow. Then open each one in the Ad Library and collect its ads.")}</p>}
           {dropZone}
-          {followed.length > 0 && <p className="text-xs text-faint">To refresh one: click {openWord}, click <span className="text-label">Collect ads</span> in the Ad Library extension, then drop the saved file above. Click a name to see its ads.</p>}
+          {followed.length > 0 && <p className="text-xs text-faint">{t("To refresh one: click {open}, click “Collect ads” in the Ad Library extension, then drop the saved file above. Click a name to see its ads.", { open: openWord })}</p>}
         </div>
       )}
     </Card>

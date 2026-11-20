@@ -1,4 +1,5 @@
 import { PREPARE_STEPS, provision, UPDATE_STEPS, type ProgressEvent } from "@/lib/server/provision";
+import { getTranslator } from "@/lib/i18n/server";
 import { isResponse } from "@/lib/server/auth";
 import { provisionDeps, readSetupBody, refuseError, setupCaller, targetRef } from "@/lib/server/provision/request-access";
 
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
   if (isResponse(input)) return input;
   const ref = targetRef(caller, input.body);
   if (isResponse(ref)) return ref;
+  const { t } = await getTranslator();
   let deps;
   try { deps = provisionDeps(); } catch (error) { return refuseError(error); }
 
@@ -34,7 +36,7 @@ export async function POST(request: Request) {
         { accessToken: input.token, ref, steps: caller.mode === "owner" ? UPDATE_STEPS : PREPARE_STEPS, appOrigin: caller.appOrigin ?? undefined },
         deps,
         (event: ProgressEvent) => send({ type: "event", ...event }),
-      ).catch(() => ({ ok: false as const, failed: { step: "project" as const, code: "unexpected", message: "Something unexpected went wrong. Press Retry." } }));
+      ).catch(() => ({ ok: false as const, failed: { step: "project" as const, code: "unexpected", message: t("Something unexpected went wrong. Press Retry.") } }));
       send({ type: "result", ok: result.ok, failed: result.failed ?? null });
       if (open) controller.close();
     },

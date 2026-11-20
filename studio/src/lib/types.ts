@@ -1,5 +1,7 @@
 // Shapes shared by the studio's server and pages. Projects mirror the engine's src/projects.ts;
 // report data mirrors what the engine's build step writes to data.json.
+// Labels shown in the UI are marked with m() and rendered with t(label) (lib/i18n).
+import { m } from "./i18n/translate";
 
 export type Platform = "instagram" | "tiktok" | "youtube" | "x" | "linkedin";
 export const PLATFORMS: Platform[] = ["instagram", "tiktok", "youtube", "x", "linkedin"];
@@ -13,10 +15,25 @@ export type ProjectStatus = "draft" | "discovering" | "review" | "analyzing" | "
 
 /** What a project analyses: a founder's competitors (found for them), one account, or a brand campaign. */
 export type ProjectType = "competitors" | "account" | "campaign";
-export const TYPE_COPY: Record<ProjectType, { label: string; noun: string; nouns: string; blurb: string }> = {
-  competitors: { label: "My competitors", noun: "competitor", nouns: "competitors", blurb: "Starts from your app's profile: finds your competitors and what wins for them on each channel." },
-  account: { label: "One account", noun: "account", nouns: "accounts", blurb: "Every post from one account across its channels, optionally side by side with others." },
-  campaign: { label: "A brand campaign", noun: "creator", nouns: "creators", blurb: "Many creators posting for one brand: the best UGC, the creators worth rebooking and how the brand shows up." },
+export const TYPE_COPY: Record<ProjectType, {
+  label: string; blurb: string;
+  /** Capitalized singular and plural, for a column or a stat. */
+  one: string; many: string;
+  /** Whole sentences per kind (word order differs by language). */
+  pick: string; change: string; review: string;
+}> = {
+  competitors: {
+    label: m("My competitors"), blurb: m("Starts from your app's profile: finds your competitors and what wins for them on each channel."),
+    one: m("Competitor"), many: m("Competitors"), pick: m("Pick the competitors for {name}"), change: m("Change competitors and settings"), review: m("Review competitors"),
+  },
+  account: {
+    label: m("One account"), blurb: m("Every post from one account across its channels, optionally side by side with others."),
+    one: m("Account"), many: m("Accounts"), pick: m("Pick the accounts for {name}"), change: m("Change accounts and settings"), review: m("Review accounts"),
+  },
+  campaign: {
+    label: m("A brand campaign"), blurb: m("Many creators posting for one brand: the best UGC, the creators worth rebooking and how the brand shows up."),
+    one: m("Creator"), many: m("Creators"), pick: m("Pick the creators for {name}"), change: m("Change creators and settings"), review: m("Review creators"),
+  },
 };
 
 export interface Candidate {
@@ -221,32 +238,35 @@ export interface PartnerProgram { brand: string; handle: string; creators: Partn
 
 /** What commenters are doing, as Jev sorts each comment. */
 export const THEME_LABEL: Record<string, { label: string; hint: string }> = {
-  buy_intent: { label: "Want to buy", hint: "asking for the link or price, or saying they bought" },
-  how_question: { label: "How does it work?", hint: "questions about using it or getting the result" },
-  objection: { label: "Objections", hint: "price, trust, fit or 'it doesn't work for me'" },
-  feature_request: { label: "Wish lists", hint: "asking for something it doesn't do yet" },
-  relates: { label: "“This is me”", hint: "recognising their own problem or situation" },
-  tag_friend: { label: "Tagging friends", hint: "sending it to someone" },
-  praise: { label: "Praise", hint: "loving the post or the product" },
-  skeptic: { label: "Skeptics", hint: "doubting the claim or calling it an ad" },
-  other: { label: "Other", hint: "everything else" },
+  buy_intent: { label: m("Want to buy"), hint: m("asking for the link or price, or saying they bought") },
+  how_question: { label: m("How does it work?"), hint: m("questions about using it or getting the result") },
+  objection: { label: m("Objections"), hint: m("price, trust, fit or 'it doesn't work for me'") },
+  feature_request: { label: m("Wish lists"), hint: m("asking for something it doesn't do yet") },
+  relates: { label: m("“This is me”"), hint: m("recognising their own problem or situation") },
+  tag_friend: { label: m("Tagging friends"), hint: m("sending it to someone") },
+  praise: { label: m("Praise"), hint: m("loving the post or the product") },
+  skeptic: { label: m("Skeptics"), hint: m("doubting the claim or calling it an ad") },
+  other: { label: m("Other"), hint: m("everything else") },
 };
 
 export const VISUAL_LABEL: Record<string, string> = {
-  talking_head: "Talking to camera", screen_demo: "Screen recording", product_shot: "Product close-up", text_on_screen: "Text on screen",
-  broll: "B-roll / scenery", proof_shot: "Proof (results, reviews)", reaction: "Reaction", skit: "Skit / acted scene",
+  talking_head: m("Talking to camera"), screen_demo: m("Screen recording"), product_shot: m("Product close-up"), text_on_screen: m("Text on screen"),
+  broll: m("B-roll / scenery"), proof_shot: m("Proof (results, reviews)"), reaction: m("Reaction"), skit: m("Skit / acted scene"),
 };
 
 export const HOOK_LABEL: Record<string, string> = {
-  question: "Question", bold_claim: "Bold claim", number_list: "Number / list", story: "Story", pov: "POV / scene",
-  warning: "Warning", news: "News", how_to: "How to", curiosity_gap: "Curiosity gap", other: "Other",
+  question: m("Question"), bold_claim: m("Bold claim"), number_list: m("Number / list"), story: m("Story"), pov: m("POV / scene"),
+  warning: m("Warning"), news: m("News"), how_to: m("How to"), curiosity_gap: m("Curiosity gap"), other: m("Other"),
 };
 
 export const ROLE_LABEL: Record<string, string> = {
-  hook: "Hook", setup: "Setup", product: "Product shows up", method: "Method", benefit: "Benefit", proof: "Proof", cta: "CTA", other: "Other",
+  hook: m("Hook"), setup: m("Context"), product: m("Product shows up"), method: m("Method"), benefit: m("Benefit"), proof: m("Proof"), cta: m("CTA"), other: m("Other"),
 };
 
+/** The beat names the AI prompts use (English, as they always were): the page says "Context", the prompt "Setup". */
+export const ROLE_PROMPT_NAME: Record<string, string> = { ...ROLE_LABEL, setup: "Setup" };
+
 export const KIND_LABEL: Record<string, string> = {
-  direct_competitor: "Direct competitor", adjacent_brand: "Adjacent brand", creator: "Creator", media_or_community: "Media / community",
-  retailer_or_marketplace: "Retailer", unrelated: "Unrelated",
+  direct_competitor: m("Direct competitor"), adjacent_brand: m("Adjacent brand"), creator: m("Creator"), media_or_community: m("Media / community"),
+  retailer_or_marketplace: m("Retailer"), unrelated: m("Unrelated"),
 };

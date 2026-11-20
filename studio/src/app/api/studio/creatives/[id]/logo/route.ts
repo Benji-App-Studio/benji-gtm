@@ -7,6 +7,7 @@ import { setCreativeFile } from "@/lib/server/creative-file";
 import { creativesBackend } from "@/lib/server/creatives-backend";
 import { placeLogo } from "@/lib/server/logo-overlay";
 import { caughtFailure, logDbError } from "@/lib/server/errors";
+import { getTranslator } from "@/lib/i18n/server";
 
 export const runtime = "nodejs";
 
@@ -40,20 +41,21 @@ async function fetchBytes(url: string, max: number, what: string, types: RegExp)
  * its review trigger sends the creative back to QA (asked for here) and any decision back to pending.
  */
 export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/creatives/[id]/logo">) {
+  const { t } = await getTranslator();
   const session = await requireUser();
   if (isResponse(session)) return session;
   const { id } = await ctx.params;
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return Response.json({ error: "This creative doesn't exist." }, { status: 404 });
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return Response.json({ error: t("This creative doesn't exist.") }, { status: 404 });
   const body = await request.json().catch(() => ({})) as { position?: unknown };
   const { supabase } = session;
   const { data: creative } = await supabase.from("creatives").select("id, product_id, job_id, kind, storage_path, url, mime, size_bytes, copy").eq("id", id).maybeSingle<Row>();
-  if (!creative) return Response.json({ error: "This creative doesn't exist." }, { status: 404 });
-  if (creative.kind !== "image") return Response.json({ error: "Only image creatives get a placed logo." }, { status: 400 });
+  if (!creative) return Response.json({ error: t("This creative doesn't exist.") }, { status: 404 });
+  if (creative.kind !== "image") return Response.json({ error: t("Only image creatives get a placed logo.") }, { status: 400 });
   const { data: job } = creative.job_id
     ? await supabase.from("creative_jobs").select("params").eq("id", creative.job_id).maybeSingle<{ params: Record<string, unknown> }>()
     : { data: null };
   const wanted = overlayParam(job?.params);
-  if (!wanted) return Response.json({ error: "This creative's batch didn't ask for our logo to be placed." }, { status: 400 });
+  if (!wanted) return Response.json({ error: t("This creative's batch didn't ask for our logo to be placed.") }, { status: 400 });
 
   const copy = creative.copy ?? {};
   const placed = (copy.logo ?? null) as PlacedLogo | null;
@@ -66,7 +68,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/
   if (body.position === "none") {
     if (!placed) return Response.json({ creative: { id, url: creative.url, storage_path: creative.storage_path, copy } });
     const saved = await setCreativeFile(supabase, id, { url: original.url, storage_path: original.path, size_bytes: original.sizeBytes, mime: original.mime ?? mimeOf(original.path), copy: { ...copy, logo: null, logoRemoved: true } });
-    if ("error" in saved) return Response.json({ error: `Couldn't take the logo off: ${saved.error}` }, { status: 502 });
+    if ("error" in saved) return Response.json({ error: t("Couldn't take the logo off: {reason}", { reason: saved.error }) }, { status: 502 });
     await recheck();
     return Response.json({ creative: saved.creative });
   }
@@ -87,7 +89,7 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/
     const { error: uploadError } = await supabase.storage.from(CREATIVES_BUCKET).upload(path, out.bytes, { contentType: out.mime, upsert: false });
     if (uploadError && !/exists|duplicate/i.test(uploadError.message)) {
       const rls = /row-level security|policy/i.test(uploadError.message);
-      throw new Error(rls ? logDbError("logo upload", uploadError, "Storage refused the upload. Open /setup and press Apply the update, then try again.") : logDbError("logo upload", uploadError, "Couldn't store the image. Try again."));
+      throw new Error(rls ? logDbError("logo upload", uploadError, t("Storage refused the upload. Open /setup and press Apply the update, then try again."), t) : logDbError("logo upload", uploadError, t("Couldn't store the image. Try again."), t));
     }
     const record: PlacedLogo = { url: wanted.url, position, box: out.box, at: new Date().toISOString(), original };
     const saved = await setCreativeFile(supabase, id, { url: publicUrl(path), storage_path: path, size_bytes: out.bytes.length, mime: out.mime, copy: { ...copy, logo: record, logoRemoved: false } });
@@ -95,6 +97,6 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/
     await recheck();
     return Response.json({ creative: saved.creative });
   } catch (error) {
-    return caughtFailure("logo", error, "Couldn't place the logo. Try again.", 502);
+    return caughtFailure("logo", error, t("Couldn't place the logo. Try again."), 502, {}, t);
   }
 }

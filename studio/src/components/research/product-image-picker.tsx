@@ -10,6 +10,9 @@ import { PRODUCT_REFERENCES } from "@/lib/product-assets";
 import { showOriginal, thumbUrl } from "@/lib/thumb";
 import { IconChevronDown, IconPlus } from "../icons";
 import { cx, Spinner } from "../ui";
+import { appSettingsHref } from "@/lib/nav-model";
+import { useT } from "@/lib/i18n/client";
+import { sentenceGap } from "@/lib/i18n/join";
 
 export interface ImageTile {
   /** What `picked` holds for this tile (an asset id, or its url). */
@@ -34,6 +37,8 @@ export function ProductImagePicker({ productId, tiles, picked, onChange, onUploa
   onUpload?: (file: File) => Promise<void>;
   max?: number;
 }) {
+  const { t, tn, locale } = useT();
+  const gap = sentenceGap(locale);
   const [open, setOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,39 +57,40 @@ export function ProductImagePicker({ productId, tiles, picked, onChange, onUploa
     try {
       await onUpload(file);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't upload the image. Try again.");
+      setError(e instanceof Error ? e.message : t("Couldn't upload the image. Try again."));
     }
     setUploading(false);
   }
 
-  const chosen = picked.map((k) => tiles.find((t) => t.key === k)).filter((t): t is ImageTile => Boolean(t));
+  const chosen = picked.map((k) => tiles.find((tile) => tile.key === k)).filter((tile): tile is ImageTile => Boolean(tile));
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
           className="inline-flex h-7 items-center gap-1.5 rounded-control border border-hairline bg-raised px-2.5 text-xs font-medium text-ink transition-colors hover:bg-hover">
           <IconChevronDown className={cx("size-3.5 transition", !open && "-rotate-90")} />
-          {open ? "Hide images" : tiles.length ? `Show ${tiles.length} image${tiles.length === 1 ? "" : "s"}` : "Add images"}
-          {picked.length > 0 && <span className="rounded-full bg-accent-soft px-1.5 text-xs text-accent tabular-nums">{picked.length} picked</span>}
+          {open ? t("Hide images") : tiles.length ? tn(tiles.length, "Show {n} image", "Show {n} images") : t("Add images")}
+          {picked.length > 0 && <span className="rounded-full bg-accent-soft px-1.5 text-xs text-accent tabular-nums">{t("{n} picked", { n: picked.length })}</span>}
         </button>
-        {!open && chosen.map((t, i) => (
-          <button key={t.key} type="button" onClick={() => setOpen(true)} title={`${i + 1}. ${t.label}`} className="relative size-8 overflow-hidden rounded-md border border-accent">
+        {!open && chosen.map((tile, i) => (
+          <button key={tile.key} type="button" onClick={() => setOpen(true)} title={`${i + 1}. ${tile.label}`} className="relative size-8 overflow-hidden rounded-md border border-accent">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={thumbUrl(t.url, 64, 64)} alt="" className="size-full object-cover" onError={(e) => showOriginal(e.currentTarget)} />
+            <img src={thumbUrl(tile.url, 64, 64)} alt="" className="size-full object-cover" onError={(e) => showOriginal(e.currentTarget)} />
           </button>
         ))}
       </div>
       {open && (<>
       <ul className="flex flex-wrap gap-2">
-        {tiles.map((t) => {
-          const n = picked.indexOf(t.key) + 1;
+        {tiles.map((tile) => {
+          const n = picked.indexOf(tile.key) + 1;
           const off = full && !n;
+          const name = tile.suggested ? t("{name}, suggested", { name: tile.label }) : tile.label;
           return (
-            <li key={t.key} className="grid w-[72px] gap-1">
+            <li key={tile.key} className="grid w-[72px] gap-1">
               <button
-                type="button" onClick={() => toggle(t.key)} aria-pressed={n > 0} aria-disabled={off || undefined}
-                aria-label={`${n ? `Unpick (${n} of ${max})` : "Pick"} ${t.label}${t.suggested ? ", suggested" : ""}`}
-                title={[t.label, t.why, off ? `Up to ${max}: unpick one to choose this` : null].filter(Boolean).join(" · ")}
+                type="button" onClick={() => toggle(tile.key)} aria-pressed={n > 0} aria-disabled={off || undefined}
+                aria-label={n ? t("Unpick ({n} of {max}) {name}", { n, max, name }) : t("Pick {name}", { name })}
+                title={[tile.label, tile.why, off ? t("Up to {max}: unpick one to choose this", { max }) : null].filter(Boolean).join(" · ")}
                 className={cx(
                   "relative size-[72px] overflow-hidden rounded-inner border bg-canvas transition",
                   n ? "border-accent ring-2 ring-accent" : "border-line hover:border-ink/30",
@@ -93,11 +99,11 @@ export function ProductImagePicker({ productId, tiles, picked, onChange, onUploa
               >
                 {/* A 160 px copy, not the original: a workspace can have 100+ images of up to ~26 megapixels each. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={thumbUrl(t.url, 160, 160)} alt="" width={72} height={72} loading="lazy" decoding="async" onError={(e) => showOriginal(e.currentTarget)} className="size-full object-cover" />
+                <img src={thumbUrl(tile.url, 160, 160)} alt="" width={72} height={72} loading="lazy" decoding="async" onError={(e) => showOriginal(e.currentTarget)} className="size-full object-cover" />
                 {n > 0 && <span className="absolute top-1 left-1 grid size-5 place-items-center rounded-full bg-accent text-xs font-medium text-on-ink tabular-nums">{n}</span>}
-                {t.suggested && <span className="absolute inset-x-1 bottom-1 truncate rounded-full bg-card/90 px-1 text-center text-xs leading-4 font-medium text-accent">Suggested</span>}
+                {tile.suggested && <span className="absolute inset-x-1 bottom-1 truncate rounded-full bg-card/90 px-1 text-center text-xs leading-4 font-medium text-accent">{t("Suggested")}</span>}
               </button>
-              <span className="truncate text-xs leading-tight text-muted" title={t.label}>{t.kindLabel}</span>
+              <span className="truncate text-xs leading-tight text-muted" title={tile.label}>{tile.kindLabel}</span>
             </li>
           );
         })}
@@ -107,7 +113,7 @@ export function ProductImagePicker({ productId, tiles, picked, onChange, onUploa
               type="button" onClick={() => input.current?.click()} disabled={uploading}
               className="grid size-[72px] place-items-center rounded-inner border border-dashed border-line px-1 text-center text-xs leading-tight text-muted transition hover:border-ink/30 hover:text-ink disabled:cursor-wait"
             >
-              {uploading ? <Spinner /> : <span className="grid justify-items-center gap-1"><IconPlus className="size-4" />Upload an image</span>}
+              {uploading ? <Spinner /> : <span className="grid justify-items-center gap-1"><IconPlus className="size-4" />{t("Upload an image")}</span>}
             </button>
             <input ref={input} type="file" accept={ASSET_IMAGE_TYPES.join(",")} className="hidden" onChange={(e) => {
               const file = e.target.files?.[0];
@@ -121,9 +127,9 @@ export function ProductImagePicker({ productId, tiles, picked, onChange, onUploa
       {error && <p className="text-xs text-warn">{error}</p>}
       <p className="text-xs text-muted">
         {tiles.length
-          ? <>{picked.length ? `${picked.length} of ${max} picked, sent in this order.` : `Pick up to ${max}; none are picked for you.`}{full ? " Unpick one to choose another." : ""} </>
-          : "No product images yet. "}
-        <Link href={productId ? `/app/w/${productId}/brand?tab=assets` : "/app/w"} className="text-accent hover:underline">{tiles.length ? "Add or sort images on the Assets tab" : "Add product images on the Assets tab"}</Link>
+          ? <>{picked.length ? t("{n} of {max} picked, sent in this order.", { n: picked.length, max }) : t("Pick up to {max}; none are picked for you.", { max })}{full ? `${gap}${t("Unpick one to choose another.")}` : ""}{gap}</>
+          : `${t("No product images yet.")}${gap}`}
+        <Link href={productId ? `${appSettingsHref(productId, "brand")}#assets` : "/app/w"} className="text-accent hover:underline">{tiles.length ? t("Add or sort images in App settings › Brand") : t("Add product images in App settings › Brand")}</Link>
       </p>
     </div>
   );

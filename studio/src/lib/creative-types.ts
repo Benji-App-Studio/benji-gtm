@@ -132,7 +132,7 @@ export interface StudioOverview {
   backend: { typesafe: boolean; higgsfieldApi: boolean; runner: boolean; drive: boolean; openaiImages?: boolean; wallClockSec?: number | null; openaiImagePlan?: import("./image-provider").OpenAiImagePlan | null } | null;
   /** Template remakes' batches: their realtime jobs and creatives stay out of the Studio (lib/studio-sources.ts). */
   hiddenBatchIds?: string[];
-  /** The Playground's batches: their jobs stay on the Playground; their creatives are reviewed here, badged "Playground". */
+  /** The Playground's batches: their jobs stay on the Playground; their creatives are reviewed here, badged "Remix". */
   playgroundBatchIds?: string[];
   error?: string;
 }

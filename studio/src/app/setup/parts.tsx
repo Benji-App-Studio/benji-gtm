@@ -4,6 +4,10 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { Badge, Button, Card, cx, ErrorNote, Spinner } from "@/components/ui";
 import { IconCheck, IconExternal } from "@/components/icons";
+import { rich, sentenceGap } from "@/components/rich";
+import { useT } from "@/lib/i18n/client";
+import { provisionText } from "./provision-words";
+import { m } from "@/lib/i18n/translate";
 import { STEP_LABELS, type ProgressEvent, type StepId, type StepStatus } from "@/lib/server/provision/types";
 
 export const SUPABASE_LINKS = {
@@ -36,6 +40,7 @@ export type CardState = "todo" | "open" | "done";
 export function StepCard({ number, title, why, state, summary, onOpen, children }: {
   number: number; title: string; why: ReactNode; state: CardState; summary?: ReactNode; onOpen?: () => void; children: ReactNode;
 }) {
+  const { t } = useT();
   return (
     <Card className={cx("px-4 py-3", state === "open" && "pb-4", state === "todo" && "opacity-60")} aria-current={state === "open" ? "step" : undefined}>
       <div className="flex items-start gap-3">
@@ -47,8 +52,8 @@ export function StepCard({ number, title, why, state, summary, onOpen, children 
             <h2 className="text-sm font-medium">{title}</h2>
             {state === "done" && (
               <span className="flex items-center gap-2">
-                <Badge tone="win">Done</Badge>
-                {onOpen && <Button type="button" variant="ghost" size="sm" onClick={onOpen}>Change</Button>}
+                <Badge tone="win">{t("Done")}</Badge>
+                {onOpen && <Button type="button" variant="ghost" size="sm" onClick={onOpen}>{t("Change")}</Button>}
               </span>
             )}
           </div>
@@ -66,21 +71,23 @@ export function StepCard({ number, title, why, state, summary, onOpen, children 
 }
 
 /** What an access token is, said plainly, and how to make one. `action` is the button pressed after pasting it. */
-export function TokenHelp({ appName, action = "Check" }: { appName: string; action?: string }) {
+export function TokenHelp({ appName, action }: { appName: string; action?: string }) {
+  const { t, locale } = useT();
+  const gap = sentenceGap(locale);
   return (
     <>
       <p className="text-sm text-ink">
-        An access token gives {appName}, on this computer, temporary access to your Supabase account. It is used only while this page works.
-        It is not saved anywhere. You can delete it in Supabase as soon as you are done.
+        {t("An access token gives {app}, on this computer, temporary access to your Supabase account. It is used only while this page works.", { app: appName })}{gap}
+        {t("It is not saved anywhere. You can delete it in Supabase as soon as you are done.")}
       </p>
       <Steps>
-        <li>Open <OutLink href={SUPABASE_LINKS.tokens}>Access Tokens in Supabase</OutLink>.</li>
-        <li>Click <b>Generate new token</b> and name it &quot;setup&quot;.</li>
-        <li>Choose your project, and the <b>Full access</b> preset.</li>
-        <li>Pick the shortest expiry, create the token, and click <b>Copy</b>. It starts with <code>sbp_</code>.</li>
-        <li>Paste it in the box below and click <b>{action}</b>.</li>
+        <li>{rich(t("Open {link}."), { link: <OutLink href={SUPABASE_LINKS.tokens}>{t("Access Tokens in Supabase")}</OutLink> })}</li>
+        <li>{rich(t("Click {button} and name it \"setup\"."), { button: <b>Generate new token</b> })}</li>
+        <li>{rich(t("Choose your project, and the {preset} preset."), { preset: <b>Full access</b> })}</li>
+        <li>{rich(t("Pick the shortest expiry, create the token, and click {copy}. It starts with {prefix}."), { copy: <b>Copy</b>, prefix: <code>sbp_</code> })}</li>
+        <li>{rich(t("Paste it in the box below and click {action}."), { action: <b>{action ?? t("Check")}</b> })}</li>
       </Steps>
-      <p className="text-sm text-muted">If the page says the token isn&apos;t allowed, create it again with <b>Full access</b>: a Read-only token doesn&apos;t work.</p>
+      <p className="text-sm text-muted">{rich(t("If the page says the token isn't allowed, create it again with {preset}: a Read-only token doesn't work."), { preset: <b>Full access</b> })}</p>
     </>
   );
 }
@@ -100,11 +107,11 @@ export async function runStream(url: string, body: unknown, onEvent: (event: Pro
   try {
     response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   } catch {
-    return { message: "Couldn't reach the app. Check that it is still running, then press Retry." };
+    return { message: m("Couldn't reach the app. Check that it is still running, then press Retry.") };
   }
   if (!response.ok || !response.body) {
     const data = (await response.json().catch(() => null)) as { error?: string; detail?: string; code?: string } | null;
-    return { message: data?.error ?? "Setup couldn't start. Press Retry.", detail: data?.detail, code: data?.code ?? (response.status === 401 || response.status === 403 ? `http_${response.status}` : undefined) };
+    return { message: data?.error ?? m("Setup couldn't start. Press Retry."), detail: data?.detail, code: data?.code ?? (response.status === 401 || response.status === 403 ? `http_${response.status}` : undefined) };
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -115,7 +122,7 @@ export async function runStream(url: string, body: unknown, onEvent: (event: Pro
     let parsed: ({ type: "event" } & ProgressEvent) | { type: "result"; ok: boolean; failed: RunFailure | null };
     try { parsed = JSON.parse(line); } catch { return; }
     if (parsed.type === "event") onEvent(parsed);
-    else if (parsed.type === "result") outcome = parsed.ok ? null : parsed.failed ?? { message: "Setup stopped. Press Retry." };
+    else if (parsed.type === "result") outcome = parsed.ok ? null : parsed.failed ?? { message: m("Setup stopped. Press Retry.") };
   };
   try {
     for (;;) {
@@ -128,9 +135,9 @@ export async function runStream(url: string, body: unknown, onEvent: (event: Pro
     }
     take(buffer);
   } catch {
-    return { message: "The connection to the app dropped. Press Retry: finished steps are skipped." };
+    return { message: m("The connection to the app dropped. Press Retry: finished steps are skipped.") };
   }
-  return outcome === undefined ? { message: "Setup stopped before it finished. Press Retry: finished steps are skipped." } : outcome;
+  return outcome === undefined ? { message: m("Setup stopped before it finished. Press Retry: finished steps are skipped.") } : outcome;
 }
 
 /** Keeps the latest state of each step while a run streams in. */
@@ -145,6 +152,8 @@ export function useProgress() {
 
 /** The live list: every step with its state and latest message, technical detail folded away. */
 export function ProgressList({ ids, steps, running }: { ids: readonly StepId[]; steps: ProgressMap; running: boolean }) {
+  const tr = useT();
+  const { t } = tr;
   const details = ids.flatMap((id) => (steps[id]?.detail ? [`${id}: ${steps[id]?.detail}`] : []));
   return (
     <div>
@@ -161,9 +170,9 @@ export function ProgressList({ ids, steps, running }: { ids: readonly StepId[]; 
                   : <span className="size-2 rounded-full bg-control" />}
               </span>
               <span className="min-w-0">
-                <span className={cx("font-medium", status === "waiting" ? "text-muted" : "text-ink")}>{STEP_LABELS[id]}</span>
+                <span className={cx("font-medium", status === "waiting" ? "text-muted" : "text-ink")}>{t(STEP_LABELS[id])}</span>
                 {step && <span className={cx("block", status === "failed" ? "text-warn" : "text-muted")}>
-                  {step.message}{step.progress && status === "running" ? ` (${step.progress.done} of ${step.progress.total})` : ""}
+                  {provisionText(step.message, tr)}{step.progress && status === "running" ? ` (${t("{done} of {total}", { done: step.progress.done, total: step.progress.total })})` : ""}
                 </span>}
               </span>
             </li>
@@ -172,7 +181,7 @@ export function ProgressList({ ids, steps, running }: { ids: readonly StepId[]; 
       </ul>
       {details.length > 0 && (
         <details className="mt-3 text-xs text-muted">
-          <summary className="cursor-pointer">Technical detail</summary>
+          <summary className="cursor-pointer">{t("Technical detail")}</summary>
           <pre className="mt-2 max-h-48 overflow-auto rounded-small bg-control p-3 font-mono text-[11px] whitespace-pre-wrap">{details.join("\n")}</pre>
         </details>
       )}
@@ -182,16 +191,18 @@ export function ProgressList({ ids, steps, running }: { ids: readonly StepId[]; 
 
 /** What went wrong, in one sentence, with the technical detail folded away and a Retry button. */
 export function FailureNote({ failure, onRetry, busy }: { failure: RunFailure; onRetry?: () => void; busy?: boolean }) {
+  const tr = useT();
+  const { t } = tr;
   return (
-    <ErrorNote title="This step didn't finish" className="mb-0">
-      <p>{failure.message}</p>
+    <ErrorNote title={t("This step didn't finish")} className="mb-0">
+      <p>{provisionText(failure.message, tr)}</p>
       {failure.detail && (
         <details className="mt-2 text-xs text-muted">
-          <summary className="cursor-pointer">Technical detail</summary>
+          <summary className="cursor-pointer">{t("Technical detail")}</summary>
           <pre className="mt-2 max-h-48 overflow-auto rounded-small bg-control p-3 font-mono text-[11px] whitespace-pre-wrap">{failure.detail}</pre>
         </details>
       )}
-      {onRetry && <Button type="button" variant="secondary" size="sm" className="mt-3" onClick={onRetry} disabled={busy}>Retry</Button>}
+      {onRetry && <Button type="button" variant="secondary" size="sm" className="mt-3" onClick={onRetry} disabled={busy}>{t("Retry")}</Button>}
     </ErrorNote>
   );
 }
@@ -201,9 +212,9 @@ export async function postJson<T>(url: string, body: unknown): Promise<{ data: T
   try {
     const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const data = (await response.json().catch(() => null)) as (T & { error?: string; detail?: string; code?: string }) | null;
-    if (!response.ok) return { data: null, error: { message: data?.error ?? "That didn't work. Try again.", detail: data?.detail, code: data?.code } };
+    if (!response.ok) return { data: null, error: { message: data?.error ?? m("That didn't work. Try again."), detail: data?.detail, code: data?.code } };
     return { data, error: null };
   } catch {
-    return { data: null, error: { message: "Couldn't reach the app. Check that it is still running, then try again." } };
+    return { data: null, error: { message: m("Couldn't reach the app. Check that it is still running, then try again.") } };
   }
 }

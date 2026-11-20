@@ -8,6 +8,7 @@
 // so light and dark both work. Labels stay in text tokens; the marks carry the colour.
 import { useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { cx } from "@/components/ui";
+import { useT } from "@/lib/i18n/client";
 
 /** Diagonal stripes ("/") in a token colour, fading a little toward the baseline. */
 export function hatch(color: string, fade = true): CSSProperties {
@@ -128,17 +129,18 @@ export function Waterfall({ start, steps, end, format }: { start: Step; steps: S
           <span className="absolute inset-y-0 rounded-xs" style={{ ...bar(0, start.value), ...hatch(NEUTRAL, false) }} />, start.value)}
         {rows.map((r) => (
           <div key={r.label}>
-            {row(r.label, <span className="text-warn">{r.value < 0 ? "−" : "+"}{format(Math.abs(r.value))}</span>, r.note,
+            {row(r.label, <span className="text-warn">{r.value < 0 ? format(r.value) : `+${format(r.value)}`}</span>, r.note,
               <span className="absolute inset-y-0 rounded-xs" style={{ ...bar(r.from, r.to), ...hatch(r.value < 0 ? WARN : ACCENT, false) }} />,
               r.to)}
           </div>
         ))}
-        {row(end.label, <span className={end.value < 0 ? "text-warn" : "text-ink"}>{end.value < 0 ? "−" : ""}{format(Math.abs(end.value))}</span>, end.note,
+        {row(end.label, <span className={end.value < 0 ? "text-warn" : "text-ink"}>{format(end.value)}</span>, end.note,
           <span className="absolute inset-y-0 rounded-xs" style={{ ...bar(0, end.value), background: end.value < 0 ? WARN : ACCENT }} />)}
       </div>
+      {/* On a phone every other tick is left out, so the labels don't run into each other. */}
       <div className="relative mt-3 h-4 text-xs text-muted tabular-nums">
         {ticks.map((t, i) => (
-          <span key={i} className={cx("absolute", i === 0 ? "" : i === ticks.length - 1 ? "-translate-x-full" : "-translate-x-1/2")} style={{ left: `${x(t)}%` }}>{format(t)}</span>
+          <span key={i} className={cx("absolute", i === 0 ? "" : i === ticks.length - 1 ? "-translate-x-full" : "-translate-x-1/2", i % 2 === 1 && "max-sm:hidden")} style={{ left: `${x(t)}%` }}>{format(t)}</span>
         ))}
       </div>
     </div>
@@ -231,11 +233,12 @@ export function BandLine({ points, height = 240, name, format }: { points: LineP
 
 /** The legend for BandLine: a solid line, a dashed line and the band (identity never by colour alone). */
 export function BandLegend({ solid, dashed }: { solid: string; dashed?: string }) {
+  const { t } = useT();
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
       <span className="inline-flex items-center gap-1.5"><span aria-hidden className="h-0.5 w-4 rounded-full bg-accent" />{solid}</span>
       {dashed && <span className="inline-flex items-center gap-1.5"><span aria-hidden className="w-4 border-t-2 border-dashed border-accent/70" />{dashed}</span>}
-      {dashed && <span className="inline-flex items-center gap-1.5"><span aria-hidden className="h-2.5 w-4 rounded-xs bg-accent/15" />Likely range</span>}
+      {dashed && <span className="inline-flex items-center gap-1.5"><span aria-hidden className="h-2.5 w-4 rounded-xs bg-accent/15" />{t("Likely range")}</span>}
     </div>
   );
 }

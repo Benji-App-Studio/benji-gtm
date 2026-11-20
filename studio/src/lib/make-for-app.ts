@@ -17,14 +17,15 @@
 //    backend sends them. Nothing of the competitor's words is quoted: the copy lines are the app's own.
 // 4. makeCost() estimates what one image costs on each provider, makeRequest() is the BatchRequest that
 //    "Generate here" starts (the same one the Studio and Playground use), makeHandoff() the Studio handoff.
-import { cleanMustAvoid, DEFAULT_REQUEST, jobCost, type BatchRequest, type ImageQuality, type ImageResolution } from "./creative-plan";
+import { cleanMustAvoid, cleanSourceAd, DEFAULT_REQUEST, jobCost, type BatchRequest, type SourceAdRef, type ImageQuality, type ImageResolution } from "./creative-plan";
 import { costLabel, fmtUsd, openAiImageMode, openAiImageUsd, type ImageProvider, type OpenAiImagePlan } from "./image-provider";
 import { nearestPlacement, placementById, PLACEMENTS, type Aspect, type PlacementId } from "./meta-formats";
 import { brandVariants, PROMPT_MAX, type RecreateHandoff, type RecreateSource } from "./recreate";
 import { AD_FORMAT_LABEL } from "./research";
-import { HOOK_LABEL, ROLE_LABEL } from "./types";
+import { HOOK_LABEL, ROLE_PROMPT_NAME } from "./types";
 import { verifiedFacts, type BrandSystem } from "./brand-system";
 import type { ProductProfile } from "./product-insight";
+import { fill, m, type Translator } from "./i18n/translate";
 
 // MARK: The student's app
 
@@ -90,8 +91,14 @@ const cut = (text: string, max: number) => (text.length > max ? `${text.slice(0,
 
 const ROLE_ORDER = ["primary", "secondary", "accent", "background", "neutral"];
 
-/** The app as the prompts need it, from the brand kit, the brand system, the AI profile and the product images. */
-export function appFromBrand(brand: BrandLike | null | undefined, assets: AssetLike[] = []): MakeApp {
+/** A picture a provider can fetch: an https address (the example app also accepts its own bundled pictures). */
+const isHttps = (url: string) => /^https:\/\//.test(url);
+
+/**
+ * The app as the prompts need it, from the brand kit, the brand system, the AI profile and the product
+ * images. `fetchable` says which picture addresses count (https by default).
+ */
+export function appFromBrand(brand: BrandLike | null | undefined, assets: AssetLike[] = [], fetchable: (url: string) => boolean = isHttps): MakeApp {
   const b = brand ?? { appName: "" };
   const sys = b.system ?? null;
   const p = b.profile ?? null;
@@ -101,7 +108,7 @@ export function appFromBrand(brand: BrandLike | null | undefined, assets: AssetL
     .map((hex, i) => ({ hex: hex.toUpperCase(), role: palette.length ? "accent" : ["primary", "secondary"][i] ?? "accent" }));
   const colors = [...palette, ...kit].sort((x, y) => (ROLE_ORDER.indexOf(x.role) + 9) % 9 - (ROLE_ORDER.indexOf(y.role) + 9) % 9).slice(0, 6);
   const fonts = (sys?.fonts ?? []).filter((f) => squash(f.family)).map((f) => ({ role: f.role, family: squash(f.family), ...(f.weight ? { weight: f.weight } : {}) })).slice(0, 3);
-  const visible = assets.filter((a) => !a.hidden && /^https:\/\//.test(a.url));
+  const visible = assets.filter((a) => !a.hidden && fetchable(a.url));
   const productClaims = (sys?.products ?? []).flatMap((x) => x.claims);
   const facts = verifiedFacts(sys).map((f) => `${f.label}: ${f.value}`);
   return {
@@ -117,7 +124,7 @@ export function appFromBrand(brand: BrandLike | null | undefined, assets: AssetL
     tone: bare(b.tone || sys?.voice.oneLine || p?.voice || ""),
     cta: bare(p?.ctas[0] || "Download now"),
     logoUrl: visible.find((a) => a.kind === "logo")?.url ?? null,
-    iconUrl: /^https:\/\//.test(b.iconUrl ?? "") ? b.iconUrl! : null,
+    iconUrl: fetchable(b.iconUrl ?? "") ? b.iconUrl! : null,
     screenshots: Math.max(0, b.screenshots ?? 0),
     screens: visible.filter((a) => a.kind === "app_screen").map((a) => a.url).slice(0, 3),
   };
@@ -129,13 +136,13 @@ export interface MakeGap { key: MakeGapKey; label: string; /** Missing colours o
 /** What the Brand page still lacks for a good prompt. The prompt still works without it: it just says less. */
 export function brandGaps(app: MakeApp): MakeGap[] {
   const gaps: MakeGap[] = [];
-  if (!app.name) gaps.push({ key: "name", label: "your app's name", main: true });
-  if (!app.colors.length) gaps.push({ key: "colors", label: "brand colours", main: true });
-  if (!app.logoUrl && !app.iconUrl) gaps.push({ key: "logo", label: "a logo or app icon", main: true });
-  if (!app.does) gaps.push({ key: "does", label: "what it does", main: false });
-  if (!app.audience) gaps.push({ key: "audience", label: "who it's for", main: false });
-  if (!app.outcome) gaps.push({ key: "outcome", label: "the outcome it promises", main: false });
-  if (!app.fonts.length) gaps.push({ key: "fonts", label: "fonts", main: false });
+  if (!app.name) gaps.push({ key: "name", label: m("your app's name"), main: true });
+  if (!app.colors.length) gaps.push({ key: "colors", label: m("brand colours"), main: true });
+  if (!app.logoUrl && !app.iconUrl) gaps.push({ key: "logo", label: m("a logo or app icon"), main: true });
+  if (!app.does) gaps.push({ key: "does", label: m("what it does"), main: false });
+  if (!app.audience) gaps.push({ key: "audience", label: m("who it's for"), main: false });
+  if (!app.outcome) gaps.push({ key: "outcome", label: m("the outcome it promises"), main: false });
+  if (!app.fonts.length) gaps.push({ key: "fonts", label: m("fonts"), main: false });
   return gaps;
 }
 
@@ -148,6 +155,8 @@ export interface AdBlueprint {
   mode: MakeMode;
   video: boolean;
   format: string;
+  /** `format` for the screen: an m()-marked label and its values, to translate. Missing when `format` is their own name (shown as it is). */
+  formatText?: { text: string; vars?: Record<string, number> };
   aspect: Aspect;
   placement: PlacementId;
   cards: number;
@@ -232,16 +241,18 @@ export function blueprint(src: RecreateSource, mode?: "still" | "video"): AdBlue
   const placement = (src.width && src.height ? nearestPlacement(src.width, src.height) : undefined)?.id ?? (src.video ? "stories_reels" : "feed_vertical");
   const cards = src.mediaType === "carousel" ? Math.max(2, Math.min(10, src.cardCount)) : 1;
   const formatId = src.decoded?.format && src.decoded.format !== "no_clear_format" ? src.decoded.format : null;
-  const format = formatId ? AD_FORMAT_LABEL[formatId] ?? formatId.replace(/_/g, " ")
-    : src.video ? "Video ad" : src.mediaType === "carousel" ? `Carousel of ${cards} cards` : "Single image ad";
-  const roles = (src.decoded?.roles ?? []).map((r) => ROLE_LABEL[r.role] ?? "").filter((r) => r && r !== "Other");
+  const CAROUSEL = m("Carousel of {n} cards");
+  const formatText: AdBlueprint["formatText"] = formatId ? (AD_FORMAT_LABEL[formatId] ? { text: AD_FORMAT_LABEL[formatId] } : undefined)
+    : src.video ? { text: m("Video ad") } : src.mediaType === "carousel" ? { text: CAROUSEL, vars: { n: cards } } : { text: m("Single image ad") };
+  const format = formatText ? fill(formatText.text, formatText.vars) : (formatId ?? "").replace(/_/g, " ");
+  const roles = (src.decoded?.roles ?? []).map((r) => ROLE_PROMPT_NAME[r.role] ?? "").filter((r) => r && r !== "Other");
   const structure = roles.length ? roles.filter((r, i) => roles.indexOf(r) === i)
     : [src.headline || src.body ? "Hook" : "", src.body.length > 60 ? "Benefit" : "", src.cta ? "CTA" : ""].filter(Boolean);
   const shots = (src.videoScan?.shots ?? []).slice(0, 8).map((s) => ({ from: s.start, to: s.end, type: s.shot_type.replace(/_/g, " "), visual: cut(clean(s.visual), 140) }));
   const how = src.video ? (mode ?? "video") : "image";
   return {
     // A still from a video ad with no named format is an image ad, not "a video ad" (the still line says the rest).
-    mode: how, video: src.video, format: how === "still" && !formatId ? "Single image ad" : format,
+    mode: how, video: src.video, ...(how === "still" && !formatId ? { format: "Single image ad", formatText: { text: "Single image ad" } } : { format, ...(formatText ? { formatText } : {}) }),
     aspect: how === "video" ? "9:16" : ASPECT_OF[placement], placement: how === "video" ? "stories_reels" : placement, cards: how === "image" ? cards : 1,
     layout: cut(clean(style?.layout) || defaultLayout(src, cards), 260),
     hook: cut(hookLine(src, clean), 220),
@@ -260,12 +271,12 @@ export function blueprint(src: RecreateSource, mode?: "still" | "video"): AdBlue
 // MARK: The prompts
 
 export type PromptVariant = "gpt" | "higgsfield" | "general";
-export const VARIANT_LABEL: Record<PromptVariant, string> = { gpt: "GPT Image / ChatGPT", higgsfield: "Higgsfield", general: "General" };
+export const VARIANT_LABEL: Record<PromptVariant, string> = { gpt: "GPT Image / ChatGPT", higgsfield: "Higgsfield", general: m("General") };
 /** One line on how to use each variant in its own tool. */
 export const VARIANT_HOW: Record<PromptVariant, string> = {
-  gpt: "In ChatGPT: attach the reference and your brand kit images, paste the prompt, send.",
-  higgsfield: "In Higgsfield: pick GPT Image 2.5 (or Seedance for video), add the images in the order the prompt numbers them, paste the prompt.",
-  general: "In Midjourney or another tool: paste the prompt; add the reference as an image prompt or style reference where the tool takes one.",
+  gpt: m("In ChatGPT: attach the reference and your brand kit images, paste the prompt, send."),
+  higgsfield: m("In Higgsfield: pick GPT Image 2.5 (or Seedance for video), add the images in the order the prompt numbers them, paste the prompt."),
+  general: m("In Midjourney or another tool: paste the prompt; add the reference as an image prompt or style reference where the tool takes one."),
 };
 
 export interface RefPlan {
@@ -553,6 +564,8 @@ export interface MakeRequestInput {
   /** Send the brand kit's screenshots last. */
   screenshots: boolean;
   mustAvoid: string[];
+  /** The Research ad this is made from, kept on the batch for Launch's lineage. */
+  sourceAd?: SourceAdRef | null;
 }
 
 const placementFor = (aspect: Aspect): PlacementId => PLACEMENTS.find((p) => p.aspect === aspect)?.id ?? "feed_vertical";
@@ -582,6 +595,7 @@ export function makeRequest(i: MakeRequestInput): BatchRequest {
     brandInBrief: true,
     useProfile: false,
     fromRecreate: true,
+    sourceAd: cleanSourceAd(i.sourceAd),
   };
 }
 
@@ -622,17 +636,17 @@ export function makeHandoff(src: RecreateSource, b: AdBlueprint, prompt: string,
 }
 
 /** A provider's error, in plain words, with what to do (the job's stored error is shown as well). */
-export function providerErrorText(error: string | null | undefined, provider: ImageProvider): string {
+export function providerErrorText(error: string | null | undefined, provider: ImageProvider, t: Translator["t"] = (text, vars) => fill(text, vars)): string {
   const e = (error ?? "").toLowerCase();
   const name = provider === "openai" ? "OpenAI" : "Higgsfield";
-  if (!e) return `${name} couldn't make it. Try again, or try the other provider.`;
-  if (/429|rate.?limit|busy|too many|concurren/.test(e)) return `${name} is busy right now (too many requests). Wait a minute and retry, or switch provider.`;
-  if (/credit|balance|insufficient|quota|billing|payment/.test(e)) return `${name} says the account is out of credits or over its limit. Top it up on ${name}'s site, then retry, or switch provider.`;
-  if (/key|unauthori|401|403|invalid api/.test(e)) return `${name} didn't accept the key. Check it in Settings > API keys, then retry.`;
-  if (/safety|policy|moderat|rejected|refus/.test(e)) return `${name} refused the prompt under its content rules. Edit the prompt (fewer claims, no people or brands) and retry.`;
-  if (/storage is full|no room/.test(e)) return "Storage is full, so the result couldn't be saved. Free up space in Settings > Storage, then retry.";
-  if (/timed? ?out|took longer|time limit/.test(e)) return `${name} took too long for this Supabase plan. Retry with a lower quality or resolution.`;
-  return `${name} couldn't make it: ${cut(squash(error), 160)}`;
+  if (!e) return t("{name} couldn't make it. Try again, or try the other provider.", { name });
+  if (/429|rate.?limit|busy|too many|concurren/.test(e)) return t("{name} is busy right now (too many requests). Wait a minute and retry, or switch provider.", { name });
+  if (/credit|balance|insufficient|quota|billing|payment/.test(e)) return t("{name} says the account is out of credits or over its limit. Top it up on {name}'s site, then retry, or switch provider.", { name });
+  if (/key|unauthori|401|403|invalid api/.test(e)) return t("{name} didn't accept the key. Check it in Settings › Your keys, then retry.", { name });
+  if (/safety|policy|moderat|rejected|refus/.test(e)) return t("{name} refused the prompt under its content rules. Edit the prompt (fewer claims, no people or brands) and retry.", { name });
+  if (/storage is full|no room/.test(e)) return t("Storage is full, so the result couldn't be saved. Free up space in Settings › Storage, then retry.");
+  if (/timed? ?out|took longer|time limit/.test(e)) return t("{name} took too long for this Supabase plan. Retry with a lower quality or resolution.", { name });
+  return t("{name} couldn't make it: {error}", { name, error: cut(squash(error), 160) });
 }
 
 /**

@@ -5,6 +5,8 @@
 import Link from "next/link";
 import { useSyncExternalStore, type ReactNode } from "react";
 import { featureState, type Feature, type FeatureState } from "@/lib/capabilities";
+import { useT } from "@/lib/i18n/client";
+import { sentenceGap } from "@/lib/i18n/join";
 import { useInstall } from "@/lib/install/use-install";
 import type { WorkspaceConnections } from "@/lib/workspace-schema";
 import { ConnectState, Locked } from "../ui";
@@ -13,16 +15,18 @@ type App = { id: string; connections?: WorkspaceConnections | null } | null;
 
 /** What a feature still needs, or null when it's ready (or nothing is known yet). */
 export function useLocked(feature: Feature, app?: App): FeatureState | null {
+  const { t, intl } = useT();
   const { install } = useInstall();
-  const state = featureState(feature, install, app);
+  const state = featureState(feature, install, app, { t, intl });
   return state.ok ? null : state;
 }
 
 /** The first of several features that isn't ready, or null. */
 export function useFirstLocked(features: Feature[], app?: App): FeatureState | null {
+  const { t, intl } = useT();
   const { install } = useInstall();
   for (const feature of features) {
-    const state = featureState(feature, install, app);
+    const state = featureState(feature, install, app, { t, intl });
     if (!state.ok) return state;
   }
   return null;
@@ -36,9 +40,10 @@ const never = () => () => {};
  * browser must agree on): show a placeholder then, so a form never flashes before its locked state.
  */
 export function useGate(features: Feature[], app?: App): { locked: FeatureState | null; also: FeatureState[]; checking: boolean } {
+  const { t, intl } = useT();
   const { install, loading } = useInstall();
   const hydrated = useSyncExternalStore(never, () => true, () => false);
-  const missing = features.map((feature) => featureState(feature, install, app)).filter((state) => !state.ok);
+  const missing = features.map((feature) => featureState(feature, install, app, { t, intl })).filter((state) => !state.ok);
   return { locked: missing[0] ?? null, also: missing.slice(1), checking: !hydrated || loading };
 }
 
@@ -50,12 +55,13 @@ export function LockedNote({ state, children, className }: { state: FeatureState
 /** Page-level: what to connect, where, and (optionally) another way to get there without it. */
 export function ConnectFor({ state, also = [], otherwise, className }: { state: FeatureState; also?: FeatureState[]; otherwise?: ReactNode; className?: string }) {
   // The other keys the same page needs, so the second one isn't a surprise after the first is added.
+  const { t } = useT();
   const more = also.filter((other) => other.missingKeys.length && other.title);
   return (
     <ConnectState className={className} title={state.title} href={state.href} action={state.action}
       body={<>
         {state.body}
-        {more.map((other) => <span key={other.feature} className="mt-2 block">Also needed: {other.title.replace(/^Connect /, "")}.</span>)}
+        {more.map((other) => <span key={other.feature} className="mt-2 block">{t("Also needed: {what}.", { what: other.missingKeys.join(" + ") })}</span>)}
         {otherwise && <span className="mt-2 block">{otherwise}</span>}
       </>} />
   );
@@ -63,8 +69,7 @@ export function ConnectFor({ state, also = [], otherwise, className }: { state: 
 
 /** The free way to get ads in, as a sentence with its link: the Chrome extension's file, dropped on Research. */
 export function FreeRoute({ productId }: { productId?: string | null }) {
-  const where = productId
-    ? <Link href={`/app/w/${productId}/research`} className="font-medium text-accent hover:underline">Research</Link>
-    : "your app's Research page";
-  return <>No key needed for paid ads: collect a competitor&apos;s ads with the Ad Library extension and import the file on {where}.</>;
+  const { t, locale } = useT();
+  if (!productId) return <>{t("No key needed for paid ads: collect a competitor's ads with the Ad Library extension and import the file on your app's Research page.")}</>;
+  return <>{t("No key needed for paid ads: collect a competitor's ads with the Ad Library extension and import the file on Research.")}{sentenceGap(locale)}<Link href={`/app/w/${productId}/research`} className="font-medium text-accent hover:underline">{t("Open Research")}</Link></>;
 }

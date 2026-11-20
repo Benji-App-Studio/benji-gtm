@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
+import { getTranslator } from "@/lib/i18n/server";
 import { ResearchSourcesSettings } from "@/components/settings/research-sources";
 
-export const metadata: Metadata = { title: "Research sources" };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getTranslator();
+  return { title: t("Research sources") };
+}
 
 export default function ResearchSourcesSettingsPage() {
   return <ResearchSourcesSettings />;

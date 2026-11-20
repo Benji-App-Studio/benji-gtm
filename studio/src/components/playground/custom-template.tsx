@@ -12,6 +12,8 @@ import type { ProductFitKind, ProductTemplate, TemplateAnalysis, TemplateField }
 import { cx, Segmented } from "../ui";
 import { insertReview, reviewSlot, verbatimReviewIds, type AppStoreReview } from "@/lib/reviews";
 import { ReviewPicker } from "./review-picker";
+import { fill, m, type Vars } from "@/lib/i18n/translate";
+import { useT } from "@/lib/i18n/client";
 import { DetailHeader, FieldInput, FormFooter, Note, ProductImagePicker, PromptPreview, StyleThumb, WhatItsFor, wideKeys, type OnUse, type ProductImage } from "./style-library";
 
 // MARK: The prompt
@@ -20,12 +22,15 @@ const clean = (s: string | undefined | null) => (s ?? "").trim().replace(/\s+/g,
 const q = (s: string) => `"${clean(s)}"`;
 const cutWords = (s: string, max: number) => (s.length > max ? `${s.slice(0, max).replace(/\s+\S*$/, "")}…` : s);
 const TEXT_RULE = "TEXT ON THE IMAGE, exactly as written (letter for letter; nothing added or reworded; no other words):";
+/** The page's `t` (useT); English without one. */
+type Translate = (text: string, vars?: Vars) => string;
+const english: Translate = (text, vars) => fill(text, vars);
 /** Below this, the layout line says too little to help: it's dropped instead of cut. */
 const MIN_LAYOUT = 80;
 
 /** The same wording the starters use for evidence (lib/ad-styles.ts), for the slots the analysis marked sensitive. */
-export const SENSITIVE_CAUTION = "Stats, reviews and ratings must be your own: real, sourced numbers (your user data or a published study) and a real customer's words, used with their permission. Made-up or rounded-up stats and invented reviews break Meta's ad policies and consumer-protection law.";
-const SENSITIVE_HINT = "Your own, real and sourced. Never estimated or invented.";
+export const SENSITIVE_CAUTION = m("Stats, reviews and ratings must be your own: real, sourced numbers (your user data or a published study) and a real customer's words, used with their permission. Made-up or rounded-up stats and invented reviews break Meta's ad policies and consumer-protection law.");
+const SENSITIVE_HINT = m("Your own, real and sourced. Never estimated or invented.");
 
 /** The ratios a template offers: its own, plus the nearest feed or Stories shape it can reflow into. */
 export function templateAspects(aspect: Aspect): Aspect[] {
@@ -37,13 +42,13 @@ export function templateAspects(aspect: Aspect): Aspect[] {
 export const defaultTemplateFields = (fields: TemplateField[], appName = ""): Record<string, string> =>
   Object.fromEntries(fields.map((f) => [f.key, f.sensitive ? "" : appName.trim() ? f.example.replace(/\bBRAND\b/g, appName.trim()) : f.example]));
 
-/** Problems by key: sensitive slots are required, and every slot has a length limit. */
-export function validateTemplateFields(fields: TemplateField[], values: Record<string, string>): Record<string, string> {
+/** Problems by key: sensitive slots are required, and every slot has a length limit. In `t`'s language ("Required" is `t("Required")`). */
+export function validateTemplateFields(fields: TemplateField[], values: Record<string, string>, t: Translate = english): Record<string, string> {
   const errors: Record<string, string> = {};
   for (const f of fields) {
     const v = clean(values[f.key]);
-    if (f.sensitive && !v) errors[f.key] = "Required";
-    else if (v.length > f.maxLength) errors[f.key] = `${v.length}/${f.maxLength} characters`;
+    if (f.sensitive && !v) errors[f.key] = t("Required");
+    else if (v.length > f.maxLength) errors[f.key] = t("{n}/{max} characters", { n: v.length, max: f.maxLength });
   }
   return errors;
 }
@@ -106,10 +111,10 @@ export function buildTemplatePrompt(template: ProductTemplate, analysis: Templat
 // MARK: The form
 
 /** A TemplateField in the starters' field shape, so both forms share one input. */
-const asStyleField = (f: TemplateField): StyleField => ({
+const asStyleField = (f: TemplateField, t: Translate): StyleField => ({
   key: f.key, label: f.label, maxLength: f.maxLength, multiline: f.multiline, onImage: true, required: f.sensitive, evidence: f.sensitive, default: "",
-  placeholder: f.sensitive ? "Your own, real and sourced" : f.example,
-  hint: f.sensitive ? SENSITIVE_HINT : undefined,
+  placeholder: f.sensitive ? t("Your own, real and sourced") : f.example,
+  hint: f.sensitive ? t(SENSITIVE_HINT) : undefined,
 });
 
 export function CustomTemplateDetail({ template, analysis, ctx, loading, productKind = null, productImages, onUse, onBack, productId }: {
@@ -117,6 +122,7 @@ export function CustomTemplateDetail({ template, analysis, ctx, loading, product
   /** For the review picker's "Fetch reviews". */
   productId?: string;
 }) {
+  const { t, tn } = useT();
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<string[] | null>(null);
   const [aspect, setAspect] = useState<Aspect>(analysis.aspect);
@@ -128,11 +134,11 @@ export function CustomTemplateDetail({ template, analysis, ctx, loading, product
   const chosen = (picked ?? (productImages[0] ? [productImages[0].url] : [])).filter((u) => available.has(u));
   const inputs = chosen.map((url) => ({ url, label: productImages.find((p) => p.url === url)?.label ?? null }));
 
-  const errors = validateTemplateFields(analysis.fields, values);
+  const errors = validateTemplateFields(analysis.fields, values, t);
   const errorCount = Object.keys(errors).length;
   const noName = !loading && !context.appName;
   const built = buildTemplatePrompt(template, analysis, values, context, { inputs, aspect });
-  const fields = analysis.fields.map(asStyleField);
+  const fields = analysis.fields.map((f) => asStyleField(f, t));
   const aspects = templateAspects(analysis.aspect);
   const sensitive = analysis.fields.some((f) => f.sensitive);
   // A review slot on the ad: a real App Store review, word for word, with its id on the request while it stays verbatim.
@@ -149,7 +155,7 @@ export function CustomTemplateDetail({ template, analysis, ctx, loading, product
   };
   const shownError = (f: StyleField) => {
     const e = errors[f.key];
-    return e && (tried || e !== "Required") ? e : undefined;
+    return e && (tried || e !== t("Required")) ? e : undefined;
   };
   const wide = wideKeys(fields);
 
@@ -160,19 +166,19 @@ export function CustomTemplateDetail({ template, analysis, ctx, loading, product
 
       <div className="grid gap-4 @3xl:grid-cols-[232px_minmax(0,1fr)]">
         <aside className="flex gap-3 @3xl:flex-col">
-          <a href={template.templateUrl ?? undefined} target="_blank" rel="noreferrer" className="block w-24 shrink-0 overflow-hidden rounded-small border border-line bg-control @3xl:w-full" title="Open the template">
-            <StyleThumb src={template.templateUrl ?? ""} alt={`${template.name} template`} className="w-full" fallbackClassName="aspect-[4/5]" fallback="No image" />
+          <a href={template.templateUrl ?? undefined} target="_blank" rel="noreferrer" className="block w-24 shrink-0 overflow-hidden rounded-small border border-line bg-control @3xl:w-full" title={t("Open the template")}>
+            <StyleThumb src={template.templateUrl ?? ""} alt={t("{name} template", { name: template.name })} className="w-full" fallbackClassName="aspect-[4/5]" fallback={t("No image")} />
           </a>
           <div className="min-w-0 space-y-3">
-            {analysis.tagline && <Note title="Why it works">{analysis.tagline}</Note>}
+            {analysis.tagline && <Note title={t("Why it works")}>{analysis.tagline}</Note>}
             <p className="text-xs leading-4 text-faint">
-              {template.importedFrom ? `Imported from ${template.importedFrom}: made from an ad uploaded there, used only for its layout.` : "Made from an ad you uploaded, used only for its layout."}{analysis.brands.length ? ` Its brands (${analysis.brands.join(", ")}) are kept out of the result.` : ""}
+              {template.importedFrom ? t("Imported from {product}: made from an ad uploaded there, used only for its layout.", { product: template.importedFrom }) : t("Made from an ad you uploaded, used only for its layout.")}{analysis.brands.length ? ` ${t("Its brands ({brands}) are kept out of the result.", { brands: analysis.brands.join(", ") })}` : ""}
             </p>
           </div>
         </aside>
 
         <div className="min-w-0 space-y-4">
-          {sensitive && <p className="rounded-inner bg-caution-soft px-3 py-2 text-xs text-caution-ink">{SENSITIVE_CAUTION}</p>}
+          {sensitive && <p className="rounded-inner bg-caution-soft px-3 py-2 text-xs text-caution-ink">{t(SENSITIVE_CAUTION)}</p>}
           {slot && (
             <ReviewPicker reviews={context.reviews ?? []} maxLength={analysis.fields.find((f) => f.key === slot.text)?.maxLength ?? 160} picked={reviewIds.length ? review : null} productId={productId}
               onPick={(r) => { setReview(r); setEdits((e) => insertReview(e, slot, r)); }} />
@@ -185,28 +191,28 @@ export function CustomTemplateDetail({ template, analysis, ctx, loading, product
                   className={cx(wide.has(f.key) && "@lg:col-span-2")} />
               ))}
             </div>
-          ) : <p className="text-xs text-muted">No text on this template: just pick your images.</p>}
+          ) : <p className="text-xs text-muted">{t("No text on this template: just pick your images.")}</p>}
 
           {aspects.length > 1 && (
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-medium text-muted">Ratio</span>
-              <Segmented label="Ratio" value={aspect} onChange={setAspect} options={aspects.map((a) => ({ value: a, label: a }))} />
+              <span className="text-xs font-medium text-muted">{t("Ratio")}</span>
+              <Segmented label={t("Ratio")} value={aspect} onChange={setAspect} options={aspects.map((a) => ({ value: a, label: a }))} />
             </div>
           )}
 
           <ProductImagePicker productImages={productImages} chosen={chosen} onToggle={toggle}
-            hint={`Stands in for the ad's product: ${clean(analysis.productSlot) || "your product"}.`}
-            empty="No product images yet. Add photos or app screens under Brand > Assets, or the model will have to imagine your product." />
+            hint={clean(analysis.productSlot) ? t("Stands in for the ad's product: {slot}.", { slot: clean(analysis.productSlot) }) : t("Stands in for the ad's product: your product.")}
+            empty={t("No product images yet. Add photos or app screens in App settings › Brand, or the model will have to imagine your product.")} />
 
           <PromptPreview prompt={built.prompt} overBy={built.overBy} mustAvoid={built.request.mustAvoid} />
 
           <FormFooter warn={Boolean((tried && errorCount) || noName || built.overBy)} canReset={Object.keys(edits).length > 0 || picked !== null || aspect !== analysis.aspect}
             onReset={() => { setEdits({}); setPicked(null); setAspect(analysis.aspect); setTried(false); }} onUse={use} disabled={loading || noName || !template.templateUrl}>
-            {noName ? "Add your product's name under Brand > Product first."
-              : built.overBy ? `The prompt is ${built.overBy} characters over the Playground's limit; shorten the text.`
-              : tried && errorCount ? `Fill in ${errorCount === 1 ? "1 field" : `${errorCount} fields`} first.`
-              : loading ? "Loading your product…"
-              : `2 versions · ${aspect} · nothing is generated until you confirm in the Playground.`}
+            {noName ? t("Add your app's name in App settings › Profile first.")
+              : built.overBy ? t("The prompt is {n} characters over Remix's limit; shorten the text.", { n: built.overBy })
+              : tried && errorCount ? tn(errorCount, "Fill in {n} field first.", "Fill in {n} fields first.")
+              : loading ? t("Loading your product…")
+              : t("2 versions · {aspect} · nothing is generated until you confirm in Remix.", { aspect })}
           </FormFooter>
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { getTranslator } from "@/lib/i18n/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { callFunction, relay } from "@/lib/server/functions";
 import type { KeyState } from "@/lib/install/types";
@@ -10,8 +11,9 @@ import type { KeyState } from "@/lib/install/types";
 export async function POST() {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   return relay(await callFunction<{ secret: string; key: KeyState }>("install", session, "runner-secret/rotate", {
     body: {},
-    messages: { notDeployed: "The install backend isn't deployed yet. Open /setup and run the update." },
+    messages: { notDeployed: t("The install backend isn't deployed yet. Open /setup and run the update.") },
   }));
 }

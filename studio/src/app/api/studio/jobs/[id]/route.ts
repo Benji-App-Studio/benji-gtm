@@ -5,6 +5,7 @@ import { confirmedCreditsOf } from "@/lib/playground-templates-plan";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { dbFailure } from "@/lib/server/errors";
 import { refuseWhenFull } from "@/lib/server/storage";
+import { getTranslator } from "@/lib/i18n/server";
 
 type JobRow = {
   id: string; status: string; backend: string; model: string; prompt: string; params: Record<string, unknown>; aspect: string; variant: number; kind: string;
@@ -18,52 +19,53 @@ type JobRow = {
  * same prompt and images on the other provider joins the batch. Nothing ever moves provider on its own.
  */
 export async function POST(request: NextRequest, ctx: RouteContext<"/api/studio/jobs/[id]">) {
+  const { t } = await getTranslator();
   const session = await requireUser();
   if (isResponse(session)) return session;
   const { id } = await ctx.params;
   const body = await request.json().catch(() => ({}));
   const { action } = body;
   const { data: job } = await session.supabase.from("creative_jobs").select("id, status, backend, model, prompt, params, aspect, variant, kind, product_id, batch_id, format_card_id").eq("id", id).maybeSingle<JobRow>();
-  if (!job) return Response.json({ error: "This job doesn't exist." }, { status: 404 });
+  if (!job) return Response.json({ error: t("This job doesn't exist.") }, { status: 404 });
   if (action === "cancel") {
-    if (job.status !== "queued") return Response.json({ error: job.status === "running" ? "It's already running; it can't be stopped halfway (Higgsfield charges once it starts)." : "Only queued jobs can be cancelled." }, { status: 409 });
+    if (job.status !== "queued") return Response.json({ error: job.status === "running" ? t("It's already running; it can't be stopped halfway (Higgsfield charges once it starts).") : t("Only queued jobs can be cancelled.") }, { status: 409 });
     const { error } = await session.supabase.from("creative_jobs").update({ status: "cancelled" }).eq("id", id);
-    return error ? dbFailure("job cancel", error, "Couldn't cancel the job. Try again.", 400) : Response.json({ status: "cancelled" });
+    return error ? dbFailure("job cancel", error, t("Couldn't cancel the job. Try again."), 400, {}, t) : Response.json({ status: "cancelled" });
   }
   if ((action === "retry" || action === "switch")) {
     const full = await refuseWhenFull(session, "generate");
     if (full) return full;
   }
   if (action === "retry") {
-    if (job.status !== "failed" && job.status !== "cancelled") return Response.json({ error: "Only failed or cancelled jobs can be retried." }, { status: 409 });
-    if (job.backend === "template") return Response.json({ error: "Posts are rendered when the batch starts; start a new batch instead." }, { status: 409 });
+    if (job.status !== "failed" && job.status !== "cancelled") return Response.json({ error: t("Only failed or cancelled jobs can be retried.") }, { status: 409 });
+    if (job.backend === "template") return Response.json({ error: t("Posts are rendered when the batch starts; start a new batch instead.") }, { status: 409 });
     const { error } = await session.supabase.from("creative_jobs").update({ status: "queued", not_before: null, error: null }).eq("id", id);
-    return error ? dbFailure("job retry", error, "Couldn't retry the job. Try again.", 400) : Response.json({ status: "queued" });
+    return error ? dbFailure("job retry", error, t("Couldn't retry the job. Try again."), 400, {}, t) : Response.json({ status: "queued" });
   }
   if (action === "plan-switch" || action === "switch") {
-    if (job.status !== "failed" && job.status !== "cancelled") return Response.json({ error: "Only a failed or cancelled image can be made with the other provider." }, { status: 409 });
+    if (job.status !== "failed" && job.status !== "cancelled") return Response.json({ error: t("Only a failed or cancelled image can be made with the other provider.") }, { status: 409 });
     const to = body.provider as ImageProvider;
-    if (!IMAGE_PROVIDERS.includes(to) || to === providerOfJob(job.params)) return Response.json({ error: "Pick the other provider." }, { status: 400 });
+    if (!IMAGE_PROVIDERS.includes(to) || to === providerOfJob(job.params)) return Response.json({ error: t("Pick the other provider.") }, { status: 400 });
     const { data: batch } = job.batch_id
       ? await session.supabase.from("creative_batches").select("settings").eq("id", job.batch_id).maybeSingle<{ settings: { brand?: { screenshotUrls?: string[] } } }>()
       : { data: null };
     const switched = switchJobProvider(job, to, batch?.settings?.brand?.screenshotUrls?.length ?? 0);
-    if (!switched) return Response.json({ error: "Only GPT Image 2.5 images can be made by either provider." }, { status: 409 });
+    if (!switched) return Response.json({ error: t("Only GPT Image 2.5 images can be made by either provider.") }, { status: 409 });
     const cost = { credits: switched.costEstimate, usd: switched.costUsd ?? 0, provider: to };
     if (action === "plan-switch") return Response.json(cost);
     // Never spend without the price the person saw and confirmed.
     const confirmedCredits = confirmedCreditsOf(body.confirmedCredits);
     const confirmedUsd = confirmedCreditsOf(body.confirmedUsd);
-    if (confirmedCredits === undefined || (cost.usd && confirmedUsd === undefined)) return Response.json({ error: "Confirm the estimated cost first." }, { status: 400 });
+    if (confirmedCredits === undefined || (cost.usd && confirmedUsd === undefined)) return Response.json({ error: t("Confirm the estimated cost first.") }, { status: 400 });
     if (cost.credits > confirmedCredits + 0.01 || (cost.usd && cost.usd > confirmedUsd! + 0.0005)) {
-      return Response.json({ error: `The estimate changed to ${to === "openai" ? fmtUsd(cost.usd) : `${cost.credits} credits`}; check it and confirm again.`, ...cost }, { status: 409 });
+      return Response.json({ error: t("The estimate changed to {price}; check it and confirm again.", { price: to === "openai" ? fmtUsd(cost.usd) : t("{n} credits", { n: cost.credits }) }), ...cost }, { status: 409 });
     }
     const { data: made, error } = await session.supabase.from("creative_jobs").insert({
       product_id: job.product_id, batch_id: job.batch_id, format_card_id: job.format_card_id, kind: job.kind, model: job.model, prompt: job.prompt,
       params: switched.params, aspect: job.aspect, variant: job.variant, backend: switched.backend, cost_estimate: switched.costEstimate,
     }).select("id").single<{ id: string }>();
-    if (error || !made) return dbFailure("job switch provider", error, `Couldn't queue it for ${PROVIDER_NAME[to]}. Try again.`, 400);
+    if (error || !made) return dbFailure("job switch provider", error, t("Couldn't queue it for {provider}. Try again.", { provider: PROVIDER_NAME[to] }), 400, {}, t);
     return Response.json({ jobId: made.id, status: "queued", ...cost });
   }
-  return Response.json({ error: "Cancel or retry?" }, { status: 400 });
+  return Response.json({ error: t("Cancel or retry?") }, { status: 400 });
 }

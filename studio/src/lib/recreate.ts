@@ -23,14 +23,19 @@
 // stored key frames can go to Higgsfield as references, like an image ad's own image.
 import { PRODUCT_REFERENCES } from "./product-assets";
 import type { ProductProfile } from "./product-insight";
-import { cleanMustAvoid, cleanProductReferences, cleanStyleReferences, type ProductReference, DEFAULT_REQUEST, LIMITS, type BatchRequest } from "./creative-plan";
+import { cleanMustAvoid, cleanProductReferences, cleanSourceAd, cleanStyleReferences, type ProductReference, DEFAULT_REQUEST, LIMITS, type BatchRequest } from "./creative-plan";
 import { CAROUSEL, CAROUSEL_PLACEMENTS, placementById, PLACEMENT_IDS, type Placement, type PlacementId } from "./meta-formats";
 import { AD_FORMAT_LABEL, MEDIA_LABEL, SHOT_LABEL, type AdDecoded, type AdMediaType, type AdScan, type AdSwap, type AdVideoScan, type RankedAdRow, type SwapElement } from "./research";
-import { HOOK_LABEL, ROLE_LABEL } from "./types";
+import { HOOK_LABEL, ROLE_PROMPT_NAME } from "./types";
 import { cleanLogo, logoBriefLines, positionWhere, type LogoPosition, type LogoSettings } from "./logo-overlay";
 import { brandRules, ruleLines } from "./brand-rules";
 import { paletteLine, type BrandSystem } from "./brand-system";
 import { RECREATE_HANDOFF_KEY } from "./storage-keys";
+import { fill, m, type Translator } from "./i18n/translate";
+
+/** A translator for the sheet; the prompt and the tests use English (the default). */
+type T = Translator["t"];
+const english: T = (text, vars) => fill(text, vars);
 
 export const PROMPT_MAX = 4000;
 /** sessionStorage key of the handoff. Read it with readStored (lib/storage-keys.ts). */
@@ -109,24 +114,24 @@ export function sourceFromAd(ad: RankedAdRow, measured: { width?: number | null;
 export type FlagKind = "brand" | "logo" | "url" | "handle" | "phone" | "email" | "address" | "price" | "claim" | "testimonial" | "person" | "other";
 
 export const FLAG_LABEL: Record<FlagKind, string> = {
-  brand: "Their brand", logo: "Their logo", other: "Other brand detail", url: "Link or domain", handle: "Handle", phone: "Phone number", email: "Email", address: "Address",
-  price: "Price, offer or code", claim: "Number or claim", testimonial: "Testimonial", person: "Person's name",
+  brand: m("Their brand"), logo: m("Their logo"), other: m("Other brand detail"), url: m("Link or domain"), handle: m("Handle"), phone: m("Phone number"), email: m("Email"), address: m("Address"),
+  price: m("Price, offer or code"), claim: m("Number or claim"), testimonial: m("Testimonial"), person: m("Person's name"),
 };
 
 /** Why each kind matters, in one line (shown under the flag). */
 export const FLAG_WHY: Record<FlagKind, string> = {
-  brand: "Their name in your ad is trademark trouble and sends people to them.",
-  logo: "Their logo is their trademark; show your app icon or nothing.",
-  other: "Something specific to their brand; make it yours.",
-  url: "A link of theirs would send your clicks to them.",
-  handle: "Their social account, not yours.",
-  phone: "A real number that isn't yours.",
-  email: "A real address that isn't yours.",
-  address: "A real place that isn't yours.",
-  price: "Their offer, not yours: Meta rejects prices or codes you don't honour.",
-  claim: "Their number. Only say what you can prove for your app.",
-  testimonial: "Someone else's review. Only use real reviews of your app, with permission.",
-  person: "A real person's name or likeness; never reuse it.",
+  brand: m("Their name in your ad is trademark trouble and sends people to them."),
+  logo: m("Their logo is their trademark; show your app icon or nothing."),
+  other: m("Something specific to their brand; make it yours."),
+  url: m("A link of theirs would send your clicks to them."),
+  handle: m("Their social account, not yours."),
+  phone: m("A real number that isn't yours."),
+  email: m("A real address that isn't yours."),
+  address: m("A real place that isn't yours."),
+  price: m("Their offer, not yours: Meta rejects prices or codes you don't honour."),
+  claim: m("Their number. Only say what you can prove for your app."),
+  testimonial: m("Someone else's review. Only use real reviews of your app, with permission."),
+  person: m("A real person's name or likeness; never reuse it."),
 };
 
 export interface Flag {
@@ -271,19 +276,19 @@ const flagId = (kind: FlagKind, text: string) => `${kind}:${flagKey(kind, text)}
 /** The ad's text fields, labelled where they are. */
 function fieldsOf(src: RecreateSource): { where: string; text: string }[] {
   const out: { where: string; text: string }[] = [
-    { where: "page name", text: src.pageName },
-    { where: "primary text", text: src.body },
-    { where: "headline", text: src.headline },
-    { where: "description", text: src.description },
-    { where: "display link", text: src.caption ?? "" },
-    { where: "destination URL", text: src.linkUrl ?? "" },
+    { where: m("page name"), text: src.pageName },
+    { where: m("primary text"), text: src.body },
+    { where: m("headline"), text: src.headline },
+    { where: m("description"), text: src.description },
+    { where: m("display link"), text: src.caption ?? "" },
+    { where: m("destination URL"), text: src.linkUrl ?? "" },
   ];
-  (src.onImageText ?? []).forEach((line) => out.push({ where: "image text", text: line }));
+  (src.onImageText ?? []).forEach((line) => out.push({ where: m("image text"), text: line }));
   (src.cards ?? []).forEach((card, i) => out.push({ where: `card ${i + 1}`, text: [card.title, card.body].filter(Boolean).join("\n") }));
   // A video's spoken words and its on-screen captions say brand names, prices and claims too.
-  (src.videoScan?.transcript ?? []).forEach((line) => out.push({ where: "voiceover", text: line.text }));
-  (src.videoScan?.shots ?? []).forEach((shot) => out.push({ where: "on-screen text", text: shot.on_screen_text }));
-  if (src.competitor && norm(src.competitor) !== norm(src.pageName)) out.push({ where: "page name", text: src.competitor });
+  (src.videoScan?.transcript ?? []).forEach((line) => out.push({ where: m("voiceover"), text: line.text }));
+  (src.videoScan?.shots ?? []).forEach((shot) => out.push({ where: m("on-screen text"), text: shot.on_screen_text }));
+  if (src.competitor && norm(src.competitor) !== norm(src.pageName)) out.push({ where: m("page name"), text: src.competitor });
   return out.filter((f) => f.text.trim());
 }
 
@@ -343,9 +348,14 @@ const SCAN_KIND: Record<AdScan["flags"][number]["kind"], FlagKind> = {
   price_or_offer: "price", claim: "claim", person_face: "person", testimonial: "testimonial", other: "other",
 };
 const SCAN_WHERE: Record<AdScan["flags"][number]["where"], string> = {
-  image: "image", primary_text: "primary text", headline: "headline", description: "description", link: "destination URL",
-  voiceover: "voiceover", video: "video",
+  image: m("image"), primary_text: "primary text", headline: "headline", description: "description", link: "destination URL",
+  voiceover: "voiceover", video: m("video"),
 };
+
+/** Every place a flag can be found besides "card N" (fieldsOf and SCAN_WHERE): the screen translates these and nothing else. */
+export const FLAG_WHERE: ReadonlySet<string> = new Set([
+  "page name", "primary text", "headline", "description", "display link", "destination URL", "image text", "voiceover", "on-screen text", "image", "video",
+]);
 
 /** Two findings of one thing: the same kind and the same key, or one key inside the other (a phone in other spacing, a longer link). */
 function sameThing(a: Pick<Flag, "kind" | "text">, kind: FlagKind, text: string): boolean {
@@ -452,12 +462,12 @@ export function detectKind(src: RecreateSource): { kind: RecreateKind; reason: s
     const total = vs.shots.reduce((n, x) => n + Math.max(0.5, x.end - x.start), 0) || 1;
     const share = (test: (t: string) => boolean) => vs.shots.filter((x) => test(x.shot_type)).reduce((n, x) => n + Math.max(0.5, x.end - x.start), 0) / total;
     const animated = share((t) => t === "animation") >= 0.4 || ANIMATED.test([src.style?.vibe, src.style?.layout, vs.structure, ...vs.shots.slice(0, 4).map((x) => x.visual)].join(" "));
-    if (animated) return { kind: "ai_video", reason: "It's animated (cartoon or illustration), so Seedance remakes it as an AI video." };
-    if (share((t) => PRESENTER_SHOTS.has(t)) >= 0.5 && vs.presenter) return { kind: "ugc_video", reason: "A person talks to camera through most of it, so it's remade as an AI UGC video with a presenter." };
-    return { kind: "ai_video", reason: "It's mostly demo, product or b-roll shots without a presenter, so it's remade as an AI video." };
+    if (animated) return { kind: "ai_video", reason: m("It's animated (cartoon or illustration), so Seedance remakes it as an AI video.") };
+    if (share((t) => PRESENTER_SHOTS.has(t)) >= 0.5 && vs.presenter) return { kind: "ugc_video", reason: m("A person talks to camera through most of it, so it's remade as an AI UGC video with a presenter.") };
+    return { kind: "ai_video", reason: m("It's mostly demo, product or b-roll shots without a presenter, so it's remade as an AI video.") };
   }
-  if (src.decoded && UGC_FORMATS.includes(src.decoded.format)) return { kind: "ugc_video", reason: "Its copy reads as a UGC format, so it's remade with a presenter." };
-  return { kind: "ai_video", reason: "Not read yet: AI video until the video scan says whether a presenter talks to camera." };
+  if (src.decoded && UGC_FORMATS.includes(src.decoded.format)) return { kind: "ugc_video", reason: m("Its copy reads as a UGC format, so it's remade with a presenter.") };
+  return { kind: "ai_video", reason: m("Not read yet: AI video until the video scan says whether a presenter talks to camera.") };
 }
 
 /** The kind detectKind picks. */
@@ -484,11 +494,11 @@ export interface KeepItem {
 /** How close the recreate stays to their ad. Every field stays editable; custom instructions always win. */
 export type Closeness = "exact" | "loose" | "balanced" | "close" | "very_close";
 export const CLOSENESS: { id: Closeness; label: string; summary: string }[] = [
-  { id: "exact", label: "Exact", summary: "their ad element for element; only the swaps change (our name and wordmark, product, claims, font)" },
-  { id: "loose", label: "Loose", summary: "the same format and placement only; layout and copy are ours to choose" },
-  { id: "balanced", label: "Balanced", summary: "the same structure and hook pattern, with our own visuals and words" },
-  { id: "close", label: "Close", summary: "the same layout, composition, text placement and copy rhythm, with our brand, colours and people" },
-  { id: "very_close", label: "Very close", summary: "mirror the layout, typography style, text length and copywriting style line by line, swapping only the brand-specific details" },
+  { id: "exact", label: m("Exact"), summary: m("their ad element for element; only the swaps change (our name and wordmark, product, claims, font)") },
+  { id: "loose", label: m("Loose"), summary: m("the same format and placement only; layout and copy are ours to choose") },
+  { id: "balanced", label: m("Balanced"), summary: m("the same structure and hook pattern, with our own visuals and words") },
+  { id: "close", label: m("Close"), summary: m("the same layout, composition, text placement and copy rhythm, with our brand, colours and people") },
+  { id: "very_close", label: m("Very close"), summary: m("mirror the layout, typography style, text length and copywriting style line by line, swapping only the brand-specific details") },
 ];
 const KEPT_AT: Record<Closeness, KeepId[]> = {
   exact: ["type", "layout", "hook", "shots", "beats", "pacing", "cta"],
@@ -500,68 +510,88 @@ const KEPT_AT: Record<Closeness, KeepId[]> = {
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 const firstLine = (s: string) => s.split(/\n+/).map((l) => l.trim()).find(Boolean) ?? "";
-const roleName = (role: string) => ROLE_LABEL[role] ?? role;
+const roleName = (role: string) => ROLE_PROMPT_NAME[role] ?? role;
 
 /** Their copy in beats: Jev's roles when decoded, else its lines (or sentences). Decisions applied. */
-function beatsOf(src: RecreateSource, flags: Flag[], decisions: Decisions): string[] {
+function beatsOf(src: RecreateSource, flags: Flag[], decisions: Decisions, t: T = english): string[] {
   const spoken = src.video ? (src.videoScan?.transcript ?? []).map((l) => l.text.trim()).filter(Boolean) : [];
   if (spoken.length) return spoken.slice(0, 8).map((line) => clip(applyDecisions(line, flags, decisions), 90));
-  if (src.decoded?.roles.length) return src.decoded.roles.slice(0, 8).map((r) => `${roleName(r.role)}: ${clip(applyDecisions(r.text, flags, decisions), 90)}`);
+  if (src.decoded?.roles.length) return src.decoded.roles.slice(0, 8).map((r) => `${t(roleName(r.role))}: ${clip(applyDecisions(r.text, flags, decisions), 90)}`);
   const lines = src.body.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const parts = lines.length > 1 ? lines : (src.body.match(/[^.!?]+[.!?]*/g) ?? []).map((s) => s.trim()).filter(Boolean);
   return parts.slice(0, 6).map((p) => clip(applyDecisions(p, flags, decisions), 80)).filter(Boolean);
 }
 
 const sizeText = (src: RecreateSource) => (src.width && src.height ? `${src.width} × ${src.height}` : "");
-export const kindLabel = (t: RecreateTarget) =>
-  t.kind === "ugc_video" ? "AI UGC video" : t.kind === "ai_video" ? "AI video" : t.format === "carousel" ? `carousel of ${t.cards} image cards` : t.format === "dynamic" ? `dynamic ad (${t.cards} image options)` : "single image";
+export const kindLabel = (target: RecreateTarget, t: T = english) =>
+  target.kind === "ugc_video" ? t("AI UGC video") : target.kind === "ai_video" ? t("AI video") : target.format === "carousel" ? t("carousel of {n} image cards", { n: target.cards }) : target.format === "dynamic" ? t("dynamic ad ({n} image options)", { n: target.cards }) : t("single image");
 
-/** What the recreate can keep from their ad at a closeness; each one can be unticked. */
-export function keepItems(src: RecreateSource, target: RecreateTarget, flags: Flag[] = [], decisions: Decisions = {}, closeness: Closeness = "balanced"): KeepItem[] {
+/**
+ * What the recreate can keep from their ad at a closeness; each one can be unticked. `t` translates the
+ * labels and the wording around their ad's own text for the sheet; the prompt calls it in English.
+ */
+export function keepItems(src: RecreateSource, target: RecreateTarget, flags: Flag[] = [], decisions: Decisions = {}, closeness: Closeness = "balanced", t: T = english): KeepItem[] {
   const video = target.kind !== "image";
   const size = sizeText(src);
+  const tr = (label: string | undefined) => (label ? t(label) : label);
+  const where = `${tr(MEDIA_LABEL[src.mediaType])} → ${kindLabel(target, t)} · ${tr(target.placement.label)} (${target.placement.aspect})`;
   const items: KeepItem[] = [{
-    id: "type", label: "Creative type and size",
-    detail: `${MEDIA_LABEL[src.mediaType]} → ${kindLabel(target)} · ${target.placement.label} (${target.placement.aspect})${size ? ` · theirs ${size}` : ""}`,
+    id: "type", label: t("Creative type and size"),
+    detail: size ? t("{what} · theirs {size}", { what: where, size }) : where,
   }, {
-    id: "layout", label: "Layout and composition",
+    id: "layout", label: t("Layout and composition"),
     detail: closeness === "very_close"
       ? video
-        ? "Mirror their framing, kinds of shot and caption style shot by shot"
-        : "Mirror their layout, composition, typography style and text placement; the same amount of text"
+        ? t("Mirror their framing, kinds of shot and caption style shot by shot")
+        : t("Mirror their layout, composition, typography style and text placement; the same amount of text")
       : video
-        ? "The same framing and kinds of shot (talking head, screen recording, b-roll) in the same order"
-        : "The same layout, composition and text placement, with our brand, colours and people",
+        ? t("The same framing and kinds of shot (talking head, screen recording, b-roll) in the same order")
+        : t("The same layout, composition and text placement, with our brand, colours and people"),
   }];
   const vs = video ? src.videoScan : null;
   const hookLine = applyDecisions(vs?.hook.line || src.decoded?.roles.find((r) => r.role === "hook")?.text || firstLine(src.body) || firstLine(src.headline), flags, decisions);
   if (vs?.hook.what_happens) {
-    items.push({ id: "hook", label: "Hook pattern", detail: `The first ${vs.hook.seconds || 2} s: ${clip(applyDecisions(vs.hook.what_happens, flags, decisions), 200)}${hookLine ? `. Their opening line, to rewrite: "${clip(hookLine, 140)}"` : ""}` });
+    const what = t("The first {seconds} s: {what}", { seconds: vs.hook.seconds || 2, what: clip(applyDecisions(vs.hook.what_happens, flags, decisions), 200) });
+    items.push({ id: "hook", label: t("Hook pattern"), detail: hookLine ? t("{text}. Their opening line, to rewrite: \"{line}\"", { text: what, line: clip(hookLine, 140) }) : what });
   } else if (src.decoded) {
-    const format = AD_FORMAT_LABEL[src.decoded.format] ?? src.decoded.format;
-    const hook = src.decoded.hookType ? `${HOOK_LABEL[src.decoded.hookType] ?? src.decoded.hookType} hook` : "its hook";
-    const roles = [...new Set(src.decoded.roles.map((r) => roleName(r.role)))].join(" → ");
-    items.push({ id: "hook", label: "Hook pattern", detail: `${format}, ${hook}${roles ? `; lines in order: ${roles}` : ""}${hookLine ? `. Their opening, to rewrite: "${clip(hookLine, 140)}"` : ""}` });
+    const format = tr(AD_FORMAT_LABEL[src.decoded.format]) ?? src.decoded.format;
+    const hook = src.decoded.hookType ? t("{type} hook", { type: tr(HOOK_LABEL[src.decoded.hookType]) ?? src.decoded.hookType }) : t("its hook");
+    const roles = [...new Set(src.decoded.roles.map((r) => t(roleName(r.role))))].join(" → ");
+    const base = roles ? t("{format}, {hook}; lines in order: {roles}", { format, hook, roles }) : `${format}, ${hook}`;
+    items.push({ id: "hook", label: t("Hook pattern"), detail: hookLine ? t("{text}. Their opening, to rewrite: \"{line}\"", { text: base, line: clip(hookLine, 140) }) : base });
   } else if (hookLine) {
-    items.push({ id: "hook", label: "Hook pattern", detail: `The kind of opening line they use (rewrite it, keep the pattern): "${clip(hookLine, 140)}"` });
+    items.push({ id: "hook", label: t("Hook pattern"), detail: t("The kind of opening line they use (rewrite it, keep the pattern): \"{line}\"", { line: clip(hookLine, 140) }) });
   }
   if (vs?.shots.length) {
     const seconds = Math.round(vs.duration_sec || src.duration || vs.shots[vs.shots.length - 1].end || 0);
-    items.push({ id: "shots", label: "Shot list", detail: `${vs.shots.length} shot${vs.shots.length === 1 ? "" : "s"}${seconds ? ` over about ${seconds} s` : ""}: ${vs.shots.map((x) => SHOT_LABEL[x.shot_type] ?? "shot").join(" → ")}${vs.structure ? `. Beats: ${clip(applyDecisions(vs.structure, flags, decisions), 160)}` : ""}` });
+    const n = vs.shots.length;
+    const list = vs.shots.map((x) => tr(SHOT_LABEL[x.shot_type]) ?? t("shot")).join(" → ");
+    const count = seconds
+      ? (n === 1 ? t("{n} shot over about {seconds} s", { n, seconds }) : t("{n} shots over about {seconds} s", { n, seconds }))
+      : (n === 1 ? t("{n} shot", { n }) : t("{n} shots", { n }));
+    const shots = `${count}: ${list}`;
+    items.push({ id: "shots", label: t("Shot list"), detail: vs.structure ? t("{shots}. Beats: {beats}", { shots, beats: clip(applyDecisions(vs.structure, flags, decisions), 160) }) : shots });
   }
-  const beats = beatsOf(src, flags, decisions);
-  if (beats.length) items.push({ id: "beats", label: "Copy structure", detail: `${beats.length} beat${beats.length === 1 ? "" : "s"}: ${beats.map((b, i) => `${i + 1}) ${b}`).join(" ")}` });
+  const beats = beatsOf(src, flags, decisions, t);
+  if (beats.length) {
+    const n = beats.length;
+    items.push({ id: "beats", label: t("Copy structure"), detail: `${n === 1 ? t("{n} beat", { n }) : t("{n} beats", { n })}: ${beats.map((b, i) => `${i + 1}) ${b}`).join(" ")}` });
+  }
   if (video) {
     const seconds = src.duration ? Math.round(src.duration) : null;
-    items.push({ id: "pacing", label: "Pacing and length", detail: `${seconds ? `About ${seconds} s` : "Their length"}, ${vs?.pacing ? clip(vs.pacing, 140) : "the same rhythm of cuts"}, the hook in the first ${vs?.hook.seconds ? Math.max(1, Math.round(vs.hook.seconds)) : 2} seconds` });
+    items.push({ id: "pacing", label: t("Pacing and length"), detail: t("{length}, {pacing}, the hook in the first {seconds} seconds", {
+      length: seconds ? t("About {n} s", { n: seconds }) : t("Their length"),
+      pacing: vs?.pacing ? clip(vs.pacing, 140) : t("the same rhythm of cuts"),
+      seconds: vs?.hook.seconds ? Math.max(1, Math.round(vs.hook.seconds)) : 2,
+    }) });
   }
-  if (src.cta) items.push({ id: "cta", label: "Call to action type", detail: `"${src.cta}"` });
+  if (src.cta) items.push({ id: "cta", label: t("Call to action type"), detail: `"${src.cta}"` });
   if (closeness === "very_close") {
     const beats = items.find((k) => k.id === "beats");
-    if (beats) beats.detail = `Line by line, the same length and copywriting style; ${beats.detail}`;
+    if (beats) beats.detail = t("Line by line, the same length and copywriting style; {detail}", { detail: beats.detail });
   } else if (closeness === "close") {
     const beats = items.find((k) => k.id === "beats");
-    if (beats) beats.detail = `The same copy rhythm; ${beats.detail}`;
+    if (beats) beats.detail = t("The same copy rhythm; {detail}", { detail: beats.detail });
   }
   return items.map((k) => (KEPT_AT[closeness].includes(k.id) ? k : { ...k, off: true }));
 }
@@ -614,8 +644,8 @@ export interface RecreateInputs {
 export interface RecreateSwap { element: SwapElement; theirs: string; ours: string; style: string; keep: boolean }
 
 export const SWAP_LABEL: Record<SwapElement, string> = {
-  headline: "Headline", subhead: "Subhead", body: "Text", wordmark: "Wordmark", logo: "Logo", product: "Product", subject: "Subject",
-  label: "Label", cta: "Button", price: "Price or offer", legal: "Small print", person: "Person", screen: "App screen", other: "Element",
+  headline: m("Headline"), subhead: m("Subhead"), body: m("Text"), wordmark: m("Wordmark"), logo: m("Logo"), product: m("Product"), subject: m("Subject"),
+  label: m("Label"), cta: m("Button"), price: m("Price or offer"), legal: m("Small print"), person: m("Person"), screen: m("App screen"), other: m("Element"),
 };
 
 /**
@@ -691,12 +721,12 @@ export function theirCaptions(src: RecreateSource): string {
 export const sameAsTheirs = (mine: string, theirs: string) => Boolean(mine.trim()) && norm(mine) === norm(theirs);
 
 /** Warnings about the inputs that don't block: wording still theirs. */
-export function inputWarnings(src: RecreateSource, target: RecreateTarget, inputs: RecreateInputs): string[] {
+export function inputWarnings(src: RecreateSource, target: RecreateTarget, inputs: RecreateInputs, t: T = english): string[] {
   const out: string[] = [];
-  if (sameAsTheirs(inputs.headline, src.headline)) out.push("The headline is still their exact wording; the prompt asks for a rewrite.");
-  if (sameAsTheirs(inputs.primaryText, src.body)) out.push("The primary text is still their exact wording; the prompt asks for a rewrite that keeps its structure.");
-  if (src.onImageText?.length && sameAsTheirs(inputs.onImageText, src.onImageText.join("\n"))) out.push("The on-image text is still theirs; the prompt asks for a rewrite.");
-  if (target.kind !== "image" && sameAsTheirs(inputs.voiceover, theirScript(src))) out.push("The voiceover is still their script; the prompt asks for a rewrite of each beat.");
+  if (sameAsTheirs(inputs.headline, src.headline)) out.push(t("The headline is still their exact wording; the prompt asks for a rewrite."));
+  if (sameAsTheirs(inputs.primaryText, src.body)) out.push(t("The primary text is still their exact wording; the prompt asks for a rewrite that keeps its structure."));
+  if (src.onImageText?.length && sameAsTheirs(inputs.onImageText, src.onImageText.join("\n"))) out.push(t("The on-image text is still theirs; the prompt asks for a rewrite."));
+  if (target.kind !== "image" && sameAsTheirs(inputs.voiceover, theirScript(src))) out.push(t("The voiceover is still their script; the prompt asks for a rewrite of each beat."));
   return out;
 }
 
@@ -1217,7 +1247,7 @@ const UGC_LENGTHS = [5, 10, 15, 20, 30];
 export function requestFromHandoff(h: RecreateHandoff, base: BatchRequest = DEFAULT_REQUEST): BatchRequest {
   // brandInBrief: the Recreate sheet already put the brand's rules (and the profile, unless it chose not to)
   // in the brief, so the Studio adds none of its own; QA still checks every rule, offers and banned words included.
-  const next: BatchRequest = { ...base, brief: h.brief.slice(0, LIMITS.briefChars), kinds: [h.kind], placements: [h.placement], format: "single", mustAvoid: h.mustAvoid, brandInBrief: true, useProfile: false, fromRecreate: true };
+  const next: BatchRequest = { ...base, brief: h.brief.slice(0, LIMITS.briefChars), kinds: [h.kind], placements: [h.placement], format: "single", mustAvoid: h.mustAvoid, brandInBrief: true, useProfile: false, fromRecreate: true, sourceAd: cleanSourceAd(h.reference) };
   if (h.kind === "image" && h.cards) {
     next.format = "carousel";
     next.cards = h.cards;

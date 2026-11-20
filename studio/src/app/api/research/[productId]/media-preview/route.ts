@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getTranslator } from "@/lib/i18n/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { research } from "@/lib/server/research";
 
@@ -15,17 +16,18 @@ const MAX_BYTES = 10 * 1024 * 1024;
 export async function POST(request: NextRequest, ctx: RouteContext<"/api/research/[productId]/media-preview">) {
   const session = await requireUser();
   if (isResponse(session)) return session;
+  const { t } = await getTranslator();
   const { productId } = await ctx.params;
   let input: { holdId?: unknown; files?: unknown };
   try {
     const gzip = (request.headers.get("content-type") ?? "").includes("gzip");
     const body = gzip && request.body ? request.body.pipeThrough(new DecompressionStream("gzip")) : request.body;
     const text = body ? await new Response(body).text() : "";
-    if (text.length > MAX_BYTES) return Response.json({ error: "Too many files to check at once." }, { status: 413 });
+    if (text.length > MAX_BYTES) return Response.json({ error: t("Too many files to check at once.") }, { status: 413 });
     input = JSON.parse(text);
   } catch {
-    return Response.json({ error: "Couldn't read the request." }, { status: 400 });
+    return Response.json({ error: t("Couldn't read the request.") }, { status: 400 });
   }
-  const result = await research(session, "media-preview", { productId, holdId: input.holdId, files: input.files }, 140_000);
+  const result = await research(session, "media-preview", { productId, holdId: input.holdId, files: input.files }, 140_000, t);
   return Response.json(result.data, { status: result.ok ? 200 : result.status });
 }

@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { getTranslator } from "@/lib/i18n/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { appContext, listCards, resolveProduct } from "@/lib/server/formats";
 import { caughtFailure } from "@/lib/server/errors";
@@ -10,12 +11,13 @@ export async function GET(_request: NextRequest, ctx: RouteContext<"/api/w/[prod
   const session = await requireUser();
   if (isResponse(session)) return session;
   const product = await resolveProduct(session, (await ctx.params).productId);
-  if (!product) return Response.json({ error: "Not found" }, { status: 404 });
+  const { t } = await getTranslator();
+  if (!product) return Response.json({ error: t("This workspace doesn't exist.") }, { status: 404 });
   try {
     const [app, library] = await Promise.all([appContext(session, product), listCards(session, product)]);
     return Response.json({ app, ...library }, { headers });
   } catch (error) {
-    return caughtFailure("formats list", error, "Couldn't load the format library. Try again.");
+    return caughtFailure("formats list", error, t("Couldn't load the format library. Try again."), 500, {}, t);
   }
 }
 
@@ -24,11 +26,12 @@ export async function POST(_request: NextRequest, ctx: RouteContext<"/api/w/[pro
   const session = await requireUser();
   if (isResponse(session)) return session;
   const product = await resolveProduct(session, (await ctx.params).productId);
-  if (!product) return Response.json({ error: "Not found" }, { status: 404 });
+  const { t } = await getTranslator();
+  if (!product) return Response.json({ error: t("This workspace doesn't exist.") }, { status: 404 });
   try {
     const [app, library] = await Promise.all([appContext(session, product), listCards(session, product, { rebuild: true })]);
     return Response.json({ app, ...library }, { headers });
   } catch (error) {
-    return caughtFailure("formats rebuild", error, "Couldn't rebuild the format library. Try again.");
+    return caughtFailure("formats rebuild", error, t("Couldn't rebuild the format library. Try again."), 500, {}, t);
   }
 }

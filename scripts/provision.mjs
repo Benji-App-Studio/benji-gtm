@@ -37,6 +37,10 @@ Options
                            made up and saved on this computer for automatic sign-in (it is never
                            shown; choose your own later in Settings > Account).
   --app-origin <url>       Where the app runs. Default: http://localhost:3000
+  --public-origin <url>    Where a deployed copy is reachable (e.g. https://gtm.example.com). Becomes
+                           the project's Site URL, and <url>/auth/confirm** is allowed for password
+                           reset and Google sign-in links. Default: NEXT_PUBLIC_PUBLIC_ORIGIN or
+                           PUBLIC_ORIGIN when set.
   --functions <a,b,c>      Install only these backend functions.
   --steps <a,b,c>          Run only these steps: project, keys, migrations, function-urls,
                            functions, owner, storage, jobs, config.
@@ -201,7 +205,7 @@ async function main() {
 
   const marks = { running: "..", done: "ok", skipped: "--", failed: "!!" };
   const result = await lib.provision(
-    { accessToken, ref: options.project, steps, owner, functions, appOrigin: options["app-origin"] },
+    { accessToken, ref: options.project, steps, owner, functions, appOrigin: options["app-origin"], ...(options["public-origin"] ? { publicOrigin: options["public-origin"] } : {}) },
     { fetch, files, writeConfig: options["no-config"] ? undefined : config.writeInstallConfig },
     (event) => {
       console.log(`[${marks[event.status]}] ${event.step}: ${event.message}`);
@@ -247,7 +251,7 @@ async function resetPassword(options, lib, config) {
   if (password.length < 8) throw new Error("Use a password with at least 8 characters.");
   if ((await ask("Type the new password again (hidden): ", true)) !== password) throw new Error("The two passwords weren't the same. Run the command again.");
 
-  const input = { accessToken, ref: options.project, password, storedEmail: config.readStoredOwner()?.email ?? null, appOrigin: options["app-origin"] ?? lib.DEFAULT_APP_ORIGIN };
+  const input = { accessToken, ref: options.project, password, storedEmail: config.readStoredOwner()?.email ?? null, appOrigin: options["app-origin"] ?? lib.DEFAULT_APP_ORIGIN, ...(options["public-origin"] ? { publicOrigin: options["public-origin"] } : {}) };
   let result;
   try {
     result = await lib.localReset(input, { fetch });
@@ -272,7 +276,7 @@ async function resetPassword(options, lib, config) {
 
 /** `--adopt`: an install that already exists is brought under the ledger, changing as little as asked. */
 async function adoptInstall(options, lib, config, files, functions) {
-  const notHere = ["owner-password", "steps", "no-config", "app-origin", "list"].filter((name) => name in options);
+  const notHere = ["owner-password", "steps", "no-config", "app-origin", "public-origin", "list"].filter((name) => name in options);
   if (notHere.length) throw new Error(`--${notHere[0]} isn't used with --adopt. Adoption never creates an account, and it writes the local config only with --write-config.`);
   if (!options.project) throw new Error("Say which project to adopt: --adopt --project <ref>.");
   if ("members" in options && options.members !== "all") throw new Error("--members takes one value: all.");

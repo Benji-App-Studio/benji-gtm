@@ -74,6 +74,16 @@ function remove(layer: Layer) {
   else { const below = stack[stack.length - 1]; if (below) focusables(below.el)[0]?.focus({ preventScroll: true }); }
 }
 
+/**
+ * True while anything sits on top of the page: a registered layer, or any open dialog, sheet or drawer
+ * (not every overlay registers with useLayer, so the DOM is checked too). Page-level hints such as the
+ * getting-started coach marks hide while this is true.
+ */
+export function overlayOpen() {
+  if (stack.length) return true;
+  return typeof document !== "undefined" && Boolean(document.querySelector('[role="dialog"], [role="alertdialog"], [aria-modal="true"]'));
+}
+
 /** True when `el` belongs to the top-most open layer (or nothing is open). */
 export function isTopLayer(el: Element | null) {
   const top = stack[stack.length - 1];

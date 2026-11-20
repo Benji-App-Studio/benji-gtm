@@ -8,11 +8,16 @@
 import { brandRules, ruleLines } from "./brand-rules";
 import { ASPECTS, cleanMustAvoid, DEFAULT_REQUEST, jobCost, totals, type Aspect, type BatchRequest, type ImageQuality, type ImageResolution, type Plan, type PlannedJob } from "./creative-plan";
 import { forProvider, normalizeImageProvider, type ImageProvider } from "./image-provider";
+import { fill, m, type Vars } from "./i18n/translate";
 import { isHttpsUrl, PLAYGROUND_MODEL, RUNNER_MAX_IMAGES, type PlaygroundVariant } from "./playground-plan";
 import {
   TEMPLATE_FITS, TEMPLATE_SOURCE, type ImportGroup, type ProductFitKind, type ProductTemplate, type TemplateAnalysis, type TemplateField, type TemplateFit, type TemplateGuidance,
   type TemplateKind, type TemplateStatus,
 } from "./playground-templates";
+
+/** A translator's `t` (lib/i18n): sentences here are English unless one is passed. */
+type Translate = (text: string, vars?: Vars) => string;
+const english: Translate = (text, vars) => fill(text, vars);
 
 /** What a remake batch keeps in creative_batches.settings.template. */
 export interface TemplateRemakeSettings {
@@ -70,10 +75,10 @@ export function remakeTextLines(text: { label: string; example: string }[]): str
 export function planTemplateRemake(settings: TemplateRemakeSettings): Plan {
   const errors: string[] = [];
   const warnings: string[] = [];
-  if (!isHttpsUrl(settings.sourceUrl)) errors.push("The uploaded image is missing; upload it again.");
+  if (!isHttpsUrl(settings.sourceUrl)) errors.push(m("The uploaded image is missing; upload it again."));
   const aspect: Aspect = ASPECTS.includes(settings.aspect) ? settings.aspect : "4:5";
   const provider = normalizeImageProvider(settings.provider);
-  if (aspect === "4:5" && provider === "higgsfield") warnings.push("On the Higgsfield API, 4:5 is made in 3:4 (Meta trims it to 4:5); the desktop runner makes 4:5.");
+  if (aspect === "4:5" && provider === "higgsfield") warnings.push(m("On the Higgsfield API, 4:5 is made in 3:4 (Meta trims it to 4:5); the desktop runner makes 4:5."));
   const images = isHttpsUrl(settings.sourceUrl) ? [settings.sourceUrl] : [];
   const params: Record<string, unknown> = {
     aspect_ratio: aspect, resolution: TEMPLATE_REMAKE_OPTIONS.resolution, quality: TEMPLATE_REMAKE_OPTIONS.quality, variant: TEMPLATE_REMAKE_OPTIONS.variant, use_screenshots: false,
@@ -86,14 +91,14 @@ export function planTemplateRemake(settings: TemplateRemakeSettings): Plan {
   return { ...totals([job]), warnings, errors, qa: remakeRules(settings.mustAvoid).qa };
 }
 
-/** Why a template can't be remade now, or null. */
+/** Why a template can't be remade now, or null (English, marked for translation: show it with `t(problem)`). */
 export function remakeProblem(t: Pick<ProductTemplate, "kind" | "status" | "sourceUrl" | "analysis">): string | null {
-  if (t.kind !== "custom") return "Starters are ready as they are.";
-  if (t.status === "analyzing") return "It's still being read; try again in a moment.";
-  if (t.status === "generating") return "It's already being made.";
-  if (t.status === "ready") return "It's already made. Upload the ad again for a new version.";
-  if (!t.analysis) return "It hasn't been read yet.";
-  if (!isHttpsUrl(t.sourceUrl)) return "The uploaded image is missing; upload it again.";
+  if (t.kind !== "custom") return m("Starters are ready as they are.");
+  if (t.status === "analyzing") return m("It's still being read; try again in a moment.");
+  if (t.status === "generating") return m("It's already being made.");
+  if (t.status === "ready") return m("It's already made. Upload the ad again for a new version.");
+  if (!t.analysis) return m("It hasn't been read yet.");
+  if (!isHttpsUrl(t.sourceUrl)) return m("The uploaded image is missing; upload it again.");
   return null;
 }
 
@@ -231,17 +236,24 @@ export function normalizeGuidance(raw: Record<string, unknown>): TemplateGuidanc
   return { ...(bestFor ? { bestFor } : {}), ...(angle ? { angle } : {}), ...(fits.length ? { fits } : {}), ...(adaptTip ? { adaptTip } : {}) };
 }
 
-export const FIT_LABEL: Record<TemplateFit, string> = { physical: "Physical", app: "App", service: "Service", offer: "Offer" };
-const FIT_PLURAL: Record<TemplateFit, string> = { physical: "physical products", app: "apps", service: "services", offer: "offers" };
-const KIND_PHRASE: Record<ProductFitKind, string> = { physical: "a physical product", app: "an app", service: "a service" };
+export const FIT_LABEL: Record<TemplateFit, string> = { physical: m("Physical"), app: m("App"), service: m("Service"), offer: m("Offer") };
+const FIT_PLURAL: Record<TemplateFit, string> = { physical: m("physical products"), app: m("apps"), service: m("services"), offer: m("offers") };
+/** The fit line when the template is built for other kinds: one whole sentence per kind of product. */
+const BUILT_FOR: Record<ProductFitKind, string> = {
+  physical: m("Built for {fits}; {name} is a physical product."),
+  app: m("Built for {fits}; {name} is an app."),
+  service: m("Built for {fits}; {name} is a service."),
+};
 const upperFirst = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 /** An angle as a label: "price comparison" → "Price comparison". */
 export const angleLabel = (angle: string | undefined) => upperFirst((angle ?? "").trim());
-const andList = (items: string[]) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
+const andList = (items: string[], t: Translate = english) => (items.length < 2 ? items.join("")
+  : t("{list} and {last}", { list: items.slice(0, -1).reduce((a, b) => t("{a}, {b}", { a, b })), last: items[items.length - 1] }));
 
 /** A Library card's caption: "Price comparison · Physical, Offer"; null when the template has no guidance. */
-export function guidanceCaption(g: TemplateGuidance | null | undefined): string | null {
-  const parts = [angleLabel(g?.angle), (g?.fits ?? []).map((f) => FIT_LABEL[f]).join(", ")].filter(Boolean);
+export function guidanceCaption(g: TemplateGuidance | null | undefined, t: Translate = english): string | null {
+  // A starter's angle is a known sentence (components/playground/style-library.tsx marks them); an analysed one passes through.
+  const parts = [t(angleLabel(g?.angle)), (g?.fits ?? []).map((f) => t(FIT_LABEL[f])).join(", ")].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
 }
 
@@ -288,15 +300,15 @@ export type TemplateFitResult =
  * product's kind, otherwise "Built for <fits>; <Product> is <kind>." with the template's adapt tip.
  * Null when there's nothing to compare (no fits, or the product's kind isn't known). Never a block.
  */
-export function templateFit(template: TemplateGuidance | null | undefined, productKind: ProductFitKind | null, productName = ""): TemplateFitResult | null {
+export function templateFit(template: TemplateGuidance | null | undefined, productKind: ProductFitKind | null, productName = "", t: Translate = english): TemplateFitResult | null {
   const fits = template?.fits ?? [];
   if (!fits.length || !productKind) return null;
-  const name = productName.trim() || "Your product";
-  if (fits.includes(productKind)) return { fit: "good", kind: productKind, text: `Good fit for ${name}` };
+  const name = productName.trim() || t("Your product");
+  if (fits.includes(productKind)) return { fit: "good", kind: productKind, text: t("Good fit for {name}", { name }) };
   return {
     fit: "adapt", kind: productKind,
-    text: `Built for ${andList(fits.map((f) => FIT_PLURAL[f]))}; ${name} is ${KIND_PHRASE[productKind]}.`,
-    tip: template?.adaptTip?.trim() || "It can still work: swap in your own images and words.",
+    text: t(BUILT_FOR[productKind], { fits: andList(fits.map((f) => t(FIT_PLURAL[f])), t), name }),
+    tip: template?.adaptTip?.trim() || t("It can still work: swap in your own images and words."),
   };
 }
 
@@ -306,12 +318,12 @@ export function templateFit(template: TemplateGuidance | null | undefined, produ
 // is a new row pointing at the same public files: no new image, no credits. Files are never copied, so a
 // file is deleted only once no template row uses it any more (filesToRemove).
 
-/** Why this row can't be imported into `productId`, or null. */
+/** Why this row can't be imported into `productId`, or null (English, marked for translation). */
 export function importProblem(source: Pick<TemplateRow, "kind" | "status" | "product_id" | "starter_id" | "template_url">, productId: string): string | null {
-  if (source.product_id === productId) return "It's already in this product's Library.";
-  if (source.status !== "ready") return "Only ready templates can be imported.";
-  if (source.kind === "starter") return source.starter_id ? null : "That starter is missing its style.";
-  if (!isHttpsUrl(source.template_url)) return "That template has no image yet.";
+  if (source.product_id === productId) return m("It's already in this product's Library.");
+  if (source.status !== "ready") return m("Only ready templates can be imported.");
+  if (source.kind === "starter") return source.starter_id ? null : m("That starter is missing its style.");
+  if (!isHttpsUrl(source.template_url)) return m("That template has no image yet.");
   return null;
 }
 
@@ -377,20 +389,20 @@ export function sniffTemplateImage(bytes: Uint8Array): "image/png" | "image/jpeg
   return null;
 }
 
-/** Why an uploaded file can't be a template (PNG, JPEG or WebP, at most 10 MB, really that type), or null. */
+/** Why an uploaded file can't be a template (PNG, JPEG or WebP, at most 10 MB, really that type), or null (English, marked for translation). */
 export function templateUploadProblem(file: { type: string; size: number }, head?: Uint8Array): string | null {
-  if (!TEMPLATE_UPLOAD_TYPES[file.type]) return "Use a PNG, JPEG or WebP image.";
-  if (!(file.size > 0)) return "That file is empty.";
-  if (file.size > TEMPLATE_UPLOAD_MAX_BYTES) return "Keep the image under 10 MB.";
-  if (head && sniffTemplateImage(head) !== file.type) return "That file isn't a PNG, JPEG or WebP image.";
+  if (!TEMPLATE_UPLOAD_TYPES[file.type]) return m("Use a PNG, JPEG or WebP image.");
+  if (!(file.size > 0)) return m("That file is empty.");
+  if (file.size > TEMPLATE_UPLOAD_MAX_BYTES) return m("Keep the image under 10 MB.");
+  if (head && sniffTemplateImage(head) !== file.type) return m("That file isn't a PNG, JPEG or WebP image.");
   return null;
 }
 
 /** A new name, cleaned: one line, 1 to TEMPLATE_NAME_MAX characters. */
-export function cleanTemplateName(raw: unknown): { name: string } | { error: string } {
+export function cleanTemplateName(raw: unknown, t: Translate = english): { name: string } | { error: string } {
   const name = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim() : "";
-  if (!name) return { error: "Give it a name." };
-  if (name.length > TEMPLATE_NAME_MAX) return { error: `Keep the name under ${TEMPLATE_NAME_MAX} characters.` };
+  if (!name) return { error: t("Give it a name.") };
+  if (name.length > TEMPLATE_NAME_MAX) return { error: t("Keep the name under {max} characters.", { max: TEMPLATE_NAME_MAX }) };
   return { name };
 }
 

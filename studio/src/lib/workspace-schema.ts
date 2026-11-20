@@ -4,6 +4,10 @@
 // generators read the merged brand (lib/server/brand.ts brandFor). This file is safe in the browser:
 // shapes, cleaning and status. The server reader is lib/workspace.ts, and the
 // edge function has a twin in supabase/functions/_shared/workspace.ts (keep the shapes in step).
+// Words people see are marked with m() and said with t() where they are shown.
+import { fill, m, type Vars } from "./i18n/translate";
+
+const english = (text: string, vars?: Vars) => fill(text, vars, "en");
 
 /** IDs only, never secrets. Every field is optional: a module checks for what it needs. */
 export interface WorkspaceConnections {
@@ -11,6 +15,15 @@ export interface WorkspaceConnections {
   meta?: { adAccountId?: string; pageId?: string; instagramId?: string; pixelId?: string; appId?: string };
   revenuecat?: { projectId?: string };
   appstack?: { appId?: string };
+  /**
+   * The operating dashboard's analytics: a Mixpanel project (region us, eu or in; the event names the
+   * funnel reads, empty for the defaults; a saved funnel's ID for time to convert) and a Superwall app.
+   */
+  mixpanel?: {
+    projectId?: string; region?: string; funnelId?: string; workspaceId?: string;
+    installEvent?: string; signupEvent?: string; paywallEvent?: string; trialEvent?: string; purchaseEvent?: string; activeEvent?: string;
+  };
+  superwall?: { applicationId?: string };
   /** supabasePrefix is "<bucket>/<folder>", by default "workspace/<user id>/<product id>". */
   storage?: { supabasePrefix?: string; driveFolderId?: string };
 }
@@ -34,7 +47,20 @@ export interface Workspace { id: string; name: string; connections: WorkspaceCon
 // MARK: Connections and their status
 
 export type ConnectionKey = keyof WorkspaceConnections;
-export const CONNECTION_KEYS: ConnectionKey[] = ["meta", "revenuecat", "appstack", "storage"];
+export const CONNECTION_KEYS: ConnectionKey[] = ["meta", "revenuecat", "superwall", "mixpanel", "appstack", "storage"];
+
+/** The connections Measure reads, each one card that is enough on its own to light up the dashboard. */
+export const MEASURE_SOURCES = ["meta", "revenuecat", "superwall", "mixpanel", "appstack"] as const;
+export type MeasureSourceKey = (typeof MEASURE_SOURCES)[number];
+
+/** The defaults when a Mixpanel event isn't mapped (twin of supabase/functions/metrics/mixpanel.ts DEFAULT_EVENTS). */
+export const MIXPANEL_DEFAULT_EVENTS = { install: "$ae_first_open", signup: "Sign Up", paywall: "Paywall Viewed", trial: "Trial Started", purchase: "Purchase", active: "$ae_session" } as const;
+
+/** A Mixpanel event name as typed: any text up to 255 characters, no line breaks. */
+function eventName(value: string): string | null {
+  const v = value.trim();
+  return v && v.length <= 255 && !/[\r\n]/.test(v) ? v : null;
+}
 
 /** not_set: no IDs yet. set: IDs saved, not (or no longer) verified. verified: a check passed for exactly these IDs. */
 export type ConnectionState = "not_set" | "set" | "verified";
@@ -58,7 +84,17 @@ export interface WorkspaceView extends Workspace {
 }
 
 /** How much each module has to work with for a product; null where it couldn't be counted. */
-export interface WorkspaceCounts { watchlist: number | null; paidAds: number | null; formatCards: number | null; creatives: number | null; approvedCreatives: number | null; metaAds: number | null }
+export interface WorkspaceCounts {
+  watchlist: number | null; paidAds: number | null; formatCards: number | null; creatives: number | null; approvedCreatives: number | null; metaAds: number | null;
+  /** Drafts that reached Meta (they have an ad id). Absent from an older server. */
+  launchedAds?: number | null;
+  /**
+   * Days of results: daily rows with data from a revenue or analytics source (RevenueCat, Superwall,
+   * Mixpanel, AppStack) or with spend on an ad launched from the dashboard. A source that synced nothing
+   * doesn't count. Absent from an older server.
+   */
+  resultRows?: number | null;
+}
 
 /** One row of the workspace switcher. */
 export interface WorkspaceSummary { id: string; name: string; appName: string; iconUrl?: string; isPrimary: boolean; ready: number; total: number }
@@ -76,40 +112,68 @@ const digits = (min: number, max: number) => (value: string) => {
 export const CONNECTION_FIELDS: Record<ConnectionKey, { label: string; blurb: string; fields: Field[] }> = {
   meta: {
     label: "Meta",
-    blurb: "Where Launch creates paused drafts and Measure reads spend and installs.",
+    blurb: m("Where Launch creates paused drafts and Measure reads spend and installs."),
     fields: [
-      { key: "adAccountId", label: "Ad account ID", placeholder: "act_1234567890", hint: "Ads Manager → account dropdown. With or without act_.",
+      { key: "adAccountId", label: m("Ad account ID"), placeholder: "act_1234567890", hint: m("Ads Manager → account dropdown. With or without act_."),
         clean: (v) => { const id = v.trim().match(/^(?:act[_=])?(\d{5,20})$/)?.[1] ?? v.match(/act[_=](\d{5,20})/)?.[1]; return id ? `act_${id}` : null; } },
-      { key: "pageId", label: "Facebook Page ID", placeholder: "102345678901234", hint: "Page → About → Page transparency, or Business settings → Pages.", clean: digits(5, 25) },
-      { key: "instagramId", label: "Instagram account ID", placeholder: "17841400000000000", hint: "Business settings → Instagram accounts. The numeric ID, not the handle.", clean: digits(5, 25) },
-      { key: "pixelId", label: "Pixel / dataset ID", placeholder: "1234567890", hint: "Events Manager → Data sources → your dataset → Settings tab → Dataset ID.", clean: digits(5, 25) },
-      { key: "appId", label: "Meta app ID", placeholder: "1234567890", hint: "developers.facebook.com → your app. Needed for app install campaigns.", clean: digits(5, 25) },
+      { key: "pageId", label: m("Facebook Page ID"), placeholder: "102345678901234", hint: m("Page → About → Page transparency, or Business settings → Pages."), clean: digits(5, 25) },
+      { key: "instagramId", label: m("Instagram account ID"), placeholder: "17841400000000000", hint: m("Business settings → Instagram accounts. The numeric ID, not the handle."), clean: digits(5, 25) },
+      { key: "pixelId", label: m("Pixel / dataset ID"), placeholder: "1234567890", hint: m("Events Manager → Data sources → your dataset → Settings tab → Dataset ID."), clean: digits(5, 25) },
+      { key: "appId", label: m("Meta app ID"), placeholder: "1234567890", hint: m("developers.facebook.com → your app. Needed for app install campaigns."), clean: digits(5, 25) },
     ],
   },
   revenuecat: {
     label: "RevenueCat",
-    blurb: "Trials, subscriptions and revenue, so Measure can work out LTV and payback.",
+    blurb: m("Trials, subscriptions and revenue, so Measure can work out LTV and payback."),
     fields: [
-      { key: "projectId", label: "Project ID", placeholder: "proj1a2b3c4d", hint: "Project settings > General, starts with proj. A link from the dashboard works too.",
+      { key: "projectId", label: m("Project ID"), placeholder: "proj1a2b3c4d", hint: m("Project settings › General, starts with proj. A link from the dashboard works too."),
         // The dashboard address shows the id without its "proj" prefix; the API needs it.
         clean: (v) => { const raw = v.match(/projects\/([A-Za-z0-9_-]{3,64})/)?.[1] ?? v.trim(); const id = /^proj/.test(raw) ? raw : `proj${raw}`; return /^proj[A-Za-z0-9_-]{3,64}$/.test(id) ? id : null; } },
     ],
   },
   appstack: {
     label: "AppStack",
-    blurb: "Install attribution from the App Store, matched to campaigns.",
+    blurb: m("Install attribution from the App Store, matched to campaigns."),
     fields: [
-      { key: "appId", label: "App ID", placeholder: "com.example.app", hint: "Your app's bundle ID (iOS) or package name (Android).",
+      { key: "appId", label: m("App ID"), placeholder: "com.example.app", hint: m("Your app's bundle ID (iOS) or package name (Android)."),
         clean: (v) => (/^[A-Za-z0-9._:-]{1,100}$/.test(v.trim()) ? v.trim() : null) },
     ],
   },
-  storage: {
-    label: "Storage",
-    blurb: "Where this product's files go: brand assets, generated creatives, exports.",
+  superwall: {
+    label: "Superwall",
+    blurb: m("Paywall views, purchases and trials per paywall and placement, and revenue, so Measure shows which paywall converts."),
     fields: [
-      { key: "supabasePrefix", label: "Supabase Storage folder", placeholder: "workspace/<you>/<this product>", hint: "Bucket, then folder. Leave empty for the default.",
+      { key: "applicationId", label: m("Application ID"), placeholder: "9021", hint: m("Superwall dashboard: your app, then Settings. The number in the app's address works too."),
+        clean: (v) => v.trim().match(/^\d{1,20}$/)?.[0] ?? v.match(/applications\/(\d{1,20})/)?.[1] ?? null },
+    ],
+  },
+  mixpanel: {
+    label: "Mixpanel",
+    blurb: m("Your own funnel (install, sign-up, paywall, trial, purchase), retention and active users. Leave an event empty for the default."),
+    fields: [
+      { key: "projectId", label: m("Project ID"), placeholder: "3141592", hint: m("Mixpanel: Settings, Project settings, Overview, Project ID."),
+        clean: (v) => v.trim().match(/^\d{1,20}$/)?.[0] ?? v.match(/project\/(\d{1,20})/)?.[1] ?? null },
+      { key: "region", label: m("Data residency"), placeholder: "us", hint: m("us, eu or in: where the project's data is stored (Project settings, Overview)."),
+        clean: (v) => { const r = v.trim().toLowerCase().replace(/^(united states|usa)$/, "us").replace(/^europe$/, "eu").replace(/^india$/, "in"); return ["us", "eu", "in"].includes(r) ? r : null; } },
+      { key: "installEvent", label: m("Install event"), placeholder: MIXPANEL_DEFAULT_EVENTS.install, hint: m("The event a new install sends. $ae_first_open is only sent when Mixpanel's automatic events are on (they're off by default)."), clean: eventName },
+      { key: "signupEvent", label: m("Sign-up event"), placeholder: MIXPANEL_DEFAULT_EVENTS.signup, hint: m("Your sign-up or account-created event."), clean: eventName },
+      { key: "paywallEvent", label: m("Paywall view event"), placeholder: MIXPANEL_DEFAULT_EVENTS.paywall, hint: m("The event sent when the paywall shows (Superwall's integration sends paywall_open)."), clean: eventName },
+      { key: "trialEvent", label: m("Trial start event"), placeholder: MIXPANEL_DEFAULT_EVENTS.trial, hint: m("The event sent when a free trial starts."), clean: eventName },
+      { key: "purchaseEvent", label: m("Purchase event"), placeholder: MIXPANEL_DEFAULT_EVENTS.purchase, hint: m("The event sent on a first paid purchase."), clean: eventName },
+      { key: "activeEvent", label: m("Active user event"), placeholder: MIXPANEL_DEFAULT_EVENTS.active, hint: m("What counts as using the app that day (retention and active users)."), clean: eventName },
+      { key: "funnelId", label: m("Saved funnel ID (optional)"), placeholder: "4815162", hint: m("A saved Funnels report from install to purchase, for time to convert: the number in its address."),
+        clean: (v) => v.trim().match(/^\d{1,20}$/)?.[0] ?? v.match(/(?:funnel|report)\D{0,20}(\d{3,20})/)?.[1] ?? null },
+      { key: "workspaceId", label: m("Data view ID (optional)"), placeholder: "123456", hint: m("Only if your project uses Data Views: the data view's ID, so Measure reads the same data you see."),
+        clean: (v) => v.trim().match(/^\d{1,20}$/)?.[0] ?? v.match(/view\/(\d{1,20})/)?.[1] ?? null },
+    ],
+  },
+  storage: {
+    label: m("Storage"),
+    blurb: m("Where this product's files go: brand assets, generated creatives, exports."),
+    fields: [
+      { key: "supabasePrefix", label: m("Supabase Storage folder"), placeholder: "workspace/<you>/<this product>", hint: m("Bucket, then folder. Leave empty for the default."),
         clean: (v) => { const p = v.trim().replace(/^\/+|\/+$/g, ""); return /^[a-z0-9][a-z0-9_-]{2,62}\/[A-Za-z0-9._/-]{1,300}$/.test(p) && !p.includes("..") ? p : null; } },
-      { key: "driveFolderId", label: "Google Drive folder ID (optional)", placeholder: "1AbCdEfGhIjKlMnOpQrStUv", hint: "Paste the folder link or its ID. For sharing finished creatives.",
+      { key: "driveFolderId", label: m("Google Drive folder ID (optional)"), placeholder: "1AbCdEfGhIjKlMnOpQrStUv", hint: m("Paste the folder link or its ID. For sharing finished creatives."),
         clean: (v) => { const id = v.match(/folders\/([A-Za-z0-9_-]{10,200})/)?.[1] ?? v.match(/[?&]id=([A-Za-z0-9_-]{10,200})/)?.[1] ?? v.trim(); return /^[A-Za-z0-9_-]{10,200}$/.test(id) ? id : null; } },
     ],
   },
@@ -150,7 +214,10 @@ export function readConnections(raw: unknown): WorkspaceConnections {
  * Connection edits from a form: each section given replaces the saved one (empty fields clear it).
  * Returns the cleaned sections, or an error message naming the field that's wrong.
  */
-export function cleanConnections(input: unknown): WorkspaceConnections | string {
+// The optional fields' labels without " (optional)", as the error sentence names them.
+m("Saved funnel ID"); m("Google Drive folder ID");
+
+export function cleanConnections(input: unknown, t: (text: string, vars?: Vars) => string = english): WorkspaceConnections | string {
   if (!input || typeof input !== "object") return {};
   const out: WorkspaceConnections = {};
   for (const key of CONNECTION_KEYS) {
@@ -161,7 +228,7 @@ export function cleanConnections(input: unknown): WorkspaceConnections | string 
       const value = str((given as Record<string, unknown> | null)?.[field.key]).trim().slice(0, 500);
       if (!value) continue;
       const clean = field.clean(value);
-      if (!clean) return `${CONNECTION_FIELDS[key].label} ${field.label.replace(/ \(optional\)$/, "")}: that doesn't look right. ${field.hint}`;
+      if (!clean) return t("{source} {field}: that doesn't look right. {hint}", { source: t(CONNECTION_FIELDS[key].label), field: t(field.label.replace(/ \(optional\)$/, "")), hint: t(field.hint) });
       section[field.key] = clean;
     }
     (out as Record<string, unknown>)[key] = section;
@@ -257,20 +324,21 @@ export function cleanBrandKit(input: unknown): Partial<Record<keyof BrandKit, un
 export type WorkspaceModule = "brand" | "research" | "market" | "formats" | "studio" | "playground" | "launch" | "measure" | "settings";
 
 /**
- * A product's pages in sidebar order: its brand first (every generator reads it), then the loop
- * (research → create: formats, studio, playground → launch → measure), then its settings. `group`
- * is the sidebar heading a page sits under.
+ * A product's pages as they were before the journey-ordered navigation. The sidebar, the command menu
+ * and the old-address redirects now read lib/nav-model.ts (Home, Research, Studio, Launch, Measure, App
+ * settings); Brand, Market and Playground live on as App settings › Brand, Research › App Store and
+ * Studio › Remix, and their old addresses redirect. Kept for workspaceHref's page names and MODULE_NEEDS.
  */
 export const WORKSPACE_MODULES: { key: WorkspaceModule; label: string; blurb: string; group?: "create"; hidden?: true }[] = [
-  { key: "brand", label: "Brand", blurb: "Name, icon, screenshots, look, voice, offers and the claims a creative must never make: every creative follows it." },
-  { key: "research", label: "Research", blurb: "Your competitors' paid ads from Meta's Ad Library: what's running, for how long, and why it works." },
-  { key: "market", label: "Market", blurb: "Your competitors' apps on the App Store: ratings, prices, how often they ship, what reviewers love and hate, and the top charts." },
-  { key: "formats", label: "Formats", blurb: "A library of proven ad formats, each with a recreate prompt ready for the Studio (now the Studio's Start from).", group: "create", hidden: true },
-  { key: "studio", label: "Studio", blurb: "Make creatives from a format and the brand, then check them against the forbidden claims before they go anywhere.", group: "create" },
-  { key: "playground", label: "Playground", blurb: "Bring a reference ad and say what to change: new images in its exact style, with your product and brand.", group: "create" },
-  { key: "launch", label: "Launch", blurb: "Send approved creatives to Meta as paused drafts, and promote the winners to scaling." },
-  { key: "measure", label: "Measure", blurb: "Ad spend next to what it brought in, per campaign and creative." },
-  { key: "settings", label: "Settings", blurb: "The accounts this app's pages connect to (now the Brand page's Settings tab).", hidden: true },
+  { key: "brand", label: m("Brand"), blurb: m("Name, icon, screenshots, look, voice, offers and the claims a creative must never make: every creative follows it.") },
+  { key: "research", label: m("Research"), blurb: m("Your competitors' paid ads from Meta's Ad Library: what's running, for how long, and why it works.") },
+  { key: "market", label: m("Market"), blurb: m("Your competitors' apps on the App Store: ratings, prices, how often they ship, what reviewers love and hate, and the top charts.") },
+  { key: "formats", label: m("Formats"), blurb: m("A library of proven ad formats, each with a recreate prompt ready for the Studio (now the Studio's Start from)."), group: "create", hidden: true },
+  { key: "studio", label: m("Studio"), blurb: m("Make creatives from a format and the brand, then check them against the forbidden claims before they go anywhere."), group: "create" },
+  { key: "playground", label: m("Remix"), blurb: m("Bring a reference ad and say what to change: new images in its exact style, with your product and brand."), group: "create" },
+  { key: "launch", label: m("Launch"), blurb: m("Send approved creatives to Meta as paused drafts, and promote the winners to scaling.") },
+  { key: "measure", label: m("Measure"), blurb: m("Ad spend next to what it brought in, per campaign and creative.") },
+  { key: "settings", label: m("Settings"), blurb: m("The accounts this app's pages connect to (now the Brand page's Settings tab)."), hidden: true },
 ];
 
 export const workspaceHref = (id: string, module?: WorkspaceModule) => `/app/w/${id}${module ? `/${module}` : ""}`;
@@ -289,16 +357,16 @@ export const MODULE_NEEDS: Record<Exclude<WorkspaceModule, "settings">, { connec
   studio: { connections: ["storage"], brandKit: true },
   playground: { connections: [], brandKit: true },
   launch: { connections: ["meta", "storage"], brandKit: true },
-  measure: { connections: ["meta", "revenuecat", "appstack"], brandKit: false },
+  measure: { connections: ["meta", "revenuecat", "superwall", "mixpanel", "appstack"], brandKit: false },
 };
 
 /** The basics every product's brand needs, whatever it sells, still empty: the setup checklist's "Brand basics". */
 export function brandBasicsGaps(kit: BrandKit): string[] {
-  return [
-    !kit.iconUrl && "logo or icon",
-    !kit.colors.length && "colours",
-    !kit.tone && "tone of voice",
-  ].filter((gap): gap is string => Boolean(gap));
+  return ([
+    !kit.iconUrl && m("logo or icon"),
+    !kit.colors.length && m("colours"),
+    !kit.tone && m("tone of voice"),
+  ] as (string | false)[]).filter((gap): gap is string => Boolean(gap));
 }
 
 /**
@@ -317,12 +385,12 @@ export function productHasApp(product: { kind?: string | null; website?: string 
  * Screenshots of the app and the App Store link are asked only of a product that has an app (`hasApp`).
  */
 export function brandKitGaps(kit: BrandKit, hasApp = false): string[] {
-  return [
-    !kit.iconUrl && "logo or icon",
-    hasApp && !kit.screenshotUrls.length && "screenshots",
-    !kit.colors.length && "colours",
-    !kit.tone && "tone of voice",
-    !kit.forbiddenClaims?.length && "forbidden claims",
-    hasApp && !kit.appStoreUrl && "App Store link",
-  ].filter((gap): gap is string => Boolean(gap));
+  return ([
+    !kit.iconUrl && m("logo or icon"),
+    hasApp && !kit.screenshotUrls.length && m("screenshots"),
+    !kit.colors.length && m("colours"),
+    !kit.tone && m("tone of voice"),
+    !kit.forbiddenClaims?.length && m("forbidden claims"),
+    hasApp && !kit.appStoreUrl && m("App Store link"),
+  ] as (string | false)[]).filter((gap): gap is string => Boolean(gap));
 }

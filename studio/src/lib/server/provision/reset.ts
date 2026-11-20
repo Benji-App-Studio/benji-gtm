@@ -35,6 +35,8 @@ export interface ResetInput {
   recreateEmail?: string | null;
   /** The address the app runs on (needed only to create the account again). */
   appOrigin: string;
+  /** Where a deployed copy is reachable from the internet; left out, read from the environment. */
+  publicOrigin?: string | null;
 }
 
 export interface ResetResult { email: string; userId: string; recreated: boolean }
@@ -49,12 +51,12 @@ export async function resetOwnerPassword(api: ManagementApi, project: ProjectApi
     if (!input.recreateEmail) throw new ProvisionError("no_account", NO_ACCOUNT_MESSAGE);
     if (!isEmail(input.recreateEmail)) throw new ProvisionError("bad_email", "That doesn't look like an email address. Check it for typos.");
     // Existing settings and data stay: createOwner only fills in an owner where there is none.
-    const made = await createOwner(api, project, ref, { email: input.recreateEmail, password: input.password, appOrigin: input.appOrigin, limits: limitsFor("free") }, emit);
+    const made = await createOwner(api, project, ref, { email: input.recreateEmail, password: input.password, appOrigin: input.appOrigin, ...(input.publicOrigin !== undefined ? { publicOrigin: input.publicOrigin } : {}), limits: limitsFor("free") }, emit);
     if (!made.created && !(await project.setUserPassword(made.userId, input.password))) throw new ProvisionError("no_account", NO_ACCOUNT_MESSAGE);
     return { email: input.recreateEmail.trim().toLowerCase(), userId: made.userId, recreated: true };
   }
   // Found by the stored email only: record them as the owner again (an owner is never replaced).
-  if (!owner.recorded) await createOwner(api, project, ref, { email: owner.email, password: input.password, appOrigin: input.appOrigin, limits: limitsFor("free") }, emit);
+  if (!owner.recorded) await createOwner(api, project, ref, { email: owner.email, password: input.password, appOrigin: input.appOrigin, ...(input.publicOrigin !== undefined ? { publicOrigin: input.publicOrigin } : {}), limits: limitsFor("free") }, emit);
   if (!(await project.setUserPassword(owner.id, input.password))) throw new ProvisionError("no_account", NO_ACCOUNT_MESSAGE);
   return { email: owner.email, userId: owner.id, recreated: false };
 }

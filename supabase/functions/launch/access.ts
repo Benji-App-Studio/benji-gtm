@@ -29,7 +29,8 @@ export function launchRefusal(email: string | null | undefined, raw: string | un
  */
 export function launchAccess(role: Role | "legacy" | null, email: string | null | undefined, raw: string | undefined): string | null {
   if (role === "legacy") return launchRefusal(email, raw);
-  if (role === "owner" || role === "member") return null;
+  // accounts mode: every account drives its own token, on its own workspaces.
+  if (role === "owner" || role === "member" || role === "account") return null;
   return "This account isn't a member of this install. Ask its owner to add you.";
 }
 

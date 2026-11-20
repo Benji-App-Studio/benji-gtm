@@ -100,7 +100,7 @@ about 60 days.
 
 ### Part 6: Paste it into Benji GTM
 
-22. In Benji GTM, open **Settings > API keys**.
+22. In Benji GTM, open **Settings > Your keys**.
 23. Find the **Meta Ad Library** row and click **Add**.
 24. Paste the token into the box.
 25. Click **Save and check**.

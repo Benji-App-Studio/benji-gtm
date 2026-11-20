@@ -123,9 +123,33 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  /* Inter sets the Latin letters and every digit; Chinese, Japanese and Korean fall through to --font-cjk
+     (below), set per language so a shared character takes that language's shape. */
+  --font-sans: var(--font-inter), var(--font-cjk, ui-sans-serif), system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 }
+
+/* Chinese, Japanese and Korean. The root layout sets lang on <html> (zh-Hant-TW, ja, ko), and any element
+   that holds text in another language can carry its own lang. Each language gets the system fonts made for
+   it: no download (a CJK web font is megabytes), nothing shifts when it loads, and every weight the OS has.
+   Order: macOS/iOS, then Noto (Android, ChromeOS, Linux, or installed), then Windows. Hiragino and PingFang
+   have the medium and bold weights the UI uses; Windows falls back to its regular and bold. */
+[lang|="ja"] { --font-cjk: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Noto Sans CJK JP", "BIZ UDPGothic", Meiryo, "Yu Gothic UI", ui-sans-serif; }
+[lang|="zh"] { --font-cjk: "PingFang TC", "Noto Sans TC", "Noto Sans CJK TC", "Microsoft JhengHei UI", "Microsoft JhengHei", ui-sans-serif; }
+[lang|="ko"] { --font-cjk: "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK KR", "Malgun Gothic", ui-sans-serif; }
+/* CJK type is set square and open: no tightened tracking (it squeezes characters together), no fake
+   italic, line breaks that follow each language's rules (no line starting with 。 or 」), Korean wrapped
+   at spaces between words rather than inside them. The UI's leading (about 1.5) already suits CJK. */
+:lang(ja), :lang(zh), :lang(ko) {
+  --text-display--letter-spacing: 0;
+  --text-figure--letter-spacing: 0;
+  --text-kpi--letter-spacing: 0;
+  font-synthesis-style: none;
+  line-break: strict;
+}
+/* break-word (not anywhere): a long URL can still wrap, but it doesn't shrink flex and table columns. */
+:lang(ko) { word-break: keep-all; overflow-wrap: break-word; }
+:lang(ja) [class*="tracking-[-"], :lang(zh) [class*="tracking-[-"], :lang(ko) [class*="tracking-[-"] { letter-spacing: 0; }
 
 /* Appearance. The root layout sets data-theme on <html> from the theme cookie: "light", "dark", or
    "system" (follows the OS). Primary buttons turn near-white in dark. The dark values are written
@@ -366,3 +390,31 @@ input[type="checkbox"]::before {
 input[type="checkbox"]:checked::before { transform: scale(1); }
 input[type="checkbox"]:focus-visible { outline: 2px solid color-mix(in srgb, var(--color-focus) 70%, transparent); outline-offset: 2px; }
 input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* The getting-started guide's coach mark (components/getting-started.tsx): a ring that pulses around the
+   button to press, and the small moving pictures in Research's "Get ads" panel. Still with reduced motion. */
+.coach-ring {
+  box-shadow: 0 0 0 2px var(--color-accent), 0 0 0 6px color-mix(in srgb, var(--color-accent) 25%, transparent);
+  animation: coach-pulse 1.6s ease-out infinite;
+}
+@keyframes coach-pulse {
+  0% { box-shadow: 0 0 0 2px var(--color-accent), 0 0 0 0 color-mix(in srgb, var(--color-accent) 45%, transparent); }
+  70% { box-shadow: 0 0 0 2px var(--color-accent), 0 0 0 12px color-mix(in srgb, var(--color-accent) 0%, transparent); }
+  100% { box-shadow: 0 0 0 2px var(--color-accent), 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent); }
+}
+.get-ads-cursor { animation: get-ads-cursor 2.4s ease-in-out infinite; }
+@keyframes get-ads-cursor {
+  0%, 15% { transform: translate(0, 0); }
+  45%, 60% { transform: translate(var(--to-x, 24px), var(--to-y, -10px)) scale(0.92); }
+  85%, 100% { transform: translate(0, 0); }
+}
+.get-ads-drop { animation: get-ads-drop 2.4s ease-in-out infinite; }
+@keyframes get-ads-drop {
+  0%, 10% { transform: translateY(-14px); opacity: 0; }
+  40%, 75% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(0); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-ring { animation: none; }
+  .get-ads-cursor, .get-ads-drop { animation: none; opacity: 1; transform: none; }
+}

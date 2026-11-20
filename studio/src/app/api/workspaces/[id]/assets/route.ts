@@ -1,3 +1,4 @@
+import { getTranslator } from "@/lib/i18n/server";
 import type { NextRequest } from "next/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { refuseWhenFull } from "@/lib/server/storage";
@@ -17,9 +18,9 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/workspa
   const row = await loadRow(session, (await ctx.params).id);
   if (isResponse(row)) return row;
   const { kind, contentType, size } = await request.json().catch(() => ({}));
-  if (kind !== "icon" && kind !== "screenshot") return Response.json({ error: "Upload an icon or a screenshot." }, { status: 400 });
+  if (kind !== "icon" && kind !== "screenshot") return Response.json({ error: (await getTranslator()).t("Upload an icon or a screenshot.") }, { status: 400 });
   const ext = TYPES[contentType];
-  if (!ext) return Response.json({ error: "Use a PNG, JPEG or WebP image." }, { status: 400 });
+  if (!ext) return Response.json({ error: (await getTranslator()).t("Use a PNG, JPEG or WebP image.") }, { status: 400 });
 
   const full = await refuseWhenFull(session, "upload", { fileBytes: Number(size) || 0 });
   if (full) return full;

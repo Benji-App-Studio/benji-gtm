@@ -1,9 +1,16 @@
-// Sample data for the development preview (/preview), and a stand-in for the API that answers from it
-// in the browser. Nothing here is real: no project, no keys, no people.
+// Sample data for the development preview (/preview) and the example app (/example), and a stand-in for
+// the API that answers from it in the browser. The main app, Trailmix, is the one sample world of
+// sample-world.ts: every page reads the same app, competitors and numbers. Nothing here is real: no
+// project, no keys, no people.
 import { EMPTY_BRAND_SYSTEM } from "@/lib/brand-system";
+import { m } from "@/lib/i18n/translate";
 import { KEY_CATALOG } from "@/lib/install/key-catalog";
 import type { InstallMember, InstallState, KeyState } from "@/lib/install/types";
-import { applySampleKeys, creativeAnswer, sampleConnections, sampleKeys } from "./sample-creative";
+import { exampleBeacon, exampleRequest } from "@/lib/example-guard";
+import { applySampleKeys, creativeAnswer, forceSampleKeys, sampleConnections, sampleKeys } from "./sample-creative";
+import { marketAnswer } from "./sample-market";
+import { SOURCE_AD } from "./sample-launch-ads";
+import { bundled, COMPETITORS, CREATIVES, english, WORLD, WORLD_TEXT, type Tx } from "./sample-world";
 
 export const APP_A = "11111111-1111-4111-8111-111111111111";
 export const APP_B = "22222222-2222-4222-8222-222222222222";
@@ -12,10 +19,18 @@ const DEFAULT_MODELS = { text: "text-model-large", vision: "vision-model", trans
 const now = () => new Date().toISOString();
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-export function installSampleApi(role: string, fail: boolean) {
+/**
+ * `example`: the example app (components/example): every key and connection set, every module filled,
+ * and read-only. Every write is refused with `example.blocked` (and `example.onBlocked` is told), whatever
+ * its address, and the page's own requests never reach the server (lib/example-guard.ts). `example.t`
+ * puts the sample app's own words (its profile, a store's category) in the reader's language.
+ */
+export function installSampleApi(role: string, fail: boolean, example?: { blocked: string; onBlocked: () => void; t?: Tx }) {
+  const tx: Tx = example?.t ?? english;
   const flags = window as unknown as { __sampleApi?: boolean };
   if (flags.__sampleApi) return;
   flags.__sampleApi = true;
+  if (example) forceSampleKeys("all");
   const owned = role !== "legacy";
   // ?keys=all|none sets every key or none (default: a mix, with the AI's key missing); ?apps=0 an install with no app;
   // ?ads=0 an app with no ads; ?bare=1 an app with nothing set up.
@@ -32,30 +47,47 @@ export function installSampleApi(role: string, fail: boolean) {
   }
   if (query.get("keys") === "all") for (const name of Object.keys(keys)) keys[name] = key(true);
   if (query.get("keys") === "none") for (const name of Object.keys(keys)) keys[name] = key(false);
-  const bare = query.get("bare") === "1";
+  const bare = !example && query.get("bare") === "1";
   // A stand-in project address (one that can never resolve) for pages that read it or open a channel to it.
   const globals = window as unknown as { __INSTALL__?: unknown };
   globals.__INSTALL__ ??= { url: "https://preview.invalid", key: "sample", origin: null, imageTransforms: false };
   // The creative and ads pages pick their own key set with ?keys=none|some|all (sample-creative.ts).
-  const creative = new URLSearchParams(location.search).has("keys");
+  const creative = Boolean(example) || new URLSearchParams(location.search).has("keys");
   if (creative) applySampleKeys(keys, key, sampleKeys());
   const install: InstallState = {
     role: owned ? (role === "member" ? "member" : "owner") : "legacy", owned, name: owned ? "Northfield Growth" : null,
     aiProvider: "openai", models: { ...DEFAULT_MODELS }, limits: { wallClockSec: 150, uploadLimitMb: 50, storageQuotaGb: 1 }, keys,
+    // The example app is the hosted service's (accounts mode): no Supabase project of the visitor's own is
+    // mentioned. Its plan includes everything, the desktop runner too, so every page shows what it can do.
+    // ?mode=accounts on a preview address: an ordinary account of the hosted service (not staff).
+    ...(example || query.get("mode") === "accounts" ? {
+      role: "account" as const, owned: false, mode: "accounts" as const,
+      plan: { id: example ? "example" : "free", name: example ? "Example" : "Free", staff: Boolean(example), limits: { maxApps: 3, storageGb: 5, monthlyGenerations: 500, jobConcurrency: 4, maxOpenJobs: 20 }, usage: { apps: 2, storageBytes: 1_200_000_000, generationsThisMonth: 42 } },
+    } : {}),
   };
   let members: InstallMember[] = [
     { userId: "u1", email: "sam@northfield.example", role: "owner", createdAt: "2026-09-12T10:00:00Z" },
     { userId: "u2", email: "priya@northfield.example", role: "member", createdAt: "2026-10-02T10:00:00Z" },
   ];
-  const product = (id: string, name: string, is_primary: boolean, kind: string, description: string, website: string) => ({
-    id, name, is_primary, kind, description: bare ? "" : description, website, links: [], stage: "launched", audience: "Weekend hikers", price_tier: "mid", sales_channel: "online", region: "Worldwide",
-    socials: {}, answers: {}, known_competitors: bare ? [] : ["Peakfinder", "Summit Snacks"], keywords: ["trail snacks", "hiking food"], category: "food", category_label: "Food & drink",
-    platform_scores: { instagram: 3, tiktok: 3, youtube: 2, x: 1, linkedin: 0 }, insight: null, insight_status: null, insight_message: null, insight_at: null, insight_applied_at: null, created_at: "2026-09-12T10:00:00Z",
-  });
+  const main = APP_A;
+  const product = (id: string, name: string, is_primary: boolean, kind: string, description: string, website: string) => {
+    const ours = id === main && !bare;
+    return {
+      id, name, is_primary, kind, description: bare ? "" : description, website, links: ours ? [WORLD.appStoreUrl] : [], stage: "launched",
+      audience: ours ? tx(WORLD_TEXT.audience) : "", price_tier: ours ? "mid" : "", sales_channel: "app_store", region: ours ? tx(WORLD_TEXT.region) : "",
+      socials: {}, answers: ours ? { differentiator: tx(WORLD_TEXT.differentiator) } : {}, known_competitors: ours ? COMPETITORS.map((c) => c.name) : [],
+      keywords: ours ? ["hiking app", "trail maps", "hike planner"] : [], category: ours ? "health_fitness" : null, category_label: ours ? tx(WORLD_TEXT.category) : null,
+      platform_scores: { instagram: 3, tiktok: 3, youtube: 2, x: 1, linkedin: 0 }, insight: null, insight_status: null, insight_message: null, insight_at: null, insight_applied_at: null, created_at: "2026-09-12T10:00:00Z",
+    };
+  };
   let products = query.get("apps") === "0" ? [] : [
-    product(APP_A, "Trailmix", true, "food_beverage", "Trail snacks for weekend hikers, sold online and in outdoor shops.", "https://trailmix.example"),
-    product(APP_B, "Pocket Garden", false, "mobile_app", "A plant-care app that reminds you when to water.", "https://pocketgarden.example"),
+    product(APP_A, WORLD.name, true, "mobile_app", tx(WORLD_TEXT.description), WORLD.website),
+    product(APP_B, "Pocket Garden", false, "mobile_app", tx(m("A plant-care app that reminds you when to water.")), "https://pocketgarden.example"),
   ];
+  // Trailmix's brand, the same on Home, App settings › Brand, Research and the Make sheet: logo, colours and voice.
+  const brandOf = (id: string) => (bare || id !== main ? null : {
+    tagline: tx(WORLD_TEXT.tagline), iconUrl: bundled(WORLD.iconPath), colors: [...WORLD.colors], tone: tx(WORLD_TEXT.tone), appStoreUrl: WORLD.appStoreUrl,
+  });
   const projects = [
     { id: "p1", type: "competitors", name: "Hiking apps, autumn", description: "", status: "review", message: null, demo: false, platforms: ["instagram", "tiktok"], sinceDays: 30, competitors: 6, runs: 1, lastRunAt: now(), posts: 240, createdAt: now() },
     { id: "p2", type: "account", name: "@peakfinder", description: "", status: "analyzing", message: null, demo: false, platforms: ["instagram"], sinceDays: 60, competitors: 1, runs: 1, lastRunAt: now(), posts: 80, createdAt: now() },
@@ -64,18 +96,33 @@ export function installSampleApi(role: string, fail: boolean) {
   const connections: Record<string, Record<string, Record<string, string>>> = { [APP_A]: creative ? sampleConnections(sampleKeys()) : { meta: { adAccountId: "act_1234567890" } }, [APP_B]: {} };
   const workspace = (id: string) => {
     const set = connections[id] ?? {};
-    const status = Object.fromEntries(["meta", "revenuecat", "appstack", "storage"].map((k) => [k, Object.keys(set[k] ?? {}).length ? { state: "verified", message: "The ad account answered.", checkedAt: "2026-11-10T08:00:00Z" } : { state: "not_set" }]));
+    // What each source's check said, in the server's English (App settings translates it: connection-words.ts).
+    const said: Record<string, string> = {
+      meta: `Ad account "${WORLD.adAccountName}" (USD) is readable. Page "${WORLD.name}" is readable.`, revenuecat: "RevenueCat project proj_sample is readable (12 overview metrics).",
+      superwall: "The IDs are saved.", mixpanel: "Mixpanel project 3141592 is readable: 212 people did \"$ae_first_open\" in the last 7 days.", appstack: "AppStack's export for app_sample is readable.",
+      storage: "The Google Drive folder isn't checked yet.",
+    };
+    const status = Object.fromEntries(["meta", "revenuecat", "superwall", "mixpanel", "appstack", "storage"].map((k) => [k, Object.keys(set[k] ?? {}).length ? { state: "verified", message: said[k], checkedAt: "2026-11-10T08:00:00Z" } : { state: "not_set" }]));
     const name = products.find((p) => p.id === id)?.name ?? "App";
-    const brandKit = bare || id === APP_B ? { appName: name, colors: [], screenshotUrls: [] } : { appName: name, colors: ["#2F6B3A", "#F4EFE6"], screenshotUrls: [], tone: "Plain and warm", tagline: "Snacks that go the distance" };
+    const brand = brandOf(id);
+    const brandKit = brand ? { appName: name, screenshotUrls: [], ...brand } : { appName: name, colors: [], screenshotUrls: [] };
     return { id, name, isPrimary: id === APP_A, connections: set, brandKit, status };
   };
 
   const real = window.fetch.bind(window);
+  if (example) guardXhr(example);
   window.fetch = async (input, init) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.origin);
     const path = url.pathname;
+    const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+    if (example) {
+      // A price check the Make sheet asks for as it opens (it changes nothing): no answer, so the sheet keeps its own estimate, and no "this is an example" note for a click nobody made.
+      if (method === "POST" && url.origin === location.origin && /^\/api\/studio\/[^/]+\/plan$/.test(path)) return json({ example: true });
+      const verdict = exampleRequest(method, url.href, location.origin);
+      if (verdict === "block") { example.onBlocked(); return json({ error: example.blocked, example: true }, 403); }
+      if (verdict === "pass") return real(input, init);
+    }
     if (url.origin !== location.origin || !path.startsWith("/api/")) return real(input, init);
-    const method = (init?.method ?? "GET").toUpperCase();
     const body = typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, unknown> : {};
     await new Promise((resolve) => setTimeout(resolve, 350));
     const keyMatch = path.match(/^\/api\/install\/keys\/([^/]+)(\/verify)?$/);
@@ -116,24 +163,32 @@ export function installSampleApi(role: string, fail: boolean) {
       return json({ deleted: true });
     }
     if (path === "/api/projects") return json(query.get("analyses") === "0" ? [] : projects);
+    if (path === "/api/onboarding") return onboardingAnswer(body, tx);
     const counts = path.match(/^\/api\/workspaces\/([^/]+)\/counts$/);
+    if (counts && example) return json({ counts: { watchlist: sampleWatch(APP_A).length, paidAds: sampleAds(APP_A).length, formatCards: 2, creatives: CREATIVES.length, approvedCreatives: CREATIVES.filter((c) => c.approved).length, metaAds: 6, launchedAds: 6, resultRows: 90 } });
     if (counts) return json({ counts: { watchlist: bare ? 0 : 2, paidAds: bare || query.get("ads") === "0" ? 0 : sampleAds(APP_A).length, formatCards: 0, creatives: 0, approvedCreatives: 0, metaAds: 0 } });
-    if (path.startsWith("/api/studio/")) return json({ creatives: [], batches: [], jobs: [] });
+    if (path.startsWith("/api/studio/") && !creative) return json({ creatives: [], batches: [], jobs: [] });
     const research = path.match(/^\/api\/research\/([^/]+)$/);
     if (research && method === "GET") {
       const id = research[1], none = bare || query.get("ads") === "0";
       return json({
-        workspace: { id, name: products.find((p) => p.id === id)?.name ?? "App" }, ads: none ? [] : sampleAds(id), adsNext: null, adsTotal: none ? 0 : 5,
+        workspace: { id, name: products.find((p) => p.id === id)?.name ?? "App" }, ads: none ? [] : sampleAds(id), adsNext: null, adsTotal: none ? 0 : sampleAds(id).length,
         watchlist: bare ? [] : sampleWatch(id), pulls: [], localRuns: [], lastImports: none ? {} : { "1001": now() }, suggestions: [],
         health: { metaApi: Boolean(keys.META_AD_LIBRARY_TOKEN?.set), apify: Boolean(keys.APIFY_TOKEN?.set), jev: true, tiktok: "off", tiktokLibrary: false }, mediaStatus: null, assets: [], avatars: [],
-        brand: { appName: "Trailmix", tagline: null, colors: [], iconUrl: null, screenshots: 0, tone: null, forbiddenClaims: [], appStoreUrl: null },
+        brand: { appName: products.find((p) => p.id === id)?.name ?? "App", tagline: brandOf(id)?.tagline ?? null, colors: brandOf(id)?.colors ?? [], iconUrl: brandOf(id)?.iconUrl ?? null, screenshots: 0, tone: brandOf(id)?.tone ?? null, forbiddenClaims: [], appStoreUrl: brandOf(id)?.appStoreUrl ?? null },
       });
     }
+    // With every key (?keys=all) a plan has a paid source, so the first run's cost question can be seen.
+    if (research && body.action === "plan" && keys.APIFY_TOKEN?.set) return json({ free: 1, paid: 2, paidAds: 440, usd: 3.2, notes: [], sources: [] });
     if (research) return json({ pending: 0, running: false, free: 0, paid: 0, paidAds: 0, usd: 0, notes: ["The preview doesn't collect ads."] });
     const brand = path.match(/^\/api\/products\/([^/]+)\/brand$/);
     if (brand) {
       const name = products.find((p) => p.id === brand[1])?.name ?? "App";
-      return json({ name, appName: name, stored: false, hasProfile: false, suggestions: [], draft: { basics: { appName: name, tagline: "", iconUrl: "", appStoreUrl: "", screenshotUrls: [] }, system: EMPTY_BRAND_SYSTEM } });
+      const kit = brandOf(brand[1]);
+      if (!kit) return json({ name, appName: name, stored: false, hasProfile: false, suggestions: [], draft: { basics: { appName: name, tagline: "", iconUrl: "", appStoreUrl: "", screenshotUrls: [] }, system: EMPTY_BRAND_SYSTEM } });
+      const roles = ["primary", "background", "accent"] as const;
+      const palette = kit.colors.map((hex, i) => ({ name: [tx(m("Forest")), tx(m("Sand")), tx(m("Sunset"))][i], hex, role: roles[i], use: "" }));
+      return json({ name, appName: name, stored: true, hasProfile: false, suggestions: [], draft: { basics: { appName: name, tagline: kit.tagline, iconUrl: kit.iconUrl, appStoreUrl: kit.appStoreUrl, screenshotUrls: [] }, system: { ...EMPTY_BRAND_SYSTEM, palette, voice: { ...EMPTY_BRAND_SYSTEM.voice, oneLine: kit.tone } } } });
     }
     if (/^\/api\/products\/[^/]+\/assets$/.test(path)) return json([]);
     const one = path.match(/^\/api\/products\/([^/]+)$/);
@@ -141,9 +196,9 @@ export function installSampleApi(role: string, fail: boolean) {
     const analysis = path.match(/^\/api\/projects\/([^/]+)(\/log)?$/);
     if (analysis?.[2]) return json({ activity: [] });
     if (analysis && method === "GET") {
-      const candidate = (id: string, name: string, selected: boolean) => ({ id, name, handles: { instagram: name.toLowerCase().replace(/\s+/g, "") }, bio: "Trail food for long days out.", followers: 48_000, verified: false, website: null, kind: "direct_competitor", kindConfidence: 0.9, similarity: 3.2, source: "search", foundBy: [], selected });
+      const candidate = (id: string, c: (typeof COMPETITORS)[number], selected: boolean) => ({ id, name: c.name, handles: { instagram: c.name.toLowerCase().replace(/\s+/g, "") }, bio: c.bio, followers: 48_000 - Number(id.slice(1)) * 9_000, verified: false, website: null, kind: "direct_competitor", kindConfidence: 0.9, similarity: 3.2, source: "search", foundBy: [], selected });
       return json({
-        project: { id: analysis[1], type: "competitors", name: "Hiking apps, autumn", description: "Trail snacks for weekend hikers.", category: "food", answers: {}, keywords: ["trail snacks"], platforms: ["instagram", "tiktok"], sinceDays: 30, limitPerAccount: 20, status: "review", candidates: [candidate("c1", "Peakfinder", true), candidate("c2", "Summit Snacks", true), candidate("c3", "Ridge Bars", false)], createdAt: now(), updatedAt: now() },
+        project: { id: analysis[1], type: "competitors", name: "Hiking apps, autumn", description: tx(WORLD_TEXT.description), category: "health_fitness", answers: {}, keywords: ["hiking app"], platforms: ["instagram", "tiktok"], sinceDays: 30, limitPerAccount: 20, status: "review", candidates: [candidate("c1", COMPETITORS[0], true), candidate("c2", COMPETITORS[1], true), candidate("c3", COMPETITORS[2], false)], createdAt: now(), updatedAt: now() },
         runs: [], estimate: { posts: 80, usd: 1.2, competitors: 2 },
       });
     }
@@ -154,9 +209,46 @@ export function installSampleApi(role: string, fail: boolean) {
       if (ws[2]) return json({ result: { ok: true } });
       return json(workspace(ws[1]));
     }
-    const mine = creativeAnswer(path, url, method, Object.fromEntries(products.map((p) => [p.id, p.name])));
+    const market = marketAnswer(path, method, tx);
+    if (market) return market;
+    const mine = creativeAnswer(path, url, method, Object.fromEntries(products.map((p) => [p.id, p.name])), tx);
     if (mine) return mine;
     return json({ error: "The preview has no answer for this request." }, 404);
+  };
+}
+
+/** The first run's requests (components/onboarding), for /preview/onboarding. */
+function onboardingAnswer(body: Record<string, unknown>, tx: Tx): Response {
+  const icon = bundled(WORLD.iconPath);
+  if (body.action === "lookup") {
+    const link = String(body.link ?? "");
+    const store = /apps\.apple\.com/.test(link);
+    return json({ link: { kind: store ? "app_store" : "website", url: link, host: "x" }, name: store ? WORLD.storeName : WORLD.name,
+      listing: store ? { storeId: WORLD.storeId, name: WORLD.storeName, developer: WORLD.developer, iconUrl: icon, category: tx(WORLD_TEXT.category), genreId: "6013", description: tx(WORLD_TEXT.description), screenshots: [], url: link, price: "Free", rating: 4.6 } : null });
+  }
+  if (body.action === "create") return json({ product: { id: APP_B, name: body.name }, reading: false });
+  if (body.action === "suggest") return json({ appStore: COMPETITORS.map((c) => ({ name: c.name, full: c.store, iconUrl: picture(c.name[0], c.fill) })), ai: ["Trailhead"], reading: false });
+  return json({ product: { id: APP_B } });
+}
+
+/** The example app: uploads sent with XMLHttpRequest are refused too (only reads go out), and so is every beacon. */
+function guardXhr(example: { blocked: string; onBlocked: () => void }) {
+  if (typeof navigator.sendBeacon === "function") navigator.sendBeacon = () => { example.onBlocked(); return exampleBeacon(); };
+  const open = XMLHttpRequest.prototype.open;
+  const send = XMLHttpRequest.prototype.send;
+  const methods = new WeakMap<XMLHttpRequest, { method: string; url: string }>();
+  XMLHttpRequest.prototype.open = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
+    methods.set(this, { method, url: String(url) });
+    return (open as (...args: unknown[]) => void).call(this, method, url, ...rest);
+  } as typeof XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.send = function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null) {
+    const seen = methods.get(this);
+    if (!seen || exampleRequest(seen.method, seen.url, location.origin) !== "pass") {
+      example.onBlocked();
+      this.abort();
+      throw new Error(example.blocked);
+    }
+    return send.call(this, body);
   };
 }
 
@@ -167,23 +259,29 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString
 
 function sampleWatch(productId: string) {
   const row = (id: string, name: string, page: string) => ({ id, product_id: productId, name, network: "meta", page_id: page, page_url: null, search_terms: null, tiktok_advertiser_id: null, countries: ["US"], candidate_id: null, enabled: true, created_at: daysAgo(40), source: "research" });
-  return [row("w1", "Peakfinder", "1001"), row("w2", "Summit Snacks", "1002")];
+  return COMPETITORS.filter((c) => c.pageId).map((c, n) => row(`w${n + 1}`, c.name, c.pageId!));
 }
 
+/** The competitors' ads in Research. The first is the one Trailmix's batch b1 was made from (Launch › Ads shows it as the source). */
 function sampleAds(productId: string) {
-  const ad = (n: number, watch: string, page: string, name: string, days: number, headline: string, body: string, media_type: string, read: boolean, active = true) => ({
-    id: `ad${n}`, product_id: productId, watch_id: watch, is_own: false, library: null, network: "meta", source: "meta_local", ad_id: `90${n}`, page_id: page, page_name: name, competitor: name,
-    started_at: daysAgo(days), stopped_at: active ? null : daysAgo(2), active, placements: ["facebook", "instagram"], media_type, is_video: media_type === "video", body, headline, description: "", cta: "Shop now", link_url: "example.com",
-    media: [{ type: "image", url: picture(name, n % 2 ? "#3d6b52" : "#5a5f8a") }], thumb: picture(name, n % 2 ? "#3d6b52" : "#5a5f8a"), snapshot_url: null, countries: ["US"], variants: n === 1 ? 4 : 1, impressions_rank: n,
-    creative: null, creative_key: `k${n}`, metrics: null,
-    decoded: read ? { format: "static_benefit", formatConfidence: 0.8, hookType: "bold_claim", roles: [{ text: headline, role: "hook", confidence: 0.9 }, { text: body, role: "benefit", confidence: 0.8 }], mentionsProduct: null, source: "copy" } : null,
-    decoded_at: read ? daysAgo(1) : null, sent_to_library_at: null, scan: null, scanned_at: null, creative_changed_at: null, first_seen_at: daysAgo(Math.min(days, 30)), last_seen_at: daysAgo(0),
-  });
+  const ad = (n: number, watch: string, page: string, name: string, days: number, headline: string, body: string, media_type: string, read: boolean, active = true, image?: string) => {
+    const fill = n % 2 ? "#3d6b52" : "#5a5f8a";
+    const url = image ?? picture(name, fill);
+    return {
+      id: `ad${n}`, product_id: productId, watch_id: watch, is_own: false, library: null, network: "meta", source: "meta_local", ad_id: n === 1 ? SOURCE_AD.libraryId : `90${n}`, page_id: page, page_name: name, competitor: name,
+      started_at: daysAgo(days), stopped_at: active ? null : daysAgo(2), active, placements: ["facebook", "instagram"], media_type, is_video: media_type === "video", body, headline, description: "", cta: "Install now", link_url: "apps.apple.com",
+      media: [{ type: "image", url, ...(image ? { width: 1080, height: 1350 } : {}) }], thumb: url, snapshot_url: n === 1 ? `https://www.facebook.com/ads/library/?id=${SOURCE_AD.libraryId}` : null, countries: ["US"], variants: n === 1 ? 4 : 1, impressions_rank: n,
+      creative: null, creative_key: `k${n}`, metrics: null,
+      decoded: read ? { format: "static_benefit", formatConfidence: 0.8, hookType: "bold_claim", roles: [{ text: headline, role: "hook", confidence: 0.9 }, { text: body, role: "benefit", confidence: 0.8 }], mentionsProduct: null, source: "copy" } : null,
+      decoded_at: read ? daysAgo(1) : null, sent_to_library_at: null, scan: null, scanned_at: null, creative_changed_at: null, first_seen_at: daysAgo(Math.min(days, 30)), last_seen_at: daysAgo(0),
+    };
+  };
+  const [peak, ridge] = COMPETITORS;
   return [
-    ad(1, "w1", "1001", "Peakfinder", 64, "Fuel that fits a pocket", "Three ingredients. Zero crumbs. Made for the last mile.", "image", true),
-    ad(2, "w1", "1001", "Peakfinder", 31, "The bar hikers reorder", "Rated 4.8 by 12,000 hikers. Free shipping on your first box.", "image", true),
-    ad(3, "w1", "1001", "Peakfinder", 5, "New: maple pecan", "A limited batch for the autumn trails.", "video", false),
-    ad(4, "w2", "1002", "Summit Snacks", 45, "Stop packing sad snacks", "Real fruit, real nuts, nothing you can't pronounce.", "carousel", false),
-    ad(5, "w2", "1002", "Summit Snacks", 12, "Your pack called", "It wants better snacks. 20% off the starter box.", "image", false, false),
+    ad(1, "w1", peak.pageId!, peak.name, 64, SOURCE_AD.headline, "Pick a trail, check the climb, go. 40,000 trails, free to start.", "image", true, true, bundled(WORLD.competitorAdPath)),
+    ad(2, "w1", peak.pageId!, peak.name, 31, "The app hikers rate 4.7", "Reviews from 18,000 hikers on every trail near you.", "image", true),
+    ad(3, "w1", peak.pageId!, peak.name, 5, "New: autumn colour trails", "The best leaf-peeping hikes, mapped for this month.", "video", false),
+    ad(4, "w2", ridge.pageId!, ridge.name, 45, "No signal? No problem.", "Download the map before you go and follow it offline.", "carousel", false),
+    ad(5, "w2", ridge.pageId!, ridge.name, 12, "Stop guessing the route", "Turn-by-turn trail directions. Free for 7 days.", "image", false, false),
   ];
 }

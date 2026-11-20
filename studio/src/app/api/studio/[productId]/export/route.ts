@@ -5,6 +5,7 @@ import { zip, type ZipEntry } from "@/lib/zip";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { approvedForExport } from "@/lib/server/export";
 import { caughtFailure } from "@/lib/server/errors";
+import { getTranslator } from "@/lib/i18n/server";
 
 /** Files fetched at once while building the zip. */
 const PARALLEL = 6;
@@ -15,18 +16,19 @@ const PARALLEL = 6;
  * `?ids=a,b` limits it to those creatives.
  */
 export async function GET(request: NextRequest, ctx: RouteContext<"/api/studio/[productId]/export">) {
+  const { t } = await getTranslator();
   const session = await requireUser();
   if (isResponse(session)) return session;
   const { productId } = await ctx.params;
-  if (!/^[0-9a-f-]{36}$/i.test(productId)) return Response.json({ error: "This workspace doesn't exist." }, { status: 404 });
+  if (!/^[0-9a-f-]{36}$/i.test(productId)) return Response.json({ error: t("This workspace doesn't exist.") }, { status: 404 });
   const ids = request.nextUrl.searchParams.get("ids")?.split(",").filter((id) => /^[0-9a-f-]{36}$/i.test(id)).slice(0, 500);
   let set;
   try {
     set = await approvedForExport(session, productId, ids);
   } catch (error) {
-    return caughtFailure("export list", error, "Couldn't list the approved creatives. Try again.");
+    return caughtFailure("export list", error, t("Couldn't list the approved creatives. Try again."), 500, {}, t);
   }
-  if (!set.files.length) return Response.json({ error: "No approved creatives to download yet." }, { status: 404 });
+  if (!set.files.length) return Response.json({ error: t("No approved creatives to download yet.") }, { status: 404 });
 
   const entries: ZipEntry[] = [];
   const failed: string[] = [];
@@ -38,7 +40,7 @@ export async function GET(request: NextRequest, ctx: RouteContext<"/api/studio/[
       entries.push({ path: f.zipPath, bytes: new Uint8Array(await blob.arrayBuffer()) });
     }));
   }
-  if (!entries.length) return Response.json({ error: "Couldn't read any of the files from storage. Try again." }, { status: 502 });
+  if (!entries.length) return Response.json({ error: t("Couldn't read any of the files from storage. Try again.") }, { status: 502 });
   entries.sort((a, b) => a.path.localeCompare(b.path));
   const body = zip(entries);
   return new Response(body as unknown as BodyInit, {

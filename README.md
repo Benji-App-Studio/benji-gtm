@@ -106,7 +106,7 @@ The full walk-through of every step is in [docs/SETUP.md](docs/SETUP.md).
 | [OpenAI](docs/keys/openai.md) | Reads ads and posts, writes the analysis, checks creatives | Pay for what you use. A typical analysis costs cents. |
 | [Apify](docs/keys/apify.md) (optional) | Collects competitors' posts and ads automatically | Free monthly credit, then pay for what you use. |
 | [Higgsfield](docs/keys/higgsfield.md) (optional) | Generates images and videos | Pay for what you use. |
-| [Meta](docs/keys/meta-ads.md) ([Ad Library](docs/keys/meta-ad-library.md)), [RevenueCat](docs/keys/revenuecat.md), [AppStack](docs/keys/appstack.md) (optional) | Send ads to Meta and measure revenue | Your existing accounts. |
+| [Meta](docs/keys/meta-ads.md) ([Ad Library](docs/keys/meta-ad-library.md)), [RevenueCat](docs/keys/revenuecat.md), [Superwall](docs/keys/superwall.md), [Mixpanel](docs/keys/mixpanel.md), [AppStack](docs/keys/appstack.md) (optional) | Send ads to Meta, measure revenue, paywalls, funnel and unit economics | Your existing accounts. |
 | Vercel (optional) | Puts the app online | Free plan works for personal use. |
 
 You only need Supabase and OpenAI to begin. Everything else can be added later in **Settings > API keys**.
@@ -136,6 +136,7 @@ Each key has a step-by-step guide, including
 - [Make a competitor's winning ad for your own app: a ready-made prompt, one image, or a batch](docs/RECREATE-ADS.md)
 - [Market: competitors' apps, top charts and review gaps](docs/MARKET.md) (free; AI parts use your OpenAI key)
 - [The desktop runner for creator-style videos](docs/DESKTOP-RUNNER.md) (optional)
+- [Languages: what follows your language, and Chinese, Japanese and Korean on ads](docs/LANGUAGES.md)
 - [If something goes wrong](docs/TROUBLESHOOTING.md)
 - [For coding agents (Claude Code, Codex)](AGENTS.md)
 

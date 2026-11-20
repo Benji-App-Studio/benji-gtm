@@ -4,11 +4,14 @@
 // live in their own client files and are re-exported here (Menu).
 import Link from "next/link";
 import type { ComponentProps, CSSProperties, KeyboardEvent, ReactNode } from "react";
+import { m } from "@/lib/i18n/translate";
 import { showOriginal, thumbUrl } from "@/lib/thumb";
 import { PLATFORM_BETA, PLATFORM_LABEL, type Platform } from "@/lib/types";
-import { IconCalendar, IconChevronDown, IconChevronLeft, IconChevronRight, IconLock, IconMore, IconPlug, IconSearch, IconSparkles } from "./icons";
+import { PageStep, Said, SaidNav, WithSaid } from "./said";
+import { IconCalendar, IconChevronDown, IconChevronRight, IconLock, IconMore, IconPlug, IconSearch, IconSparkles } from "./icons";
 
 export { Menu, MenuItem, MenuLabel, MenuSeparator, MenuSub, type MenuTriggerProps } from "./menu";
+export { Term } from "./term";
 
 export const cx = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(" ");
 
@@ -58,7 +61,7 @@ export function PageHeader({ title, badge, subtitle, crumbs, actions, className 
   return (
     <>
       <header className={cx(headerBarClass, !intro && !subtitle && className)}>
-        <nav aria-label="Breadcrumb" className="flex min-w-0 shrink items-center gap-1 text-sm font-medium">
+        <SaidNav label={m("Breadcrumb")} className="flex min-w-0 shrink items-center gap-1 text-sm font-medium">
           {items.map((crumb, i) => (
             <span key={i} className="flex min-w-0 shrink items-center gap-1">
               {crumb.href ? <Link href={crumb.href} className="truncate rounded-xs text-muted transition-colors hover:text-ink">{crumb.label}</Link> : <span className="truncate text-muted">{crumb.label}</span>}
@@ -68,7 +71,7 @@ export function PageHeader({ title, badge, subtitle, crumbs, actions, className 
           {titleIsCurrent
             ? <h1 className="flex min-w-0 items-center gap-2 truncate text-ink"><span className="truncate">{title}</span>{badge}</h1>
             : <span aria-current="page" className="truncate text-ink">{current}</span>}
-        </nav>
+        </SaidNav>
         {actions && <div className="no-scrollbar -my-1 flex max-w-[70%] min-w-0 items-center gap-1.5 overflow-x-auto py-1 sm:max-w-none [&>*]:shrink-0 [&_a]:rounded-full [&_button]:rounded-full">{actions}</div>}
       </header>
       {(intro || subtitle) && (
@@ -151,7 +154,7 @@ export function CardHeader({ title, subtitle, action, menu, className }: { title
         {subtitle && <p className="mt-0.5 text-caption text-muted">{subtitle}</p>}
       </div>
       {action}
-      {menu && <IconButton size="sm" label="More" onClick={menu} />}
+      {menu && <WithSaid text={m("More")}>{(label) => <IconButton size="sm" label={label} onClick={menu} />}</WithSaid>}
     </div>
   );
 }
@@ -216,7 +219,7 @@ export function PlatformBadge({ platform, showBeta = false }: { platform: Platfo
     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink">
       <span className={cx("size-2.5 rounded-full", PLATFORM_DOT[platform])} />
       {PLATFORM_LABEL[platform]}
-      {showBeta && PLATFORM_BETA[platform] && <span className="rounded-full bg-control px-1.5 text-[10px] text-muted">beta</span>}
+      {showBeta && PLATFORM_BETA[platform] && <span className="rounded-full bg-control px-1.5 text-[10px] text-muted"><Said text={m("beta")} /></span>}
     </span>
   );
 }
@@ -373,16 +376,16 @@ export function Pagination({ page, pages, onPage, className }: { page: number; p
   const shown = [...new Set([1, 2, 3, page - 1, page, page + 1, pages].filter((p) => p >= 1 && p <= pages))].sort((a, b) => a - b);
   const round = "grid size-7 place-items-center rounded-control text-xs tabular-nums transition-colors";
   return (
-    <nav aria-label="Pages" className={cx("flex items-center gap-1", className)}>
-      <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => onPage(page - 1)} className={cx(round, "border border-hairline bg-raised hover:bg-hover disabled:pointer-events-none disabled:opacity-40")}><IconChevronLeft className="size-3.5" /></button>
+    <SaidNav label={m("Pagination")} className={cx("flex items-center gap-1", className)}>
+      <PageStep dir="previous" disabled={page <= 1} onClick={() => onPage(page - 1)} className={cx(round, "border border-hairline bg-raised hover:bg-hover disabled:pointer-events-none disabled:opacity-40")} />
       {shown.map((p, i) => (
         <span key={p} className="flex items-center gap-1">
           {i > 0 && p - shown[i - 1] > 1 && <span className="px-1 text-faint">…</span>}
           <button type="button" aria-current={p === page ? "page" : undefined} onClick={() => onPage(p)} className={cx(round, p === page ? "border border-hairline bg-control font-medium text-ink" : "text-label hover:bg-hover")}>{p}</button>
         </span>
       ))}
-      <button type="button" aria-label="Next page" disabled={page >= pages} onClick={() => onPage(page + 1)} className={cx(round, "border border-hairline bg-raised hover:bg-hover disabled:pointer-events-none disabled:opacity-40")}><IconChevronRight className="size-3.5" /></button>
-    </nav>
+      <PageStep dir="next" disabled={page >= pages} onClick={() => onPage(page + 1)} className={cx(round, "border border-hairline bg-raised hover:bg-hover disabled:pointer-events-none disabled:opacity-40")} />
+    </SaidNav>
   );
 }
 
@@ -446,7 +449,7 @@ export function Callout({ tone = "raised", label, title, children, action, class
 }
 
 /** The one emphasised card on a page ("Pattern found", a figure, a headline, a button): a plain card like any other, no gradient. */
-export function HeroCard({ label = "Pattern found", pager, value, unit, headline, body, action, className }: {
+export function HeroCard({ label = <Said text={m("Pattern found")} />, pager, value, unit, headline, body, action, className }: {
   label?: ReactNode; pager?: ReactNode; value?: ReactNode; unit?: ReactNode; headline: ReactNode; body?: ReactNode; action?: ReactNode; className?: string;
 }) {
   return (
@@ -569,7 +572,7 @@ export function SettingsRow({ label, description, children, below, className }: 
 }
 
 /** A small inline "needs X" state, with a link to where X is set: <Locked href="/app/settings/keys">Needs an OpenAI key</Locked>. */
-export function Locked({ children, href = "/app/settings/keys", action = "Add it", className }: { children: ReactNode; href?: string; action?: ReactNode; className?: string }) {
+export function Locked({ children, href = "/app/settings/keys", action = <Said text={m("Add it")} />, className }: { children: ReactNode; href?: string; action?: ReactNode; className?: string }) {
   return (
     <span className={cx("inline-flex min-h-7 max-w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded-control border border-hairline px-2 py-1 text-xs text-muted", className)}>
       <span className="inline-flex items-center gap-1.5"><IconLock className="size-3.5 shrink-0" />{children}</span>
@@ -579,7 +582,7 @@ export function Locked({ children, href = "/app/settings/keys", action = "Add it
 }
 
 /** A page-level "connect X to use this" panel: a title, one line, and a button that goes to Settings. */
-export function ConnectState({ title, body, href = "/app/settings/keys", action = "Open settings", icon, className }: {
+export function ConnectState({ title, body, href = "/app/settings/keys", action = <Said text={m("Open settings")} />, icon, className }: {
   title: ReactNode; body?: ReactNode; href?: string; action?: ReactNode; icon?: ReactNode; className?: string;
 }) {
   return (
@@ -587,7 +590,8 @@ export function ConnectState({ title, body, href = "/app/settings/keys", action 
       <span className="mb-3 text-faint [&_svg]:size-6">{icon ?? <IconPlug />}</span>
       <h2 className="text-sm font-medium">{title}</h2>
       {body && <p className="mt-1 text-sm text-muted">{body}</p>}
-      <ButtonLink href={href} className="mt-4 rounded-full">{action}</ButtonLink>
+      {/* data-guide: the getting-started guide points here when a step's page needs a key first. */}
+      <ButtonLink href={href} className="mt-4 rounded-full" data-guide="connect">{action}</ButtonLink>
     </div>
   );
 }

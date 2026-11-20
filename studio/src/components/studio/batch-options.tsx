@@ -14,24 +14,39 @@ import { profileBrief, type ProductProfile } from "@/lib/product-insight";
 import { ProductImagePicker, type ImageTile } from "../research/product-image-picker";
 import { cx, Field, inputClass } from "../ui";
 import { AdFormatPicker } from "./placement-picker";
+import { appSettingsHref } from "@/lib/nav-model";
+import { useT } from "@/lib/i18n/client";
+import { m, type Translator } from "@/lib/i18n/translate";
 
 const IMAGE_MODEL_LABEL: Record<BatchRequest["image"]["model"], string> = { gpt_image_2_5: "GPT Image 2.5", marketing_studio_image: "Marketing Studio Image" };
+/** The image qualities in words (the values sent stay low…max). */
+const QUALITY_LABEL: Record<ImageQuality, string> = { low: m("low"), medium: m("medium"), high: m("high"), xhigh: m("extra high"), max: m("max") };
 
 /** What the closed "More options" says will be used: the settings of the kinds picked, the brand and any picks. */
-export function optionsSummary(req: BatchRequest, workspace: StudioOverview["workspace"]): string {
+export function optionsSummary(req: BatchRequest, workspace: StudioOverview["workspace"], t: Translator["t"]): string {
   const has = (k: CreativeKind) => req.kinds.includes(k);
   const ai = { ...DEFAULT_REQUEST.aiVideo!, ...req.aiVideo };
   const parts: string[] = [];
-  if (req.format === "carousel") parts.push(`carousel of ${req.cards ?? 3}`);
-  if (has("ugc_video")) parts.push(`UGC ${VIDEO_MODES.find((m) => m.id === req.video.mode)?.label ?? req.video.mode}, ${req.video.duration}s, ${req.video.resolution}`);
-  if (has("ai_video")) parts.push(`AI video ${ai.duration}s, ${ai.resolution}`);
-  if (has("image")) parts.push(`${IMAGE_MODEL_LABEL[req.image.model]}${req.image.model === "gpt_image_2_5" ? `${req.image.provider === "openai" ? " via OpenAI" : ""} ${req.image.quality}` : ""}, ${req.image.resolution}${req.image.composed ? ", copy set in your fonts" : ""}${req.image.composed?.product ? ", real product" : ""}`);
-  if (has("image") && req.logo?.overlay) parts.push("real logo placed");
-  if (req.productReferences?.length) parts.push(`${req.productReferences.length} reference image${req.productReferences.length === 1 ? "" : "s"}`);
-  if (req.brandInBrief) parts.push("brand from the Research brief");
+  if (req.format === "carousel") parts.push(t("carousel of {n}", { n: req.cards ?? 3 }));
+  if (has("ugc_video")) {
+    // The plain "UGC" mode is the kind itself: "UGC video, 15 s, 720p", not "UGC UGC".
+    const mode = VIDEO_MODES.find((option) => option.id === req.video.mode);
+    const values = { seconds: req.video.duration, resolution: req.video.resolution };
+    parts.push(req.video.mode === "ugc" ? t("UGC video, {seconds} s, {resolution}", values) : t("UGC video ({mode}), {seconds} s, {resolution}", { ...values, mode: t(mode?.label ?? req.video.mode) }));
+  }
+  if (has("ai_video")) parts.push(t("AI video, {seconds} s, {resolution}", { seconds: ai.duration, resolution: ai.resolution }));
+  if (has("image")) {
+    const image = [`${IMAGE_MODEL_LABEL[req.image.model]}${req.image.model === "gpt_image_2_5" ? `${req.image.provider === "openai" ? ` ${t("via OpenAI")}` : ""} ${t(QUALITY_LABEL[req.image.quality])}` : ""}`, req.image.resolution];
+    if (req.image.composed) image.push(t("copy set in your fonts"));
+    if (req.image.composed?.product) image.push(t("real product"));
+    parts.push(image.join(", "));
+  }
+  if (has("image") && req.logo?.overlay) parts.push(t("real logo placed"));
+  if (req.productReferences?.length) parts.push(req.productReferences.length === 1 ? t("{n} reference image", { n: 1 }) : t("{n} reference images", { n: req.productReferences.length }));
+  if (req.brandInBrief) parts.push(t("brand from the Research brief"));
   else {
-    if (workspace.brandSystem) parts.push(req.useBrandSystem === false ? "brand off" : "brand on");
-    if (workspace.profile) parts.push(req.useProfile === false ? "profile off" : "profile on");
+    if (workspace.brandSystem) parts.push(req.useBrandSystem === false ? t("brand off") : t("brand on"));
+    if (workspace.profile) parts.push(req.useProfile === false ? t("profile off") : t("profile on"));
   }
   return parts.join(" · ");
 }
@@ -53,6 +68,7 @@ export function BatchOptions({ req, set, overview, tiles, picks, onPickRefs, pic
   const cutouts = useMemo(() => cutoutChoices(workspace.assets ?? []), [workspace.assets]);
   const setup = SETUP_MODES.includes(req.video.mode);
   const aiVideo = { ...DEFAULT_REQUEST.aiVideo!, ...req.aiVideo };
+  const { t, tn } = useT();
 
   return (
     <div className="grid gap-4 pt-2">
@@ -61,9 +77,9 @@ export function BatchOptions({ req, set, overview, tiles, picks, onPickRefs, pic
       )}
 
       <fieldset className="grid gap-3 border-t border-line pt-4">
-        <legend className="eyebrow mb-1">Brand</legend>
+        <legend className="eyebrow mb-1">{t("Brand")}</legend>
         {req.brandInBrief ? (
-          <p className="text-xs text-muted">This Research brief already carries your brand: its look, voice, offers, words to avoid and forbidden claims. The Studio adds nothing of its own, and every one of those rules is checked.</p>
+          <p className="text-xs text-muted">{t("This Research brief already carries your brand: its look, voice, offers, words to avoid and forbidden claims. The Studio adds nothing of its own, and every one of those rules is checked.")}</p>
         ) : <>
           <ProfileToggle productId={workspace.id} profile={workspace.profile ?? null} on={req.useProfile !== false} onChange={(on) => set({ useProfile: on })} />
           <BrandSystemToggle productId={workspace.id} system={workspace.brandSystem ?? null} on={req.useBrandSystem !== false} onChange={(on) => set({ useBrandSystem: on })} />
@@ -72,53 +88,53 @@ export function BatchOptions({ req, set, overview, tiles, picks, onPickRefs, pic
 
       {has("ugc_video") && (
         <fieldset className="grid gap-3 border-t border-line pt-4">
-          <legend className="eyebrow mb-1">UGC video · Marketing Studio · made by the desktop runner</legend>
+          <legend className="eyebrow mb-1">{t("UGC video · Marketing Studio · made by the desktop runner")}</legend>
           <div className="grid gap-3 @xl:grid-cols-2 @3xl:grid-cols-4">
-            <Field label="Mode">
+            <Field label={t("Mode")}>
               <select className={inputClass} value={req.video.mode} onChange={(e) => set({ video: { ...req.video, mode: e.target.value as BatchRequest["video"]["mode"] } })}>
-                {VIDEO_MODES.map((m) => <option key={m.id} value={m.id}>{m.label}: {m.hint}</option>)}
+                {VIDEO_MODES.map((mode) => <option key={mode.id} value={mode.id}>{t(mode.label)}: {t(mode.hint)}</option>)}
               </select>
             </Field>
-            <Field label="Length">
+            <Field label={t("Length")}>
               <select className={inputClass} value={req.video.duration} onChange={(e) => set({ video: { ...req.video, duration: Number(e.target.value) } })}>
-                {[5, 10, 15, 20, 30].map((s) => <option key={s} value={s}>{s} seconds</option>)}
+                {[5, 10, 15, 20, 30].map((s) => <option key={s} value={s}>{tn(s, "{n} second", "{n} seconds")}</option>)}
               </select>
             </Field>
-            <Field label="Resolution">
+            <Field label={t("Resolution")}>
               <select className={inputClass} value={req.video.resolution} onChange={(e) => set({ video: { ...req.video, resolution: e.target.value as VideoResolution } })}>
                 {["480p", "720p", "1080p"].map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </Field>
-            <Field label="Product from">
+            <Field label={t("Product from")}>
               <select className={inputClass} value={req.video.product} onChange={(e) => set({ video: { ...req.video, product: e.target.value as BatchRequest["video"]["product"] } })}>
-                <option value="app_store" disabled={!workspace.appStoreUrl}>App Store page{workspace.appStoreUrl ? "" : " (none yet)"}</option>
-                <option value="screenshots" disabled={!workspace.screenshots}>Brand screenshots ({workspace.screenshots})</option>
-                <option value="none">The brief only</option>
+                <option value="app_store" disabled={!workspace.appStoreUrl}>{workspace.appStoreUrl ? t("App Store page") : t("App Store page (none yet)")}</option>
+                <option value="screenshots" disabled={!workspace.screenshots}>{t("Brand screenshots ({n})", { n: workspace.screenshots })}</option>
+                <option value="none">{t("The brief only")}</option>
               </select>
             </Field>
-            <Field label="Presenter" hint={catalog.avatars.length ? undefined : "The desktop runner fills this list with Higgsfield's presenters when it starts."}>
+            <Field label={t("Presenter")} hint={catalog.avatars.length ? undefined : t("The desktop runner fills this list with Higgsfield's presenters when it starts.")}>
               <select className={inputClass} value={req.video.avatar?.id ?? ""} onChange={(e) => {
                 const a = catalog.avatars.find((x) => x.id === e.target.value);
                 set({ video: { ...req.video, avatar: a ? { id: a.id, type: a.type === "custom" ? "custom" : "preset", name: a.name } : null } });
               }}>
-                <option value="">Higgsfield picks one</option>
+                <option value="">{t("Higgsfield picks one")}</option>
                 {catalog.avatars.map((a) => <option key={a.id} value={a.id}>{a.name}{a.gender ? ` (${a.gender})` : ""}</option>)}
               </select>
             </Field>
-            <Field label="Hook" hint={setup ? undefined : "Not used in this mode."}>
+            <Field label={t("Hook")} hint={setup ? undefined : t("Not used in this mode.")}>
               <select className={inputClass} disabled={!setup} value={req.video.hookId ?? ""} onChange={(e) => set({ video: { ...req.video, hookId: e.target.value || null } })}>
-                <option value="">None</option>
+                <option value="">{t("None")}</option>
                 {catalog.hooks.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
             </Field>
-            <Field label="Setting" hint={setup ? undefined : "Not used in this mode."}>
+            <Field label={t("Setting")} hint={setup ? undefined : t("Not used in this mode.")}>
               <select className={inputClass} disabled={!setup} value={req.video.settingId ?? ""} onChange={(e) => set({ video: { ...req.video, settingId: e.target.value || null } })}>
-                <option value="">None</option>
+                <option value="">{t("None")}</option>
                 {catalog.settings.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
               </select>
             </Field>
             <label className="flex items-center gap-2 self-end pb-2 text-sm">
-              <input type="checkbox" className="accent-ink" checked={req.video.generateAudio} onChange={(e) => set({ video: { ...req.video, generateAudio: e.target.checked } })} /> Voice and sound
+              <input type="checkbox" className="accent-ink" checked={req.video.generateAudio} onChange={(e) => set({ video: { ...req.video, generateAudio: e.target.checked } })} /> {t("Voice and sound")}
             </label>
           </div>
         </fieldset>
@@ -126,24 +142,24 @@ export function BatchOptions({ req, set, overview, tiles, picks, onPickRefs, pic
 
       {has("ai_video") && (
         <fieldset className="grid gap-3 border-t border-line pt-4">
-          <legend className="eyebrow mb-1">AI video · Seedance 2.5 · made by Higgsfield</legend>
-          <p className="-mt-1 text-xs text-muted">A clip made from the brief, with the app&apos;s screenshots as references so the screens look like the real app. No presenter avatar; for a talking presenter use AI UGC video.</p>
+          <legend className="eyebrow mb-1">{t("AI video · Seedance 2.5 · made by Higgsfield")}</legend>
+          <p className="-mt-1 text-xs text-muted">{t("A clip made from the brief, with the app's screenshots as references so the screens look like the real app. No presenter avatar; for a talking presenter use AI UGC video.")}</p>
           <div className="grid gap-3 @xl:grid-cols-2 @3xl:grid-cols-4">
-            <Field label="Length">
+            <Field label={t("Length")}>
               <select className={inputClass} value={aiVideo.duration} onChange={(e) => set({ aiVideo: { ...aiVideo, duration: Number(e.target.value) } })}>
-                {[5, 8, 10, 15, 20, 30].map((s) => <option key={s} value={s}>{s} seconds</option>)}
+                {[5, 8, 10, 15, 20, 30].map((s) => <option key={s} value={s}>{tn(s, "{n} second", "{n} seconds")}</option>)}
               </select>
             </Field>
-            <Field label="Resolution">
+            <Field label={t("Resolution")}>
               <select className={inputClass} value={aiVideo.resolution} onChange={(e) => set({ aiVideo: { ...aiVideo, resolution: e.target.value as VideoResolution } })}>
                 {["480p", "720p", "1080p"].map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </Field>
             <label className="flex items-center gap-2 self-end pb-2 text-sm">
-              <input type="checkbox" className="accent-ink" checked={aiVideo.useScreenshots} disabled={!workspace.screenshots} onChange={(e) => set({ aiVideo: { ...aiVideo, useScreenshots: e.target.checked } })} /> Use the {workspace.screenshots} screenshot{workspace.screenshots === 1 ? "" : "s"}
+              <input type="checkbox" className="accent-ink" checked={aiVideo.useScreenshots} disabled={!workspace.screenshots} onChange={(e) => set({ aiVideo: { ...aiVideo, useScreenshots: e.target.checked } })} /> {tn(workspace.screenshots, "Use the {n} screenshot", "Use the {n} screenshots")}
             </label>
             <label className="flex items-center gap-2 self-end pb-2 text-sm">
-              <input type="checkbox" className="accent-ink" checked={aiVideo.generateAudio} onChange={(e) => set({ aiVideo: { ...aiVideo, generateAudio: e.target.checked } })} /> Sound
+              <input type="checkbox" className="accent-ink" checked={aiVideo.generateAudio} onChange={(e) => set({ aiVideo: { ...aiVideo, generateAudio: e.target.checked } })} /> {t("Sound")}
             </label>
           </div>
         </fieldset>
@@ -151,27 +167,27 @@ export function BatchOptions({ req, set, overview, tiles, picks, onPickRefs, pic
 
       {has("image") && (
         <fieldset className="grid gap-3 border-t border-line pt-4">
-          <legend className="eyebrow mb-1">Image ads</legend>
+          <legend className="eyebrow mb-1">{t("Image ads")}</legend>
           <div className="grid gap-3 @xl:grid-cols-2 @3xl:grid-cols-4">
-            <Field label="Model">
+            <Field label={t("Model")}>
               <select className={inputClass} value={req.image.model} onChange={(e) => set({ image: { ...req.image, model: e.target.value as BatchRequest["image"]["model"] } })}>
                 {Object.entries(IMAGE_MODEL_LABEL).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
               </select>
             </Field>
             {req.image.model === "gpt_image_2_5" && (
-              <Field label="Quality">
+              <Field label={t("Quality")}>
                 <select className={inputClass} value={req.image.quality} onChange={(e) => set({ image: { ...req.image, quality: e.target.value as ImageQuality } })}>
-                  {["low", "medium", "high", "xhigh", "max"].map((q) => <option key={q} value={q}>{q}</option>)}
+                  {(["low", "medium", "high", "xhigh", "max"] as const).map((q) => <option key={q} value={q}>{t(QUALITY_LABEL[q])}</option>)}
                 </select>
               </Field>
             )}
-            <Field label="Resolution">
+            <Field label={t("Resolution")}>
               <select className={inputClass} value={req.image.resolution} onChange={(e) => set({ image: { ...req.image, resolution: e.target.value as ImageResolution } })}>
                 {["1k", "2k", "4k"].map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </Field>
             <label className="flex items-center gap-2 self-end pb-2 text-sm">
-              <input type="checkbox" className="accent-ink" disabled={!workspace.screenshots} checked={req.image.useScreenshots && workspace.screenshots > 0} onChange={(e) => set({ image: { ...req.image, useScreenshots: e.target.checked } })} /> Use the app&apos;s screenshots
+              <input type="checkbox" className="accent-ink" disabled={!workspace.screenshots} checked={req.image.useScreenshots && workspace.screenshots > 0} onChange={(e) => set({ image: { ...req.image, useScreenshots: e.target.checked } })} /> {t("Use the app's screenshots")}
             </label>
           </div>
           <LogoOption value={req.logo ?? null} candidates={logos} composed={Boolean(req.image.composed) && req.format !== "carousel"} productId={workspace.id} onChange={(logo) => set({ logo })} />
@@ -182,10 +198,10 @@ export function BatchOptions({ req, set, overview, tiles, picks, onPickRefs, pic
 
       {(has("image") || has("ai_video")) && (
         <fieldset className="grid gap-3 border-t border-line pt-4">
-          <legend className="eyebrow mb-1">Reference images · optional</legend>
-          <p className="-mt-1 text-xs text-muted">Your product&apos;s own images for image ads and AI videos: they go to Higgsfield before the screenshots, and the scene is rebuilt around them, not pasted on.</p>
+          <legend className="eyebrow mb-1">{t("Reference images · optional")}</legend>
+          <p className="-mt-1 text-xs text-muted">{t("Your product's own images for image ads and AI videos: they go to Higgsfield before the screenshots, and the scene is rebuilt around them, not pasted on.")}</p>
           <ProductImagePicker productId={workspace.id} tiles={tiles} picked={picks} onChange={onPickRefs} />
-          {picksChanged && <p className="text-xs text-caution-ink">The brief&apos;s OUR IMAGES line describes the images picked in Recreate: edit it to match your new picks.</p>}
+          {picksChanged && <p className="text-xs text-caution-ink">{t("The brief's OUR IMAGES line describes the images picked in Recreate: edit it to match your new picks.")}</p>}
         </fieldset>
       )}
     </div>
@@ -198,8 +214,9 @@ export function BatchOptions({ req, set, overview, tiles, picks, onPickRefs, pic
  * and for ordinary images which corner. A Recreate logo also goes to the model as a labelled reference.
  */
 function LogoOption({ value, candidates, composed, productId, onChange }: { value: LogoSettings | null; candidates: LogoCandidate[]; composed: boolean; productId: string; onChange: (logo: LogoSettings | null) => void }) {
+  const { t } = useT();
   if (!value && !candidates.length) {
-    return <p className="text-xs text-muted">No logo yet: add your logo under <a href={`/app/w/${productId}/brand?tab=assets`} className="text-accent hover:underline">Brand &gt; Assets</a> (kind Logo) or an app icon in the brand kit, and the real file is placed on every image instead of letting the model draw one.</p>;
+    return <p className="text-xs text-muted">{t("No logo yet: add your logo under App settings › Brand (kind Logo) or an app icon in the brand kit, and the real file is placed on every image instead of letting the model draw one.")} <a href={`${appSettingsHref(productId, "brand")}#assets`} className="text-accent hover:underline">{t("Open App settings › Brand")}</a></p>;
   }
   const on = Boolean(value?.overlay);
   const current = value ?? defaultLogo(candidates)!;
@@ -210,21 +227,21 @@ function LogoOption({ value, candidates, composed, productId, onChange }: { valu
       <label className="flex items-start gap-2.5 text-sm">
         <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-ink" checked={on} onChange={(e) => turn(e.target.checked)} />
         <span>
-          <span className="font-medium">Place the real logo</span>{" "}
-          <span className="text-xs text-muted">The exact file goes on every finished image, inside Meta&apos;s safe area{composed ? " (composed ads: in their layout's logo slot)" : ""}. The model is told not to draw a logo of its own, so no look-alike marks.</span>
+          <span className="font-medium">{t("Place the real logo")}</span>{" "}
+          <span className="text-xs text-muted">{composed ? t("The exact file goes on every finished image, inside Meta's safe area (composed ads: in their layout's logo slot). The model is told not to draw a logo of its own, so no look-alike marks.") : t("The exact file goes on every finished image, inside Meta's safe area. The model is told not to draw a logo of its own, so no look-alike marks.")}</span>
         </span>
       </label>
       {on && (
         <div className="grid gap-2 @xl:grid-cols-2">
-          <Field label="Logo file">
+          <Field label={t("Logo file")}>
             <select className={inputClass} value={current.url} onChange={(e) => { const c = files.find((f) => f.url === e.target.value); if (c) onChange({ ...current, url: c.url, label: c.label }); }}>
-              {files.map((c) => <option key={c.url} value={c.url}>{c.label}</option>)}
+              {files.map((c) => <option key={c.url} value={c.url}>{t(c.label)}</option>)}
             </select>
           </Field>
           {!composed && (
-            <Field label="Where">
+            <Field label={t("Logo position")}>
               <select className={inputClass} value={current.overlay ?? "top_left"} onChange={(e) => onChange({ ...current, overlay: e.target.value as LogoPosition })}>
-                {LOGO_POSITIONS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                {LOGO_POSITIONS.map((p) => <option key={p.id} value={p.id}>{t(p.label)}</option>)}
               </select>
             </Field>
           )}
@@ -252,13 +269,14 @@ function ComposedOptions({ value, system, productId, cutouts, onChange }: { valu
   const layout = layoutById(v.layout);
   const roles = layoutRoles(layout);
   const unplaced = unplacedCopy(v.copy, layout);
+  const { t } = useT();
   return (
     <div className="grid gap-3 rounded-inner border border-line bg-raised p-3">
       <label className="flex items-start gap-2.5 text-sm">
         <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-ink" checked={on} onChange={(e) => onChange(e.target.checked ? v : null)} />
         <span>
-          <span className="font-medium">Composed ads: set the copy in your fonts</span>{" "}
-          <span className="text-xs text-muted">The model makes the scene and product with the copy zones empty; your words are then set on it exactly, at mobile-readable sizes, inside Meta&apos;s safe zones (4:5, 1:1 and 9:16 each laid out on its own). Editable afterwards for free, with an SVG and layers file.{fonts ? "" : " No font files on the Brand page yet: they're set in Inter until you add them."}</span>
+          <span className="font-medium">{t("Composed ads: set the copy in your fonts")}</span>{" "}
+          <span className="text-xs text-muted">{t("The model makes the scene and product with the copy zones empty; your words are then set on it exactly, at mobile-readable sizes, inside Meta's safe zones (4:5, 1:1 and 9:16 each laid out on its own). Editable afterwards for free, with an SVG and layers file.")}{fonts ? "" : ` ${t("No font files on the Brand page yet: they're set in Inter until you add them.")}`}</span>
         </span>
       </label>
       {on && (
@@ -267,27 +285,27 @@ function ComposedOptions({ value, system, productId, cutouts, onChange }: { valu
             {LAYOUTS.map((l) => (
               <button key={l.id} type="button" aria-pressed={v.layout === l.id} onClick={() => onChange({ ...v, layout: l.id })}
                 className={cx("grid gap-0.5 rounded-inner border p-2.5 text-left text-xs", v.layout === l.id ? "border-ink bg-card" : "border-line bg-card/60 hover:border-ink/40")}>
-                <span className="font-medium text-ink">{l.name}</span><span className="text-muted">{l.description}</span>
+                <span className="font-medium text-ink">{t(l.name)}</span><span className="text-muted">{t(l.description)}</span>
               </button>
             ))}
           </div>
           <div className="grid gap-2 @xl:grid-cols-2">
-            <Field label="Headline" hint={`${v.copy.headline.length}/${COPY_LIMITS.headline}. Short reads big: 3–7 words.`}><input className={inputClass} value={v.copy.headline} maxLength={COPY_LIMITS.headline} onChange={(e) => setCopy({ headline: e.target.value })} placeholder={system?.voice.signatureLines[0] ?? "One small habit. Every single day."} /></Field>
-            {roles.includes("subhead") && <Field label="Subhead · optional"><input className={inputClass} value={v.copy.subhead ?? ""} maxLength={COPY_LIMITS.subhead} onChange={(e) => setCopy({ subhead: e.target.value })} /></Field>}
-            {roles.includes("eyebrow") && <Field label="Eyebrow · optional"><input className={inputClass} value={v.copy.eyebrow ?? ""} maxLength={COPY_LIMITS.eyebrow} onChange={(e) => setCopy({ eyebrow: e.target.value })} /></Field>}
-            {roles.includes("cta") && <Field label="Button · optional"><input className={inputClass} value={v.copy.cta ?? ""} maxLength={COPY_LIMITS.cta} onChange={(e) => setCopy({ cta: e.target.value })} placeholder="Start your free scan" /></Field>}
-            {roles.includes("offer") && <Field label="Offer · optional" hint={offers.length ? "Only your own offers (Brand page)." : system ? "No offers on the Brand page: none can be shown." : "Add your offers on the Brand page first."}>
+            <Field label={t("Headline")} hint={t("{used}/{max}. Short reads big: 3–7 words.", { used: v.copy.headline.length, max: COPY_LIMITS.headline })}><input className={inputClass} value={v.copy.headline} maxLength={COPY_LIMITS.headline} onChange={(e) => setCopy({ headline: e.target.value })} placeholder={system?.voice.signatureLines[0] ?? t("One small habit. Every single day.")} /></Field>
+            {roles.includes("subhead") && <Field label={t("Subhead · optional")}><input className={inputClass} value={v.copy.subhead ?? ""} maxLength={COPY_LIMITS.subhead} onChange={(e) => setCopy({ subhead: e.target.value })} /></Field>}
+            {roles.includes("eyebrow") && <Field label={t("Eyebrow · optional")}><input className={inputClass} value={v.copy.eyebrow ?? ""} maxLength={COPY_LIMITS.eyebrow} onChange={(e) => setCopy({ eyebrow: e.target.value })} /></Field>}
+            {roles.includes("cta") && <Field label={t("Button · optional")}><input className={inputClass} value={v.copy.cta ?? ""} maxLength={COPY_LIMITS.cta} onChange={(e) => setCopy({ cta: e.target.value })} placeholder={t("Start your free scan")} /></Field>}
+            {roles.includes("offer") && <Field label={t("Offer · optional")} hint={offers.length ? t("Only your own offers (Brand page).") : system ? t("No offers on the Brand page: none can be shown.") : t("Add your offers on the Brand page first.")}>
               <select className={inputClass} value={v.copy.offer ?? ""} disabled={!offers.length} onChange={(e) => setCopy({ offer: e.target.value || undefined })}>
-                <option value="">No offer</option>
+                <option value="">{t("No offer")}</option>
                 {offers.map((o) => <option key={o.id} value={o.wording || o.name}>{o.wording || o.name}</option>)}
               </select>
             </Field>}
-            {roles.includes("legal") && <Field label="Legal line · optional"><input className={inputClass} value={v.copy.legal ?? ""} maxLength={COPY_LIMITS.legal} onChange={(e) => setCopy({ legal: e.target.value })} placeholder="Results vary." /></Field>}
+            {roles.includes("legal") && <Field label={t("Legal line · optional")}><input className={inputClass} value={v.copy.legal ?? ""} maxLength={COPY_LIMITS.legal} onChange={(e) => setCopy({ legal: e.target.value })} placeholder={t("Results vary.")} /></Field>}
           </div>
           {unplaced.length > 0 && (
             <p className="text-xs text-caution-ink">
-              {unplacedNote(layout, unplaced)}{" "}
-              <button type="button" className="text-accent hover:underline" onClick={() => setCopy(Object.fromEntries(unplaced.map((r) => [r, undefined])))}>Clear {unplaced.length === 1 ? "it" : "them"}</button>
+              {unplacedNote(layout, unplaced, t)}{" "}
+              <button type="button" className="text-accent hover:underline" onClick={() => setCopy(Object.fromEntries(unplaced.map((r) => [r, undefined])))}>{unplaced.length === 1 ? t("Clear it") : t("Clear them")}</button>
             </p>
           )}
           <div className="grid gap-2 border-t border-line pt-3">
@@ -295,21 +313,21 @@ function ComposedOptions({ value, system, productId, cutouts, onChange }: { valu
               <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-ink" disabled={!cutouts.length} checked={Boolean(v.product)}
                 onChange={(e) => onChange({ ...v, product: e.target.checked && cutouts[0] ? { url: cutouts[0].url, label: cutouts[0].label } : null })} />
               <span>
-                <span className="font-medium">Use the real product</span>{" "}
+                <span className="font-medium">{t("Use the real product")}</span>{" "}
                 <span className="text-xs text-muted">{cutouts.length
-                  ? "Your product's cut-out goes into the layout's product box with a soft floor shadow; the model leaves that spot empty, so labels are never misspelled or redrawn."
-                  : <>No cut-outs yet: under <a href={`/app/w/${productId}/brand?tab=assets`} className="text-accent hover:underline">Brand &gt; Assets</a>, use &ldquo;Make cut-out&rdquo; on a product or packaging image.</>}</span>
+                  ? t("Your product's cut-out goes into the layout's product box with a soft floor shadow; the model leaves that spot empty, so labels are never misspelled or redrawn.")
+                  : <>{t("No cut-outs yet: under App settings › Brand, use “Make cut-out” on a product or packaging image.")} <a href={`${appSettingsHref(productId, "brand")}#assets`} className="text-accent hover:underline">{t("Open App settings › Brand")}</a></>}</span>
               </span>
             </label>
             {v.product && cutouts.length > 1 && (
-              <Field label="Product">
+              <Field label={t("Product")}>
                 <select className={inputClass} value={v.product.url} onChange={(e) => { const c = cutouts.find((x) => x.url === e.target.value); if (c) onChange({ ...v, product: { url: c.url, label: c.label } }); }}>
-                  {cutouts.map((c) => <option key={c.id} value={c.url}>{c.label}</option>)}
+                  {cutouts.map((c) => <option key={c.id} value={c.url}>{t(c.label)}</option>)}
                 </select>
               </Field>
             )}
           </div>
-          {!system && <p className="text-xs text-muted">Tip: <a href={`/app/w/${productId}/brand`} className="text-accent hover:underline">import your brand</a> so the plate follows your look and the copy uses your fonts and offers.</p>}
+          {!system && <p className="text-xs text-muted">{t("Tip: import your brand so the plate follows your look and the copy uses your fonts and offers.")} <a href={appSettingsHref(productId, "brand")} className="text-accent hover:underline">{t("Import your brand")}</a></p>}
         </>
       )}
     </div>
@@ -319,17 +337,18 @@ function ComposedOptions({ value, system, productId, cutouts, onChange }: { valu
 /** The brand system's line: what it adds to every prompt, with a way to see it and to leave it out. */
 function BrandSystemToggle({ productId, system, on, onChange }: { productId: string; system: BrandSystem | null; on: boolean; onChange: (on: boolean) => void }) {
   const [open, setOpen] = useState(false);
+  const { t } = useT();
   if (!system) {
-    return <p className="text-xs text-muted">Nothing on the Brand page yet: <a href={`/app/w/${productId}/brand`} className="text-accent hover:underline">fill it in there</a> and every prompt gets your look, voice, avatars and the only offers allowed.</p>;
+    return <p className="text-xs text-muted">{t("No brand yet: fill it in under App settings and every prompt gets your look, voice, avatars and the only offers allowed.")} <a href={appSettingsHref(productId, "brand")} className="text-accent hover:underline">{t("Open App settings › Brand")}</a></p>;
   }
   return (
     <div className="grid gap-2 rounded-inner border border-line bg-raised p-3 text-xs">
       <label className="flex items-start gap-2.5">
         <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-ink" checked={on} onChange={(e) => onChange(e.target.checked)} />
         <span>
-          <span className="font-medium text-ink">Use the brand</span>{" "}
-          <span className="text-muted">({brandSystemSummary(system).join(", ")}). The look opens every prompt, each variant speaks to the next avatar, and only your offers may appear (the check fails any other).</span>{" "}
-          <button type="button" className="text-accent hover:underline" onClick={() => setOpen(!open)}>{open ? "Hide" : "See what's added"}</button>
+          <span className="font-medium text-ink">{t("Use the brand")}</span>{" "}
+          <span className="text-muted">({brandSystemSummary(system).map((part) => t(part)).join(", ")}). {t("The look opens every prompt, each variant speaks to the next avatar, and only your offers may appear (the check fails any other).")}</span>{" "}
+          <button type="button" className="text-accent hover:underline" onClick={() => setOpen(!open)}>{open ? t("Hide") : t("See what's added")}</button>
         </span>
       </label>
       {open && <pre className="max-h-56 overflow-y-auto rounded-md bg-canvas p-2.5 font-mono text-[11px] whitespace-pre-wrap text-muted">{[lookBlock(system), copyBlock(system, { variant: 1, kind: "image" })].filter(Boolean).join("\n\n")}</pre>}
@@ -340,17 +359,18 @@ function BrandSystemToggle({ productId, system, on, onChange }: { productId: str
 /** "Use the AI product profile": what it adds to every AI prompt, and a switch to leave it out. */
 function ProfileToggle({ productId, profile, on, onChange }: { productId: string; profile: ProductProfile | null; on: boolean; onChange: (on: boolean) => void }) {
   const [open, setOpen] = useState(false);
+  const { t } = useT();
   if (!profile) {
-    return <p className="text-xs text-muted">No AI product profile yet: add your website or App Store link under <a href={`/app/w/${productId}/brand?tab=product`} className="text-accent hover:underline">Brand &gt; Product</a> and the prompts get who it&apos;s for, the promise, proof and your look.</p>;
+    return <p className="text-xs text-muted">{t("No AI product profile yet: add your website or App Store link under App settings › Profile and the prompts get who it's for, the promise, proof and your look.")} <a href={appSettingsHref(productId, "profile")} className="text-accent hover:underline">{t("Open App settings › Profile")}</a></p>;
   }
   return (
     <div className="grid gap-2 rounded-inner border border-line bg-raised p-3 text-xs">
       <label className="flex items-start gap-2.5">
         <input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-ink" checked={on} onChange={(e) => onChange(e.target.checked)} />
         <span>
-          <span className="font-medium text-ink">Use the AI product profile</span>{" "}
-          <span className="text-muted">Every AI prompt gets who it&apos;s for and their pain, the promise, proof it may state, your look, and claims to avoid (checked too).</span>{" "}
-          <button type="button" className="text-accent hover:underline" onClick={() => setOpen(!open)}>{open ? "Hide" : "See what's added"}</button>
+          <span className="font-medium text-ink">{t("Use the AI product profile")}</span>{" "}
+          <span className="text-muted">{t("Every AI prompt gets who it's for and their pain, the promise, proof it may state, your look, and claims to avoid (checked too).")}</span>{" "}
+          <button type="button" className="text-accent hover:underline" onClick={() => setOpen(!open)}>{open ? t("Hide") : t("See what's added")}</button>
         </span>
       </label>
       {open && <pre className="max-h-56 overflow-y-auto rounded-md bg-canvas p-2.5 font-mono text-[11px] whitespace-pre-wrap text-muted">{profileBrief(profile, { kind: "video" })}</pre>}

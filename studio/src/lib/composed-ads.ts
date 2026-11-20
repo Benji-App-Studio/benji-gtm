@@ -10,6 +10,7 @@
 // where the logo and the product go.
 
 import { PLACEMENTS, type Aspect } from "./meta-formats";
+import { fill, m } from "./i18n/translate";
 
 export type TextRole = "eyebrow" | "headline" | "subhead" | "offer" | "cta" | "legal";
 export type FontUse = "headline" | "body" | "legal";
@@ -129,8 +130,8 @@ const logoAt = (box: Box, align: "left" | "center" = "center") => ({ box, align 
 
 export const LAYOUTS: ComposedLayout[] = [
   {
-    id: "headline-top", name: "Headline on top",
-    description: "A big headline over the product, the CTA under it: the most common static ad.",
+    id: "headline-top", name: m("Headline on top"),
+    description: m("A big headline over the product, the CTA under it: the most common static ad."),
     plateNote: "a calm, even background in the top third and along the bottom edge",
     canvases: {
       "4:5": { width: 1080, height: 1350, product: [0.18, 0.37, 0.82, 0.8], logo: logoAt([0.4, 0.045, 0.6, 0.088]), slots: [
@@ -148,8 +149,8 @@ export const LAYOUTS: ComposedLayout[] = [
     },
   },
   {
-    id: "side-headline", name: "Headline beside the product",
-    description: "Copy on the left, the product on the right (stacked in 9:16): editorial, calm.",
+    id: "side-headline", name: m("Headline beside the product"),
+    description: m("Copy on the left, the product on the right (stacked in 9:16): editorial, calm."),
     plateNote: "a calm, even background over the whole left half (in 9:16, the top third)",
     canvases: {
       "4:5": { width: 1080, height: 1350, product: [0.5, 0.12, 0.94, 0.86], logo: logoAt([0.07, 0.06, 0.32, 0.1], "left"), slots: [
@@ -170,8 +171,8 @@ export const LAYOUTS: ComposedLayout[] = [
     },
   },
   {
-    id: "offer-badge", name: "Offer badge",
-    description: "Headline, the product with one of your offers as a badge beside it, the CTA under it.",
+    id: "offer-badge", name: m("Offer badge"),
+    description: m("Headline, the product with one of your offers as a badge beside it, the CTA under it."),
     plateNote: "a calm, even background in the top third, beside the product and along the bottom edge",
     canvases: {
       "4:5": { width: 1080, height: 1350, product: [0.16, 0.34, 0.7, 0.8], logo: logoAt([0.4, 0.045, 0.6, 0.088]), slots: [
@@ -230,11 +231,11 @@ export const COMPOSED_ASPECTS: Aspect[] = ["4:5", "1:1", "9:16"];
 /** The copy made safe: trimmed, within limits, the headline required. Null without a headline. */
 export function cleanCopy(raw: unknown): ComposedCopy | null {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const t = (k: TextRole) => (typeof r[k] === "string" ? (r[k] as string).replace(/\s+/g, " ").trim().slice(0, COPY_LIMITS[k]) : "");
-  const headline = t("headline");
+  const field = (k: TextRole) => (typeof r[k] === "string" ? (r[k] as string).replace(/\s+/g, " ").trim().slice(0, COPY_LIMITS[k]) : "");
+  const headline = field("headline");
   if (!headline) return null;
   const out: ComposedCopy = { headline };
-  for (const k of ["eyebrow", "subhead", "offer", "cta", "legal"] as const) if (t(k)) out[k] = t(k);
+  for (const k of ["eyebrow", "subhead", "offer", "cta", "legal"] as const) if (field(k)) out[k] = field(k);
   return out;
 }
 
@@ -275,8 +276,8 @@ export interface Rect { left: number; top: number; width: number; height: number
 
 /** Where the logo file goes in pixels: fitted inside the canvas's logo slot (keeping its shape), centred or left-aligned like the copy. */
 export function logoRect(canvas: CanvasLayout, logoAspect: number): Rect {
-  const [l, t, r, b] = canvas.logo.box;
-  const box = { left: l * canvas.width, top: t * canvas.height, width: (r - l) * canvas.width, height: (b - t) * canvas.height };
+  const [l, top0, r, b] = canvas.logo.box;
+  const box = { left: l * canvas.width, top: top0 * canvas.height, width: (r - l) * canvas.width, height: (b - top0) * canvas.height };
   const aspect = Number.isFinite(logoAspect) && logoAspect > 0 ? logoAspect : 1;
   const width = Math.min(box.width, box.height * aspect);
   const height = width / aspect;
@@ -326,7 +327,22 @@ export interface PlacedText {
 
 export interface ComposedPlan { width: number; height: number; texts: PlacedText[]; errors: string[]; warnings: string[] }
 
-const ROLE_LABEL: Record<TextRole, string> = { eyebrow: "Eyebrow", headline: "Headline", subhead: "Subhead", offer: "Offer", cta: "Call to action", legal: "Legal line" };
+/** Words a sentence in the reader's language (a page's or route's `t`); English by default. */
+type Words = (text: string, vars?: Record<string, string | number>) => string;
+const englishWords: Words = (text, vars) => fill(text, vars);
+/** "headline or subhead", in the reader's language. */
+const roleList = (roles: TextRole[], t: Words) => roles.map((r) => t(ROLE_LABEL[r]).toLowerCase()).reduce((all, name) => (all ? t("{a} or {b}", { a: all, b: name }) : name), "");
+/**
+ * The English sentences composing saves with an ad (copy.composed.warnings), so a page can put them back
+ * into the reader's language (lib/stored-words.ts). The logo one is written by the compose route.
+ */
+export const COMPOSE_WORDS = [
+  m("No {roles} in this layout: \"{text}\" isn't on the ad."),
+  m("{role} set at {px} px to fit; shorter copy reads bigger."),
+  m("{role} doesn't fit at the {px} px minimum: shorten \"{text}\"."),
+  m("Our logo wasn't placed: {reason}"),
+];
+const ROLE_LABEL: Record<TextRole, string> = { eyebrow: m("Eyebrow"), headline: m("Headline"), subhead: m("Subhead"), offer: m("Offer"), cta: m("Call to action"), legal: m("Legal line") };
 export const COPY_ROLES: TextRole[] = ["eyebrow", "headline", "subhead", "offer", "cta", "legal"];
 
 /** The text roles a layout sets (on any of its canvases): the Offer badge layout has no eyebrow, for one. */
@@ -342,8 +358,13 @@ export function unplacedCopy(copy: ComposedCopy, layout: ComposedLayout): TextRo
 }
 
 /** "The Offer badge layout has no eyebrow…": said before credits are spent and on the composed ad. */
-export const unplacedNote = (layout: ComposedLayout, roles: TextRole[]) =>
-  `The ${layout.name} layout has no ${roles.map((r) => ROLE_LABEL[r].toLowerCase()).join(" or ")}: ${roles.length === 1 ? "it isn't" : "they aren't"} on the ad. Pick a layout with ${roles.length === 1 ? "one" : "them"}, or move the words into the subhead.`;
+/** `t` puts it into the reader's language (English by default). */
+export function unplacedNote(layout: ComposedLayout, roles: TextRole[], t: Words = englishWords): string {
+  const vars = { layout: t(layout.name), roles: roleList(roles, t) };
+  return roles.length === 1
+    ? t("The {layout} layout has no {roles}: it isn't on the ad. Pick a layout with one, or move the words into the subhead.", vars)
+    : t("The {layout} layout has no {roles}: they aren't on the ad. Pick a layout with them, or move the words into the subhead.", vars);
+}
 
 /**
  * A rough measure for checking copy before any font is loaded (the batch form, before credits are
@@ -351,39 +372,107 @@ export const unplacedNote = (layout: ComposedLayout, roles: TextRole[]) =>
  * mixed-case copy. It errs towards "may not fit" (a warning, not a refusal): the server measures with
  * the real font when it sets the words.
  */
-export const estimateMeasure: Measure = (text, font, size, tracking) => text.length * size * (font === "headline" ? 0.53 : 0.5) + Math.max(0, text.length - 1) * tracking * size;
+export const estimateMeasure: Measure = (text, font, size, tracking) => {
+  const chars = Array.from(text);
+  // Chinese, Japanese and Korean characters are set on a square: a full em each.
+  const wide = chars.filter((ch) => WIDE.test(ch)).length;
+  return (chars.length - wide) * size * (font === "headline" ? 0.53 : 0.5) + wide * size + Math.max(0, chars.length - 1) * tracking * size;
+};
+
+// MARK: Chinese, Japanese and Korean
+
+/** A character set on a full-width square: Han, kana, Hangul and CJK punctuation and full-width forms. */
+const WIDE = /[ᄀ-ᇿ⺀-⿟　-〿぀-ヿ㄀-ㇿ㈀-䶿一-鿿가-힯豈-﫿︰-﹏＀-￯]|[\u{20000}-\u{3134f}]/u;
+/** Characters a line may break between, one at a time: Han and kana (Chinese and Japanese have no spaces). Korean keeps its words. */
+const BREAKS_ANYWHERE = /[⺀-⿟぀-ヿ㄀-ㇿ㐀-䶿一-鿿豈-﫿]|[\u{20000}-\u{3134f}]/u;
+/** Never at the start of a line (closing punctuation, small kana, the long-vowel mark): they stay with what comes before. */
+const NO_LINE_START = /[、。，．,.!?！？：；:;」』）〕］｝〉》】〗〙〛”’)\]}ーゝゞヽヾぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶ・…‥％%]/u;
+/** Never at the end of a line (opening brackets and quotes): they stay with what comes after. */
+const NO_LINE_END = /[「『（〔［｛〈《【〖〘〚“‘([{]/u;
+
+/** Whether the text has any Chinese, Japanese or Korean in it. */
+export const hasCjk = (text: string) => WIDE.test(text);
+
+/**
+ * The pieces a line may break between: whole words where there are spaces (English, Korean), single
+ * characters inside Chinese and Japanese, with each language's line-start and line-end rules kept (no
+ * line begins with 。 or 」, none ends with 「). `space` says whether a space goes before the piece.
+ */
+export function breakUnits(text: string): { text: string; space: boolean }[] {
+  const units: { text: string; space: boolean }[] = [];
+  for (const [index, word] of text.split(/\s+/).filter(Boolean).entries()) {
+    const pieces: string[] = [];
+    if (BREAKS_ANYWHERE.test(word) && typeof Intl.Segmenter === "function") {
+      // Chinese and Japanese: break between words where the dictionary knows them ("もう" stays whole), else between characters.
+      const segmenter = new Intl.Segmenter(/[぀-ヿ]/.test(word) ? "ja" : "zh-Hant", { granularity: "word" });
+      for (const { segment } of segmenter.segment(word)) {
+        const chars = Array.from(segment);
+        // A run the dictionary didn't split, longer than a word usually is, breaks between characters.
+        if (chars.length > 6 && BREAKS_ANYWHERE.test(segment)) pieces.push(...chars);
+        else pieces.push(segment);
+      }
+    } else {
+      let latin = "";
+      for (const ch of Array.from(word)) {
+        if (BREAKS_ANYWHERE.test(ch) || (WIDE.test(ch) && (NO_LINE_START.test(ch) || NO_LINE_END.test(ch)))) {
+          if (latin) { pieces.push(latin); latin = ""; }
+          pieces.push(ch);
+        } else latin += ch;
+      }
+      if (latin) pieces.push(latin);
+    }
+    // Glue: an opening mark joins the piece after it; a piece that may not start a line joins the one before.
+    const glued: string[] = [];
+    let carry = "";
+    for (const piece of pieces) {
+      if (Array.from(piece).length === 1 && NO_LINE_END.test(piece)) { carry += piece; continue; }
+      const next = carry + piece;
+      carry = "";
+      if (glued.length && NO_LINE_START.test(Array.from(next)[0])) glued[glued.length - 1] += next;
+      else glued.push(next);
+    }
+    if (carry) {
+      if (glued.length) glued[glued.length - 1] += carry;
+      else glued.push(carry);
+    }
+    glued.forEach((piece, i) => units.push({ text: piece, space: index > 0 && i === 0 }));
+  }
+  return units;
+}
 
 /** What may not fit in the layout at each aspect, by the rough measure: "4:5: Offer doesn't fit…". */
-export function fitProblems(copy: ComposedCopy, layout: ComposedLayout, aspects: Aspect[]): string[] {
+export function fitProblems(copy: ComposedCopy, layout: ComposedLayout, aspects: Aspect[], t: Words = englishWords): string[] {
   return aspects.flatMap((a) => {
     const canvas = layout.canvases[a];
-    return canvas ? fitLayout(copy, canvas, estimateMeasure).errors.map((e) => `${a}: ${e}`) : [];
+    return canvas ? fitLayout(copy, canvas, estimateMeasure, t).errors.map((e) => `${a}: ${e}`) : [];
   });
 }
 
 /**
- * Splits `text` into runs a font can draw (`has(ch)`) and runs it can't, so each is measured and drawn
- * with the font that has it (a brand font or Inter has no ★; the symbols fallback does).
+ * Splits `text` into runs by the font that draws them: the first in `chain` that has the character (the
+ * brand font, then its CJK cut, then the symbols font: a brand font or Inter has no ★ and no 日). Spaces
+ * belong to the first font, as Satori draws them; a character none has stays with the first too.
  */
-export function glyphRuns(text: string, has: (ch: string) => boolean): { text: string; main: boolean }[] {
-  const runs: { text: string; main: boolean }[] = [];
+export function fontRuns(text: string, chain: ((ch: string) => boolean)[]): { text: string; font: number }[] {
+  const runs: { text: string; font: number }[] = [];
   for (const ch of Array.from(text)) {
-    const main = /\s/.test(ch) || has(ch);
+    const found = /\s/.test(ch) ? 0 : chain.findIndex((has) => has(ch));
+    const font = found < 0 ? 0 : found;
     const last = runs[runs.length - 1];
-    if (last && last.main === main) last.text += ch;
-    else runs.push({ text: ch, main });
+    if (last && last.font === font) last.text += ch;
+    else runs.push({ text: ch, font });
   }
   return runs;
 }
 
-/** Greedy word wrap at one size. */
-function wrap(words: string[], maxWidth: number, width: (t: string) => number): string[] {
+/** Greedy wrap at one size, between words, and between characters in Chinese and Japanese (breakUnits). */
+function wrap(units: { text: string; space: boolean }[], maxWidth: number, width: (t: string) => number): string[] {
   const lines: string[] = [];
   let line = "";
-  for (const word of words) {
-    const next = line ? `${line} ${word}` : word;
+  for (const unit of units) {
+    const next = line ? `${line}${unit.space ? " " : ""}${unit.text}` : unit.text;
     if (!line || width(next) <= maxWidth) line = next;
-    else { lines.push(line); line = word; }
+    else { lines.push(line); line = unit.text; }
   }
   if (line) lines.push(line);
   return lines;
@@ -393,21 +482,25 @@ function wrap(words: string[], maxWidth: number, width: (t: string) => number): 
  * Sets the copy into the layout: each text wrapped and shrunk until it fits its slot (never below its
  * floor); lines placed by alignment; pills sized around their text. Errors name what doesn't fit.
  */
-export function fitLayout(copy: ComposedCopy, canvas: CanvasLayout, measure: Measure): ComposedPlan {
+export function fitLayout(copy: ComposedCopy, canvas: CanvasLayout, measure: Measure, t: Words = englishWords): ComposedPlan {
   const scale = canvas.width / 1080;
   const errors: string[] = [];
   const warnings: string[] = [];
   const texts: PlacedText[] = [];
   const slotted = new Set(canvas.slots.map((s) => s.role));
   const dropped = COPY_ROLES.filter((r) => copy[r]?.trim() && !slotted.has(r));
-  if (dropped.length) warnings.push(`No ${dropped.map((r) => ROLE_LABEL[r].toLowerCase()).join(" or ")} in this layout: "${copy[dropped[0]]!.slice(0, 40)}" isn't on the ad.`);
+  if (dropped.length) warnings.push(t("No {roles} in this layout: \"{text}\" isn't on the ad.", { roles: roleList(dropped, t), text: copy[dropped[0]]!.slice(0, 40) }));
   for (const s of canvas.slots) {
     const raw = copy[s.role];
     if (!raw) continue;
     const text = s.uppercase ? raw.toUpperCase() : raw;
-    const tracking = s.tracking ?? (s.role === "headline" ? -0.01 : 0);
-    const [l, t, r, b] = s.box;
-    const box = { left: l * canvas.width, top: t * canvas.height, width: (r - l) * canvas.width, height: (b - t) * canvas.height };
+    // CJK is set square: never tightened, and with a little more leading than Latin display type.
+    const cjk = hasCjk(text);
+    const tracking = cjk ? Math.max(0, s.tracking ?? 0) : s.tracking ?? (s.role === "headline" ? -0.01 : 0);
+    const lineHeight = cjk ? Math.max(s.lineHeight, 1.2) : s.lineHeight;
+    const units = breakUnits(text);
+    const [l, top0, r, b] = s.box;
+    const box = { left: l * canvas.width, top: top0 * canvas.height, width: (r - l) * canvas.width, height: (b - top0) * canvas.height };
     const padX = s.pill ? 0.9 : 0, padY = s.pill ? 0.42 : 0;
     const floor = floorOf(canvas, s.role) * scale;
     let size = s.size * scale;
@@ -416,16 +509,26 @@ export function fitLayout(copy: ComposedCopy, canvas: CanvasLayout, measure: Mea
     for (; size >= floor - 0.01; size -= 2 * scale) {
       const innerW = box.width - 2 * padX * size;
       const width = (x: string) => measure(x, s.font, size, tracking);
-      lines = wrap(text.split(/\s+/), innerW, width);
-      const tall = (lines.length - 1) * size * s.lineHeight + size * 1.1 + 2 * padY * size;
-      if (lines.length <= s.maxLines && tall <= box.height + 0.5 && lines.every((x) => width(x) <= innerW + 0.5)) { fits = true; break; }
+      lines = wrap(units, innerW, width);
+      const tall = (lines.length - 1) * size * lineHeight + size * 1.1 + 2 * padY * size;
+      if (lines.length <= s.maxLines && tall <= box.height + 0.5 && lines.every((x) => width(x) <= innerW + 0.5)) {
+        fits = true;
+        // CJK breaks between any two characters, so a greedy wrap can leave one character alone on the
+        // last line ("…不必再手 / 算。"): balance the lines instead, at the narrowest width that keeps their count.
+        if (cjk && lines.length > 1) {
+          let lo = innerW / 2, hi = innerW;
+          for (let i = 0; i < 12; i++) { const mid = (lo + hi) / 2; if (wrap(units, mid, width).length === lines.length) hi = mid; else lo = mid; }
+          lines = wrap(units, hi, width);
+        }
+        break;
+      }
     }
     if (!fits) {
       size = floor;
-      errors.push(`${ROLE_LABEL[s.role]} doesn't fit at the ${Math.round(floorOf(canvas, s.role))} px minimum: shorten "${raw.slice(0, 40)}${raw.length > 40 ? "…" : ""}".`);
-    } else if (size < s.size * scale * 0.8) warnings.push(`${ROLE_LABEL[s.role]} set at ${Math.round(size / scale)} px to fit; shorter copy reads bigger.`);
+      errors.push(t("{role} doesn't fit at the {px} px minimum: shorten \"{text}\".", { role: t(ROLE_LABEL[s.role]), px: String(Math.round(floorOf(canvas, s.role))), text: `${raw.slice(0, 40)}${raw.length > 40 ? "…" : ""}` }));
+    } else if (size < s.size * scale * 0.8) warnings.push(t("{role} set at {px} px to fit; shorter copy reads bigger.", { role: t(ROLE_LABEL[s.role]), px: String(Math.round(size / scale)) }));
     const widths = lines.map((x) => measure(x, s.font, size, tracking));
-    const blockH = (lines.length - 1) * size * s.lineHeight + size * 1.1;
+    const blockH = (lines.length - 1) * size * lineHeight + size * 1.1;
     const pillW = s.pill ? Math.min(box.width, Math.max(...widths) + 2 * padX * size) : 0;
     const pillH = s.pill ? blockH + 2 * padY * size : 0;
     const outerH = s.pill ? pillH : blockH;
@@ -435,11 +538,11 @@ export function fitLayout(copy: ComposedCopy, canvas: CanvasLayout, measure: Mea
     const placed: PlacedLine[] = lines.map((line, i) => {
       const w = widths[i];
       const x = s.pill ? pillLeft + (pillW - w) / 2 : s.align === "left" ? box.left : s.align === "right" ? box.left + box.width - w : box.left + (box.width - w) / 2;
-      const lineTop = textTop + i * size * s.lineHeight;
+      const lineTop = textTop + i * size * lineHeight;
       return { text: line, x, width: w, top: lineTop, baseline: lineTop + size * 0.9 };
     });
     texts.push({
-      role: s.role, font: s.font, size, lineHeight: s.lineHeight, align: s.align, tracking, lines: placed, box,
+      role: s.role, font: s.font, size, lineHeight, align: s.align, tracking, lines: placed, box,
       ...(s.pill ? { pill: { kind: s.pill, left: pillLeft, top, width: pillW, height: pillH, radius: pillH / 2 } } : {}),
     });
   }

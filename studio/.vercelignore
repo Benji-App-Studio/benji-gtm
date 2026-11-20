@@ -1,0 +1,4 @@
+# A deploy from this folder uploads only this folder. Tests import files outside it (../supabase),
+# so they are left out of the upload; they run with npm test, not in the build.
+src/**/*.test.ts
+src/**/*.test.tsx

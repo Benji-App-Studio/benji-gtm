@@ -1,25 +1,30 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { preloadProject, useCached } from "@/lib/client-cache";
 import { goInstant } from "./instant";
 import { createClient } from "@/lib/supabase/client";
+import { useT } from "@/lib/i18n/client";
+import { m } from "@/lib/i18n/translate";
 import { TYPE_COPY, type Platform, type ProjectStatus, type ProjectType } from "@/lib/types";
 import { Skeleton, SkeletonProjectCards } from "./skeleton";
-import { Badge, ButtonLink, Card, EmptyState, Gear, Page, PageHeader, PlatformBadge, cx } from "./ui";
+import { Badge, Card, Gear, PlatformBadge, cx } from "./ui";
+import { rich } from "./rich";
 
 export interface ProjectSummary {
   id: string; type: ProjectType; name: string; description: string; status: ProjectStatus; message: string | null; demo: boolean;
   platforms: Platform[]; sinceDays: number; competitors: number; runs: number; lastRunAt: string | null; posts: number | null; createdAt: string;
+  /** The app the analysis is for (Research › Social posts lists it there); null for one that names none. */
+  productId?: string | null;
 }
 
 export const STATUS: Record<ProjectStatus, { label: string; tone: "neutral" | "accent" | "win" | "warn" }> = {
-  draft: { label: "Draft", tone: "neutral" },
-  discovering: { label: "Finding competitors", tone: "accent" },
-  review: { label: "Ready to run", tone: "accent" },
-  analyzing: { label: "Analyzing", tone: "accent" },
-  ready: { label: "Report ready", tone: "win" },
-  error: { label: "Needs attention", tone: "warn" },
+  draft: { label: m("Draft"), tone: "neutral" },
+  discovering: { label: m("Finding competitors"), tone: "accent" },
+  review: { label: m("Ready to run"), tone: "accent" },
+  analyzing: { label: m("Analyzing"), tone: "accent" },
+  ready: { label: m("Report ready"), tone: "win" },
+  error: { label: m("Needs attention"), tone: "warn" },
 };
 
 /** The user's analyses (optionally one type): shown at once from cache, kept live over Realtime. */
@@ -48,13 +53,27 @@ export function useProjects(type?: ProjectType) {
   return useMemo(() => (Array.isArray(all) ? all.filter((p) => !type || p.type === type) : all === undefined ? null : []), [all, type]);
 }
 
+/** "3 competitors", "1 account", "12 creators": the count of what an analysis reads, per kind, with {count} left for the number. */
+function countLabel(type: ProjectType, n: number, tn: ReturnType<typeof useT>["tn"]) {
+  return type === "account" ? tn(n, "{count} account", "{count} accounts")
+    : type === "campaign" ? tn(n, "{count} creator", "{count} creators")
+    : tn(n, "{count} competitor", "{count} competitors");
+}
+
+/** A count sentence ("{count} runs") with its number set apart, the way the list shows counts. */
+function withCount(text: string, n: number, intl: string, className: string): ReactNode {
+  return rich(text, { count: <b className={cx("tabular-nums", className)}>{n.toLocaleString(intl)}</b> });
+}
+
 /** Placeholder project cards while a list loads for the first time. */
 export function CardSkeletons({ count = 3 }: { count?: number }) {
-  return <Skeleton label="Loading projects"><SkeletonProjectCards count={count} /></Skeleton>;
+  const { t } = useT();
+  return <Skeleton label={t("Loading analyses")}><SkeletonProjectCards count={count} /></Skeleton>;
 }
 
 export function ProjectCard({ p, index = 0 }: { p: ProjectSummary; index?: number }) {
   const copy = TYPE_COPY[p.type];
+  const { t, tn, intl } = useT();
   return (
     <Link href={`/app/p/${p.id}`} className="rise group rounded-card" style={{ "--i": index } as React.CSSProperties}
       onMouseEnter={() => preloadProject(p.id)} onFocus={() => preloadProject(p.id)} onTouchStart={() => preloadProject(p.id)}
@@ -63,19 +82,19 @@ export function ProjectCard({ p, index = 0 }: { p: ProjectSummary; index?: numbe
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="truncate text-sm font-medium">{p.name}</h3>
-            <p className="mt-0.5 text-caption text-muted">{copy.label} · last {p.sinceDays} days</p>
+            <p className="mt-0.5 text-caption text-muted">{tn(p.sinceDays, "{kind} · last {n} day", "{kind} · last {n} days", { kind: t(copy.label) })}</p>
           </div>
           <Badge tone={STATUS[p.status].tone}>
             {(p.status === "discovering" || p.status === "analyzing") && <Gear className="size-3" />}
-            {STATUS[p.status].label}
+            {t(STATUS[p.status].label)}
           </Badge>
         </div>
         <div className="flex flex-wrap gap-3">{p.platforms.map((platform) => <PlatformBadge key={platform} platform={platform} />)}</div>
         <div className="mt-auto flex flex-wrap gap-x-4 gap-y-1 text-xs">
-          <span><b className="font-medium tabular-nums">{p.competitors}</b> <span className="text-muted">{copy.nouns}</span></span>
-          <span><b className="font-medium tabular-nums">{p.runs}</b> <span className="text-muted">run{p.runs === 1 ? "" : "s"}</span></span>
-          {p.posts != null && <span><b className="font-medium tabular-nums">{p.posts}</b> <span className="text-muted">posts</span></span>}
-          {p.demo && <Badge>demo</Badge>}
+          <span className="text-muted">{withCount(countLabel(p.type, p.competitors, tn), p.competitors, intl, "font-medium text-ink")}</span>
+          <span className="text-muted">{withCount(tn(p.runs, "{count} run", "{count} runs"), p.runs, intl, "font-medium text-ink")}</span>
+          {p.posts != null && <span className="text-muted">{withCount(tn(p.posts, "{count} post", "{count} posts"), p.posts, intl, "font-medium text-ink")}</span>}
+          {p.demo && <Badge>{t("demo")}</Badge>}
         </div>
       </Card>
     </Link>
@@ -85,6 +104,7 @@ export function ProjectCard({ p, index = 0 }: { p: ProjectSummary; index?: numbe
 /** One analysis as a list row (Linear's projects list): name and kind at left, channels, counts and status at right. */
 export function ProjectRow({ p, index = 0 }: { p: ProjectSummary; index?: number }) {
   const copy = TYPE_COPY[p.type];
+  const { t, tn, intl } = useT();
   return (
     <Link href={`/app/p/${p.id}`} className="rise group flex min-h-12 items-center gap-3 rounded-control px-2 py-1.5 transition-colors hover:bg-hover" style={{ "--i": index } as React.CSSProperties}
       onMouseEnter={() => preloadProject(p.id)} onFocus={() => preloadProject(p.id)} onTouchStart={() => preloadProject(p.id)}
@@ -92,54 +112,39 @@ export function ProjectRow({ p, index = 0 }: { p: ProjectSummary; index?: number
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium">{p.name}</span>
-          {p.demo && <Badge>demo</Badge>}
+          {p.demo && <Badge>{t("demo")}</Badge>}
         </span>
-        <span className="block truncate text-xs text-muted">{copy.label} · last {p.sinceDays} days</span>
+        <span className="block truncate text-xs text-muted">{tn(p.sinceDays, "{kind} · last {n} day", "{kind} · last {n} days", { kind: t(copy.label) })}</span>
       </span>
       <span className="hidden shrink-0 items-center gap-3 @2xl:flex">{p.platforms.map((platform) => <PlatformBadge key={platform} platform={platform} />)}</span>
       <span className="hidden w-[200px] shrink-0 justify-end gap-3 text-xs text-muted tabular-nums @xl:flex">
-        <span><span className="text-ink">{p.competitors}</span> {copy.nouns}</span>
-        <span><span className="text-ink">{p.runs}</span> run{p.runs === 1 ? "" : "s"}</span>
-        {p.posts != null && <span><span className="text-ink">{p.posts}</span> posts</span>}
+        <span>{withCount(countLabel(p.type, p.competitors, tn), p.competitors, intl, "font-normal text-ink")}</span>
+        <span>{withCount(tn(p.runs, "{count} run", "{count} runs"), p.runs, intl, "font-normal text-ink")}</span>
+        {p.posts != null && <span>{withCount(tn(p.posts, "{count} post", "{count} posts"), p.posts, intl, "font-normal text-ink")}</span>}
       </span>
       <Badge tone={STATUS[p.status].tone} className="shrink-0">
         {(p.status === "discovering" || p.status === "analyzing") && <Gear className="size-3" />}
-        {STATUS[p.status].label}
+        {t(STATUS[p.status].label)}
       </Badge>
     </Link>
   );
 }
 
 /** Analyses as a list: rows back to back, full width, under a quiet column header. */
-export function ProjectRows({ projects, offset = 0, className }: { projects: ProjectSummary[]; offset?: number; className?: string }) {
+/** `trailing`: something after each row, outside its link (All analyses' "Assign to app" menu). */
+export function ProjectRows({ projects, offset = 0, className, trailing }: { projects: ProjectSummary[]; offset?: number; className?: string; trailing?: (p: ProjectSummary) => ReactNode }) {
+  const { t } = useT();
   return (
     <div className={cx("-mx-2", className)}>
       <div className="flex h-8 items-center gap-3 border-b border-line px-2 text-xs text-muted">
-        <span className="flex-1">Name</span>
-        <span className="hidden w-[200px] text-right @xl:block">Size</span>
-        <span className="w-[104px] text-right">Status</span>
+        <span className="flex-1">{t("Name")}</span>
+        <span className="hidden w-[200px] text-right @xl:block">{t("Size")}</span>
+        <span className="w-[104px] text-right">{t("Status")}</span>
+        {trailing && <span className="w-7" aria-hidden />}
       </div>
-      <div className="pt-1">{projects.map((p, i) => <ProjectRow key={p.id} p={p} index={i + offset} />)}</div>
+      <div className="pt-1">{projects.map((p, i) => trailing
+        ? <div key={p.id} className="flex items-center gap-1"><div className="min-w-0 flex-1"><ProjectRow p={p} index={i + offset} /></div>{trailing(p)}</div>
+        : <ProjectRow key={p.id} p={p} index={i + offset} />)}</div>
     </div>
-  );
-}
-
-/** One kind of analysis under Analyze (Competitors, Accounts, Campaigns): what it does, its projects, and a way to start a new one. */
-export function WorkflowPage({ type }: { type: ProjectType }) {
-  const projects = useProjects(type);
-  const copy = TYPE_COPY[type];
-  const page = type === "competitors" ? "Competitors" : type === "account" ? "Accounts" : "Campaigns";
-  const start = `New ${type === "competitors" ? "competitor analysis" : type === "account" ? "account analysis" : "campaign analysis"}`;
-  return (
-    <Page>
-      <PageHeader crumbs={[{ label: "Home", href: "/app" }, { label: page }]} title={page}
-        subtitle={<>{copy.blurb} Every run is kept in the analysis&apos;s history.</>}
-        actions={<ButtonLink href={`/app/new?type=${type}`}>{start}</ButtonLink>} />
-      {projects === null ? <CardSkeletons />
-        : projects.length === 0 ? (
-          <EmptyState title={`No ${type === "competitors" ? "competitor analyses" : type === "account" ? "account analyses" : "campaign analyses"} yet`} body="Start one and every run of it is kept here."
-            action={<ButtonLink href={`/app/new?type=${type}`} variant="secondary">{start}</ButtonLink>} />
-        ) : <ProjectRows projects={projects} />}
-    </Page>
   );
 }

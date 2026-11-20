@@ -11,6 +11,8 @@
 // attributed events to a Meta dataset over the Conversions API, with an install arriving as a Lead.
 // Those show up as website (pixel) actions, so the lists below include them after the app events.
 
+import { type Delivery, deliveryOf } from "./lineage.ts";
+
 export const GRAPH_VERSION = Deno.env.get("META_GRAPH_VERSION")?.trim() || "v25.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
@@ -91,7 +93,7 @@ const first = (list: Action[] | undefined, types: readonly string[]) => {
 
 export interface MetaAccount { id: string; name: string; currency: string; timezone: string }
 export interface MetaCampaign { campaign_id: string; name: string; objective: string | null; status: string | null; daily_budget: number | null; lifetime_budget: number | null }
-export interface MetaAd { ad_id: string; name: string; status: string | null; campaign_id: string | null; adset_id: string | null; adset_name: string | null; creative_id: string | null; creative_name: string | null; thumbnail_url: string | null }
+export interface MetaAd { ad_id: string; name: string; status: string | null; campaign_id: string | null; adset_id: string | null; adset_name: string | null; creative_id: string | null; creative_name: string | null; thumbnail_url: string | null; delivery: Delivery }
 export interface MetaDay {
   ad_id: string; date: string; campaign_id: string | null; adset_id: string | null;
   spend: number; impressions: number; reach: number; clicks: number; link_clicks: number;
@@ -113,8 +115,9 @@ export async function pullMeta(token: string, adAccountId: string, since: string
     graph.all<{ id: string; name?: string; objective?: string; effective_status?: string; daily_budget?: string; lifetime_budget?: string }>(
       `${act}/campaigns`, { fields: "id,name,objective,effective_status,daily_budget,lifetime_budget", limit: "200" },
     ),
-    graph.all<{ id: string; name?: string; effective_status?: string; campaign_id?: string; adset?: { id: string; name?: string }; creative?: { id: string; name?: string; thumbnail_url?: string } }>(
-      `${act}/ads`, { fields: "id,name,effective_status,campaign_id,adset{id,name},creative{id,name,thumbnail_url}", limit: "200" },
+    graph.all<Parameters<typeof deliveryOf>[0] & { id: string; name?: string; effective_status?: string; campaign_id?: string; adset?: { id: string; name?: string }; creative?: { id: string; name?: string; thumbnail_url?: string } }>(
+      // configured_status, issues_info and created_time: why an ad isn't delivering (Launch's Ads view).
+      `${act}/ads`, { fields: "id,name,account_id,effective_status,configured_status,issues_info,created_time,campaign_id,adset{id,name},creative{id,name,thumbnail_url}", limit: "200" },
     ),
     graph.all<Record<string, unknown> & { ad_id: string; date_start: string; actions?: Action[]; action_values?: Action[]; inline_link_clicks?: string }>(
       `${act}/insights`, {
@@ -139,6 +142,7 @@ export async function pullMeta(token: string, adAccountId: string, since: string
       ad_id: a.id, name: a.name ?? "", status: a.effective_status ?? null, campaign_id: a.campaign_id ?? null,
       adset_id: a.adset?.id ?? null, adset_name: a.adset?.name ?? null,
       creative_id: a.creative?.id ?? null, creative_name: a.creative?.name ?? null, thumbnail_url: a.creative?.thumbnail_url ?? null,
+      delivery: deliveryOf(a),
     })),
     days: insights.map((row) => ({
       ad_id: row.ad_id, date: row.date_start, campaign_id: (row.campaign_id as string) ?? null, adset_id: (row.adset_id as string) ?? null,

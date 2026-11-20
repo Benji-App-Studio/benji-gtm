@@ -1,17 +1,25 @@
 "use client";
 // A small stale-while-revalidate cache for the signed-in app's lists: pages show what they had at
 // once when you switch to them, then refresh in the background.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { CACHE_DB, legacyKey } from "./storage-keys";
 
 const store = new Map<string, unknown>();
 const inflight = new Map<string, Promise<unknown>>();
 const listeners = new Map<string, Set<(value: unknown) => void>>();
+/** When each URL's value last arrived (Date.now()), and the HTTP status it came with. */
+const fetchedAt = new Map<string, number>();
+const statuses = new Map<string, number>();
 
+/** Asks again now (one request per URL at a time: a second caller shares the first's). */
 export async function refresh<T>(url: string): Promise<T> {
   if (!inflight.has(url)) {
-    inflight.set(url, fetch(url, { cache: "no-store" }).then((r) => r.json()).then((value) => {
+    inflight.set(url, fetch(url, { cache: "no-store" }).then((r) => {
+      statuses.set(url, r.status);
+      return r.json();
+    }).then((value) => {
       store.set(url, value);
+      fetchedAt.set(url, Date.now());
       listeners.get(url)?.forEach((notify) => notify(value));
       return value;
     }).finally(() => inflight.delete(url)));
@@ -19,26 +27,65 @@ export async function refresh<T>(url: string): Promise<T> {
   return inflight.get(url) as Promise<T>;
 }
 
+/** Whether a URL's cached value is younger than `maxAgeMs` (a value set with prime() counts from then). */
+export const isFresh = (url: string, maxAgeMs: number) => store.has(url) && Date.now() - (fetchedAt.get(url) ?? 0) < maxAgeMs;
+
+/**
+ * Asks again only when the cached value is older than `maxAgeMs` (or missing); otherwise answers with
+ * what is cached, without a request. A request already on its way is shared.
+ */
+export function revalidate<T>(url: string, maxAgeMs: number): Promise<T> {
+  if (inflight.has(url) || !isFresh(url, maxAgeMs)) return refresh<T>(url);
+  return Promise.resolve(store.get(url) as T);
+}
+
+/** The HTTP status of the last answer for a URL (401: signed out), undefined before one arrived. */
+export const lastStatus = (url: string) => statuses.get(url);
+
 /** Starts loading a list before its page opens (e.g. when a link is hovered). */
 export const preload = (url: string) => { if (!store.has(url)) refresh(url).catch(() => {}); };
 
-/** The cached value at once (or undefined the first time), kept fresh. */
-export function useCached<T>(url: string): [T | undefined, () => Promise<T>] {
-  const [value, setValue] = useState<T | undefined>(() => store.get(url) as T | undefined);
-  useEffect(() => {
+
+/**
+ * Lists that every page of an app asks for but that change only when someone edits them (and the screen
+ * that edits them refreshes them): fresh for this long by default, so moving between pages doesn't ask
+ * again. Everything else is asked for again on every mount.
+ */
+const DEFAULT_MAX_AGE: Record<string, number> = { "/api/products": 30_000, "/api/install": 60_000 };
+
+export interface CacheOptions {
+  /**
+   * How long an answer stays fresh: a page that opens within this time shows it without asking again.
+   * 0 (the default) asks on every mount, showing the cached value meanwhile.
+   */
+  maxAgeMs?: number;
+}
+
+/**
+ * The cached value at once (or undefined the first time), kept fresh. While the server's HTML is being
+ * hydrated it is undefined, as it was on the server: parts of a page hydrate at different times, and a
+ * value another part fetched meanwhile would otherwise make the two disagree (a hydration error).
+ */
+export function useCached<T>(url: string, options: CacheOptions = {}): [T | undefined, () => Promise<T>] {
+  const maxAgeMs = options.maxAgeMs ?? DEFAULT_MAX_AGE[url] ?? 0;
+  // The store itself is the state: every hook on a URL sees a new answer at once, whoever asked for it.
+  // While hydrating, React reads the server's snapshot (undefined), then the cached value.
+  const subscribe = useCallback((notify: () => void) => {
     const set = listeners.get(url) ?? new Set();
-    const notify = (v: unknown) => setValue(v as T);
-    set.add(notify);
+    const listener = () => notify();
+    set.add(listener);
     listeners.set(url, set);
-    refresh<T>(url).catch(() => {});
-    return () => { set.delete(notify); };
+    return () => { set.delete(listener); };
   }, [url]);
+  const value = useSyncExternalStore(subscribe, () => store.get(url) as T | undefined, () => undefined);
+  useEffect(() => { revalidate<T>(url, maxAgeMs).catch(() => {}); }, [url, maxAgeMs]);
   return [value, useCallback(() => refresh<T>(url), [url])];
 }
 
 /** Stores a value a page put together itself (e.g. a list loaded in slices), for the next visit. */
 export function prime<T>(url: string, value: T) {
   store.set(url, value);
+  fetchedAt.set(url, Date.now());
   listeners.get(url)?.forEach((notify) => notify(value));
 }
 

@@ -5,6 +5,7 @@
 // more (the formula under a label, a disabled option with its reason).
 import { useState, type ComponentProps, type ReactNode } from "react";
 import { cx, segmentClass, segmentTrackClass } from "@/components/ui";
+import { useT } from "@/lib/i18n/client";
 
 export function Panel({ className, ...props }: ComponentProps<"section">) {
   return <section className={cx("min-w-0 rounded-card border border-line bg-card", className)} {...props} />;
@@ -24,6 +25,7 @@ export function PanelHead({ title, sub, right, className }: { title: ReactNode; 
 
 /** "▲ 6.2%" in a rounded chip. The arrow carries the tone (good / bad), the number stays ink. */
 export function DeltaChip({ value, goodWhenUp = true, suffix = "%", className }: { value: number | null; goodWhenUp?: boolean; suffix?: string; className?: string }) {
+  const { t, intl } = useT();
   if (value == null || !Number.isFinite(value)) return null;
   const up = value > 0;
   const flat = Math.abs(value) < 0.0005;
@@ -32,8 +34,8 @@ export function DeltaChip({ value, goodWhenUp = true, suffix = "%", className }:
   return (
     <span className={cx("inline-flex h-5 items-center gap-1 rounded-full border border-hairline bg-raised px-1.5 text-xs font-medium whitespace-nowrap text-ink tabular-nums", className)}>
       <span aria-hidden className={cx("text-[9px]", good === null ? "text-muted" : good ? "text-win" : "text-warn")}>{flat ? "■" : up ? "▲" : "▼"}</span>
-      <span className="sr-only">{flat ? "No change" : up ? "Up" : "Down"}</span>
-      {shown < 10 ? shown.toFixed(1) : Math.round(shown)}{suffix}
+      <span className="sr-only">{flat ? t("No change") : up ? t("Up") : t("Down")}</span>
+      {shown.toLocaleString(intl, { minimumFractionDigits: shown < 10 ? 1 : 0, maximumFractionDigits: shown < 10 ? 1 : 0 })}{suffix}
     </span>
   );
 }
@@ -41,12 +43,13 @@ export function DeltaChip({ value, goodWhenUp = true, suffix = "%", className }:
 /** A label with a quiet "how" toggle that unfolds the formula underneath (no popover to overflow). */
 export function HowLabel({ label, how, className }: { label: ReactNode; how?: string; className?: string }) {
   const [open, setOpen] = useState(false);
+  const { t } = useT();
   return (
     <span className={cx("block", className)}>
       <span className="inline-flex items-center gap-1.5">
         {label}
         {how && (
-          <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} title="How this is calculated"
+          <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} title={t("How this is calculated")}
             className="inline-grid size-4 place-items-center rounded-full border border-hairline text-[10px] leading-none text-muted transition-colors hover:bg-hover hover:text-ink">
             ?
           </button>
@@ -145,11 +148,12 @@ export function NeedsYou({ items, empty }: { items: NeedsYouItem[]; empty: React
 
 /** A small round icon for a source's state, with its name. */
 export function SourceDot({ name, state, title }: { name: string; state: "ok" | "error" | "off" | "unsynced"; title?: string }) {
+  const { t } = useT();
   return (
     <span title={title} className="inline-flex items-center gap-1.5 text-xs text-muted">
       <span aria-hidden className={cx("size-2 rounded-full", state === "ok" ? "bg-win" : state === "error" ? "bg-warn" : state === "unsynced" ? "border border-accent bg-accent-soft" : "border border-faint")} />
       {name}
-      <span className="sr-only">{state === "ok" ? "synced" : state === "error" ? "sync failed" : state === "unsynced" ? "connected, not synced yet" : "not connected"}</span>
+      <span className="sr-only">{state === "ok" ? t("synced") : state === "error" ? t("sync failed") : state === "unsynced" ? t("connected, not synced yet") : t("not connected")}</span>
     </span>
   );
 }

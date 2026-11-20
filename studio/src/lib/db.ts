@@ -1,4 +1,5 @@
 // Database rows (Supabase) and how they map to the shapes the pages use.
+import { m } from "./i18n/translate";
 import type { Candidate, Platform, Project, ProjectStatus, ProjectType, RunProgress } from "./types";
 
 export type ProductKind = "saas" | "mobile_app" | "physical_product" | "clothing" | "food_beverage" | "restaurant" | "local_service" | "creator_education" | "other";
@@ -118,11 +119,11 @@ export function toProject(row: ProjectRow): Project & { productId: string | null
 }
 
 export const KIND_LABEL: Record<ProductKind, string> = {
-  saas: "SaaS / software", mobile_app: "Mobile app", physical_product: "Physical product", clothing: "Clothing brand",
-  food_beverage: "Food & drink brand", restaurant: "Restaurant or food chain", local_service: "Local service / logistics",
-  creator_education: "Creator, course or community", other: "Something else",
+  saas: m("SaaS / software"), mobile_app: m("Mobile app"), physical_product: m("Physical product"), clothing: m("Clothing brand"),
+  food_beverage: m("Food & drink brand"), restaurant: m("Restaurant or food chain"), local_service: m("Local service / logistics"),
+  creator_education: m("Creator, course or community"), other: m("Something else"),
 };
 
 export const STAGE_LABEL: Record<Stage, string> = {
-  idea: "Just an idea", pre_launch: "Building, not launched", launched: "Launched, early customers", established: "Established, growing",
+  idea: m("Just an idea"), pre_launch: m("Building, not launched"), launched: m("Launched, early customers"), established: m("Established, growing"),
 };

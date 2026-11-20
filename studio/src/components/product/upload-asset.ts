@@ -4,6 +4,7 @@
 import type { AssetKind, ProductAsset } from "@/lib/product-assets";
 import { createClient } from "@/lib/supabase/client";
 import { uploadErrorText } from "@/lib/storage-usage";
+import { fill, type Translator } from "@/lib/i18n/translate";
 
 export const ASSET_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 export const ASSET_MAX_BYTES = 15 * 1024 * 1024;
@@ -18,16 +19,16 @@ function measure(file: File): Promise<{ width: number; height: number } | null> 
   });
 }
 
-/** Uploads `file` as one of the product's images; `kind` when the user chose one (the AI then keeps it). */
-export async function uploadProductAsset(productId: string, file: File, o: { kind?: AssetKind; label?: string } = {}): Promise<ProductAsset> {
-  if (!ASSET_IMAGE_TYPES.includes(file.type)) throw new Error(`${file.name} isn't a PNG, JPEG or WebP image.`);
-  if (file.size > ASSET_MAX_BYTES) throw new Error(`${file.name} is over 15 MB.`);
+/** Uploads `file` as one of the product's images; `kind` when the user chose one (the AI then keeps it). `t` words the errors. */
+export async function uploadProductAsset(productId: string, file: File, o: { kind?: AssetKind; label?: string } = {}, t: Translator["t"] = fill): Promise<ProductAsset> {
+  if (!ASSET_IMAGE_TYPES.includes(file.type)) throw new Error(t("{name} isn't a PNG, JPEG or WebP image.", { name: file.name }));
+  if (file.size > ASSET_MAX_BYTES) throw new Error(t("{name} is over 15 MB.", { name: file.name }));
   const post = (body: unknown) => fetch(`/api/products/${productId}/assets`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-    .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({ error: "Couldn't reach the server. Try again." })) }));
+    .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({ error: t("Couldn't reach the server. Try again.") })) }));
   const ticket = await post({ action: "ticket", contentType: file.type, size: file.size });
   if (!ticket.ok) throw new Error(ticket.data.error);
   const { error } = await createClient().storage.from(ticket.data.bucket).uploadToSignedUrl(ticket.data.path, ticket.data.token, file, { contentType: file.type });
-  if (error) throw new Error(`${file.name}: ${uploadErrorText(error)}`);
+  if (error) throw new Error(`${file.name}: ${uploadErrorText(error, undefined, t)}`);
   const size = await measure(file);
   const added = await post({ action: "add", path: ticket.data.path, kind: o.kind, label: o.label ?? file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").slice(0, 80), width: size?.width, height: size?.height });
   if (!added.ok) throw new Error(added.data.error);

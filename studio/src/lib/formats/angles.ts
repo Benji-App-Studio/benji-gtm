@@ -12,6 +12,10 @@
 // BW-5). Every `mechanism` line is a general fact the creative states on camera: keep them true.
 import { policyFor, type PolicyProfile } from "../creative-plan";
 import type { Angle, AppContext, FormatCard } from "./types";
+import { m } from "../i18n/translate";
+
+/** The default angle's name: our own label (the profile's audience groups are named by the user and shown as they are). */
+export const CORE_ANGLE = m("Core promise");
 
 /** A phrase the copy must never contain (whole words; a trailing * matches any ending), and the POLICY.md rule it breaks. */
 export type Claim = { text: string; rule: string };
@@ -62,7 +66,7 @@ function derived(app: AppContext): Angle {
   const audience = app.audience || "people like you";
   const topic = app.keywords[0] || "this";
   return {
-    id: "core", label: "Core promise", keywords: app.keywords.map((k) => k.toLowerCase()), audience, topic,
+    id: "core", label: CORE_ANGLE, keywords: app.keywords.map((k) => k.toLowerCase()), audience, topic,
     pain: `doing ${topic} the hard way`, stakes: "time you don't get back", outcome: `get ${topic} done without the hassle`,
     feature: lower(what), mechanism: `${what}.`,
     steps: [`Open ${name}`, "Set it up in a minute", "Let it handle the rest"],
@@ -102,7 +106,7 @@ export function profileAngles(app: AppContext): Angle[] {
       ? [featureNames[0], featureNames[1], featureNames[2]].map((f) => `Use ${f}`) as [string, string, string]
       : [`Open ${name}`, featureNames[0] ? `Use ${featureNames[0]}` : "Set it up in a minute", "Let it handle the rest"];
     return {
-      id: `profile-${i + 1}`, label: group.name.slice(0, 40) || "Core promise",
+      id: `profile-${i + 1}`, label: group.name.slice(0, 40) || CORE_ANGLE,
       keywords: [...new Set([...app.keywords.map((k) => k.toLowerCase()), ...words(`${group.name} ${pain}`)])].slice(0, 20),
       audience: group.name || p.audience, topic,
       pain: lower(pain), stakes: group.motivation ? `missing out on ${lower(sentence(group.motivation))}` : "time you don't get back", outcome: lower(promise),

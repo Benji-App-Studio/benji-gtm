@@ -8,6 +8,7 @@ import type { ProductKind, ProductRow, Stage } from "./db";
 import { KIND_LABEL, STAGE_LABEL } from "./db";
 import { ALL_QUESTIONS, PRICES, SALES } from "./product-questions";
 import { PLATFORMS, type Platform } from "./types";
+import { m } from "./i18n/translate";
 
 /** The product form's fields as the AI filled them from the sources (null / missing where they say nothing). */
 export interface InsightProductFields {
@@ -144,29 +145,29 @@ export function insightChanges(product: ProductRow, insight: ProductInsight): In
 
   // The onboarding form's fields, as the AI filled them from the sources (older profiles: from the prose).
   const f = insight.product;
-  if (f?.kind) set("kind", "What you're building", f.kind, [KIND_LABEL[product.kind] ?? product.kind, KIND_LABEL[f.kind] ?? f.kind]);
-  if (f?.stage) set("stage", "Where you are today", f.stage, [product.stage ? STAGE_LABEL[product.stage] : "", STAGE_LABEL[f.stage]]);
-  if (insight.summary.length >= 15) set("description", "What it is", insight.summary.slice(0, 2000));
+  if (f?.kind) set("kind", m("What you're building"), f.kind, [KIND_LABEL[product.kind] ?? product.kind, KIND_LABEL[f.kind] ?? f.kind]);
+  if (f?.stage) set("stage", m("Where you are today"), f.stage, [product.stage ? STAGE_LABEL[product.stage] : "", STAGE_LABEL[f.stage]]);
+  if (insight.summary.length >= 15) set("description", m("What it is"), insight.summary.slice(0, 2000));
   const audience = f?.audience || insight.audience.primary;
-  if (audience) set("audience", "Who it's for", audience);
-  if (insight.category) set("category_label", "Category", insight.category);
+  if (audience) set("audience", m("Who it's for"), audience);
+  if (insight.category) set("category_label", m("Category"), insight.category);
   const tier = f?.price_tier ?? (insight.pricing.price_tier !== "unknown" ? insight.pricing.price_tier : null);
-  if (tier) set("price_tier", "Price point", tier, [optionLabel(PRICES, product.price_tier), optionLabel(PRICES, tier)]);
+  if (tier) set("price_tier", m("Price point"), tier, [optionLabel(PRICES, product.price_tier), optionLabel(PRICES, tier)]);
   const channel = f?.sales_channel ?? (insight.sales_channel && insight.sales_channel !== "unknown" ? insight.sales_channel : null);
-  if (channel) set("sales_channel", "Where people buy it", channel, [optionLabel(SALES, product.sales_channel), optionLabel(SALES, channel)]);
+  if (channel) set("sales_channel", m("Where people buy it"), channel, [optionLabel(SALES, product.sales_channel), optionLabel(SALES, channel)]);
   const region = f?.region || insight.region;
-  if (region) set("region", "Market", region);
-  if (insight.keywords.length) set("keywords", "Niche keywords", insight.keywords.slice(0, 12));
-  if (insight.competitors.length) set("known_competitors", "Competitors", merge(product.known_competitors, insight.competitors, 200));
+  if (region) set("region", m("Market"), region);
+  if (insight.keywords.length) set("keywords", m("Niche keywords"), insight.keywords.slice(0, 12));
+  if (insight.competitors.length) set("known_competitors", m("Competitors"), merge(product.known_competitors, insight.competitors, 200));
   const site = insight.sources.find((s) => s.ok && s.kind === "website");
-  if (!product.website && site) set("website", "Website", site.url);
+  if (!product.website && site) set("website", m("Website"), site.url);
 
   // Every question the form asks that the AI could answer; the user's other answers stay.
   const found: Record<string, string> = { ...(f?.answers ?? {}) };
   if (!found.differentiator && insight.differentiators.length) found.differentiator = insight.differentiators.slice(0, 3).join("; ").slice(0, 600);
   const answers = { ...product.answers, ...found };
   const answerLines = (a: Record<string, string>) => Object.keys(found).filter((k) => a[k]).map((k) => `${questionLabel(k)} ${answerLabel(k, a[k])}`).join(" · ");
-  if (Object.keys(found).length) set("answers", "Answers", answers, [answerLines(product.answers ?? {}), answerLines(answers)]);
+  if (Object.keys(found).length) set("answers", m("Answers"), answers, [answerLines(product.answers ?? {}), answerLines(answers)]);
 
   // Handles: the AI's (from the site's links, footers and structured data) fill the empty ones; ones you typed stay.
   const socials = { ...(product.socials as Record<string, string>) };
@@ -179,7 +180,7 @@ export function insightChanges(product: ProductRow, insight: ProductInsight): In
     if (handle && !isPlatformAccount(handle) && !socials[key] && (PLATFORMS as string[]).concat("facebook").includes(key)) socials[key] = handle;
   }
   const handles = (s: Record<string, string | undefined>) => Object.entries(s).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join(", ");
-  set("socials", "Social handles", socials, [handles(product.socials ?? {}), handles(socials)]);
+  set("socials", m("Social handles"), socials, [handles(product.socials ?? {}), handles(socials)]);
 
   return { product: out, changes };
 }
@@ -193,8 +194,8 @@ export function backupOf(product: ProductRow, patch: InsightPatch) {
 }
 
 export const SALES_LABEL: Record<string, string> = {
-  online_store: "Their own website / online store", retail: "Shops and retail partners", app_store: "App Store / Google Play",
-  sales_team: "A sales team or demos", physical_location: "A place people visit", marketplace: "Marketplaces", unknown: "Not clear",
+  online_store: m("Their own website / online store"), retail: m("Shops and retail partners"), app_store: m("App Store / Google Play"),
+  sales_team: m("A sales team or demos"), physical_location: m("A place people visit"), marketplace: m("Marketplaces"), unknown: m("Not clear"),
 };
 
 // MARK: The profile in prompts

@@ -164,3 +164,18 @@ export function mediaFiles(o: {
   for (const poster of posters) add(poster, "poster");
   return files.slice(0, MEDIA_PER_AD);
 }
+
+/** Accounts mode: files one (non-staff) account may have waiting to be saved at once. */
+export const MEDIA_QUEUE_PER_USER = 2000;
+/** The note on a file left out because the account already has MEDIA_QUEUE_PER_USER files waiting. */
+export const MEDIA_QUEUE_FULL = "Too many of your files were already waiting to be saved: this one wasn't queued. Import the same file again once the others are stored.";
+
+/**
+ * Which new files fit under an account's waiting-files cap: the first ones in order, up to what is left
+ * of `cap` after the `waiting` it has already; the rest are left out (`over`). No cap: all of them.
+ */
+export function splitByQueueCap<T>(files: T[], waiting: number, cap: number | null): { take: T[]; over: T[] } {
+  if (cap === null) return { take: files, over: [] };
+  const left = Math.max(0, cap - Math.max(0, waiting));
+  return { take: files.slice(0, left), over: files.slice(left) };
+}

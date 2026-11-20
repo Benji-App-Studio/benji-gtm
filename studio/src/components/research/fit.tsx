@@ -2,10 +2,11 @@
 // same promise as a competitor's ad. It never blocks anything; the user decides.
 import type { AdFit, AdSells } from "@/lib/product-assets";
 import type { RankedAdRow } from "@/lib/research";
+import { m } from "@/lib/i18n/translate";
 import { cx } from "../ui";
 
 /** Short labels for the ad cards and the filter. */
-export const FIT_SHORT: Record<AdFit["level"], string> = { fits: "Fits", partly: "Partly", doesnt_fit: "Doesn't fit" };
+export const FIT_SHORT: Record<AdFit["level"], string> = { fits: m("Fits"), partly: m("Partly"), doesnt_fit: m("Doesn't fit") };
 
 const DOT: Record<AdFit["level"], string> = { fits: "bg-win", partly: "bg-caution", doesnt_fit: "bg-caution-ink/70" };
 

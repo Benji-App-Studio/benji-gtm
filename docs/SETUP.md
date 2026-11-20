@@ -139,12 +139,12 @@ computer. The app never shows a saved key again, only its last four characters.
 
 ✅ **Checkpoint:** OpenAI shows a "Saved" badge and the line "This key works. It is saved in your project".
 
-You can add the other keys later in **Settings > API keys**. Each one says what it unlocks and how
+You can add the other keys later in **Settings > Your keys**. Each one says what it unlocks and how
 to get it. Step-by-step guides for every key:
 [Supabase](keys/supabase.md), [OpenAI](keys/openai.md), [Apify](keys/apify.md),
 [Typesafe](keys/typesafe.md), [Higgsfield](keys/higgsfield.md),
 [Meta Ad Library](keys/meta-ad-library.md), [Meta ads](keys/meta-ads.md),
-[RevenueCat](keys/revenuecat.md), [AppStack](keys/appstack.md),
+[RevenueCat](keys/revenuecat.md), [Superwall](keys/superwall.md), [Mixpanel](keys/mixpanel.md), [AppStack](keys/appstack.md),
 [Google Drive](keys/google-drive.md), [TikTok](keys/tiktok.md).
 
 ## Step 6. Create your first app
@@ -152,10 +152,12 @@ to get it. Step-by-step guides for every key:
 1. Delete the access token now: click **Access Tokens in Supabase** on the setup page and remove
    the token you made in step 2. It is no longer needed.
 2. Click **Create your first app**.
-3. On the page "Tell us about your product", answer the short questions (name, website, what it is,
-   who it is for, your channels, competitors you already know) and click **Finish**.
+3. Three short steps follow. On "What's your app?", paste your App Store link or website and check
+   the name, then click **Continue**. On "Connect your AI key", paste your OpenAI key if it isn't
+   connected yet (or click **Skip for now**). On "Who are your competitors?", pick up to five and
+   click **Finish**.
 
-✅ **Checkpoint:** your new app's page opens, with its name in the sidebar.
+✅ **Checkpoint:** your app's Research page opens, showing how to get your competitors' ads in.
 
 ## Next time
 

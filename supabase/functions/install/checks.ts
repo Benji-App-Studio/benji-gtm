@@ -51,17 +51,21 @@ const json = async (response: Response): Promise<Record<string, unknown>> => {
 const oneLine = (value: string) => !/\s/.test(value);
 const NOT_ONE_LINE = "A key has no spaces or line breaks. Copy it again and paste only the key.";
 
-/** Mirrors `install_secret_allowed` in the install_core migration: the names a person may set. */
+/** Mirrors `install_secret_allowed` (last redefined in the revenuecat_per_project_keys migration): the names a person may set. */
 export const KEY_NAMES = [
   "OPENAI_API_KEY", "TYPESAFE_API_KEY", "APIFY_TOKEN",
   "META_AD_LIBRARY_TOKEN", "META_SYSTEM_USER_TOKEN", "META_APP_SECRET",
   "REVENUECAT_API_KEY", "APPSTACK_API_KEY", "HIGGSFIELD_API_KEY",
   "GOOGLE_SERVICE_ACCOUNT_JSON", "CREATIVES_RUNNER_SECRET",
   "TIKTOK_RESEARCH_CLIENT_KEY", "TIKTOK_RESEARCH_CLIENT_SECRET",
+  "MIXPANEL_SERVICE_ACCOUNT", "SUPERWALL_API_KEY",
 ] as const;
 export const APPSTACK_PER_APP = /^APPSTACK_API_KEY_[A-Za-z0-9_]{1,64}$/;
+/** A RevenueCat key for one project (REVENUECAT_API_KEY_<PROJECT>): a v2 secret key reads one project only. */
+export const REVENUECAT_PER_PROJECT = /^REVENUECAT_API_KEY_[A-Za-z0-9_]{1,64}$/;
+export const isPerAppKey = (name: string) => APPSTACK_PER_APP.test(name) || REVENUECAT_PER_PROJECT.test(name);
 export const isKeyName = (name: unknown): name is string =>
-  typeof name === "string" && ((KEY_NAMES as readonly string[]).includes(name) || APPSTACK_PER_APP.test(name));
+  typeof name === "string" && ((KEY_NAMES as readonly string[]).includes(name) || isPerAppKey(name));
 
 /** A runner secret is chosen (or generated) here, not issued by a provider: only its length can be judged. */
 export const RUNNER_SECRET_MIN = 24;
@@ -117,6 +121,8 @@ async function decide(name: string, raw: string, ctx: CheckContext): Promise<Che
     case "META_AD_LIBRARY_TOKEN": return await checkMetaAdLibrary(value, ctx.fetch);
     case "REVENUECAT_API_KEY": return await checkRevenueCat(value, ctx.fetch);
     case "HIGGSFIELD_API_KEY": return await checkHiggsfield(value, ctx.fetch);
+    case "MIXPANEL_SERVICE_ACCOUNT": return await checkMixpanelAccount(value, ctx.fetch);
+    case "SUPERWALL_API_KEY": return await checkSuperwallKey(value, ctx.fetch);
     case "TIKTOK_RESEARCH_CLIENT_KEY": return await checkTikTok(value, await ctx.other("TIKTOK_RESEARCH_CLIENT_SECRET"), "TIKTOK_RESEARCH_CLIENT_SECRET", ctx.fetch);
     case "TIKTOK_RESEARCH_CLIENT_SECRET": return await checkTikTok(await ctx.other("TIKTOK_RESEARCH_CLIENT_KEY"), value, "TIKTOK_RESEARCH_CLIENT_KEY", ctx.fetch);
     case "TYPESAFE_API_KEY": return unverified("TypeSafe has no quick way to check a key. It's saved and is used the next time an ad is read.");
@@ -126,6 +132,7 @@ async function decide(name: string, raw: string, ctx: CheckContext): Promise<Che
         : failed(`Use at least ${RUNNER_SECRET_MIN} characters, or generate one with Rotate.`);
     default:
       if (name === "APPSTACK_API_KEY" || APPSTACK_PER_APP.test(name)) return await checkAppStack(value, ctx.fetch);
+      if (REVENUECAT_PER_PROJECT.test(name)) return await checkRevenueCat(value, ctx.fetch);
       return failed("This isn't a key the app uses.");
   }
 }
@@ -258,8 +265,9 @@ export async function checkRevenueCat(key: string, fetchImpl: Fetch): Promise<Ch
   if (response.ok) return ok("RevenueCat accepted the key.");
   if (response.status === 401) return failed("RevenueCat rejected this key. Create a secret key (v2) under your project's API keys and paste it here.");
   if (response.status === 403) {
-    // A real v2 key that may read charts but not list projects: it can only be judged against a project.
-    return unverified("RevenueCat knows this key, but it may not list projects. It's saved; check it from a workspace's connections, where it reads that project's numbers.");
+    // A real v2 key without "Project configuration" read (GET /projects needs project_configuration:projects:read):
+    // it may still read charts, which only a project can show.
+    return unverified("RevenueCat knows this key, but it can't list projects (it needs Project configuration read). It's saved; your app's RevenueCat card checks it against that project.");
   }
   return unreachable("RevenueCat", `it answered ${response.status}`);
 }
@@ -280,6 +288,42 @@ export async function checkAppStack(key: string, fetchImpl: Fetch): Promise<Chec
   if (response.ok) return ok("AppStack accepted the key.");
   if (response.status === 401 || response.status === 403) return failed("AppStack rejected this key. Copy the API key from your app's settings in AppStack and paste it here.");
   return unreachable("AppStack", `it answered ${response.status}`);
+}
+
+// MARK: Mixpanel service account (GET /api/app/me with Basic auth; metrics/mixpanel.ts reads the Query API)
+
+export async function checkMixpanelAccount(value: string, fetchImpl: Fetch): Promise<CheckResult> {
+  const at = value.indexOf(":");
+  if (at < 1 || at === value.length - 1) return failed("Paste the service account as username:secret (the username, a colon, then the secret Mixpanel showed once).");
+  let response: Response;
+  try {
+    response = await fetchImpl("https://mixpanel.com/api/app/me", { headers: { Authorization: `Basic ${btoa(value)}`, Accept: "application/json" }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch (error) {
+    return unreachable("Mixpanel", reason(error));
+  }
+  if (response.ok) {
+    const results = (await json(response)).results as { user_email?: string; workspaces?: unknown } | undefined;
+    return ok(results?.user_email ? `Mixpanel accepted the service account (${results.user_email}).` : "Mixpanel accepted the service account.");
+  }
+  if (response.status === 401 || response.status === 403) return failed("Mixpanel rejected this service account. Copy the username and secret from Organization settings > Service accounts (the secret is shown once; make a new account if it's lost).");
+  return unreachable("Mixpanel", `it answered ${response.status}`);
+}
+
+// MARK: Superwall organization API key (GET /v2/projects; metrics/superwall.ts reads the query API)
+
+export async function checkSuperwallKey(key: string, fetchImpl: Fetch): Promise<CheckResult> {
+  let response: Response;
+  try {
+    response = await fetchImpl("https://api.superwall.com/v2/projects?limit=1", { headers: { Authorization: `Bearer ${key}`, Accept: "application/json" }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch (error) {
+    return unreachable("Superwall", reason(error));
+  }
+  // Listing projects needs projects:read; the analytics query needs data:read, which only the app's card can check.
+  if (response.ok) return ok("Superwall accepted the key and can list projects. It also needs the data:read scope (with access to all projects); your app's Superwall card checks that.");
+  if (response.status === 401) return failed("Superwall rejected this key. Create an organization API key under Settings > API Keys in Superwall and paste it here.");
+  // GET /v2/projects "Requires projects:read scope" (openapi.json); the sync uses it to find the app's organization.
+  if (response.status === 403) return failed("Superwall knows this key, but it can't list projects. Give it the projects:read scope as well as data:read, with access to all projects.");
+  return unreachable("Superwall", `it answered ${response.status}`);
 }
 
 // MARK: Higgsfield (a free price estimate; creatives/core/hf_api.ts)

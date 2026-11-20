@@ -5,6 +5,7 @@
 // creator's voice and B in the brand's, each a primary text and a headline. Plain TypeScript with fetch
 // injected: Deno tests run it with no network.
 import { addKeyMessage } from "../../_shared/keys.ts";
+import { adCopyRule, toUiLocale, type UiLocale } from "../../_shared/language.ts";
 import { OCR_DEFAULT_MODEL } from "./ocr.ts";
 
 /** What the studio may send: plain text, capped. */
@@ -33,6 +34,20 @@ const COPY_SCHEMA = {
     },
   },
 } as const;
+
+/**
+ * The language the copy is written in: the one the request names (`copyLanguage`: the ad's audience),
+ * else the person's (the page's language), else English. The studio's instructions are written in English.
+ */
+export function copyLanguage(requested: unknown, person: UiLocale | null | undefined): UiLocale {
+  return toUiLocale(requested) ?? person ?? "en";
+}
+
+/** The studio's instructions with the language rule for the copy (unchanged for English). The rule goes first so a long brief can't cut it off. */
+export function copyInstructions(instructions: string, language: UiLocale): string {
+  const rule = adCopyRule(language).trim();
+  return rule ? `${rule}\n\n${instructions}` : instructions;
+}
 
 /** The Responses API request: the studio's instructions as the system message, its input as the user's. */
 export function copyRequestBody(model: string, instructions: string, input: string) {

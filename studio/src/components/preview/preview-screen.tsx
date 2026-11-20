@@ -3,13 +3,13 @@
 // sample data. Requests to /api are answered in the browser by sample.ts.
 import Link from "next/link";
 import { Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useT } from "@/lib/i18n/client";
 import { AppShell } from "../app-shell";
 import { AuthForm } from "../auth-form";
 import { EntryFrame } from "../entry-frame";
 import { IconChart, IconCompass, IconFilters, IconMore, IconPlus, IconRocket, IconSparkles, IconTrash } from "../icons";
 import { PathOverride } from "../nav/path";
 import { AccountSettings } from "../settings/account";
-import { AppSettings } from "../settings/app-settings";
 import { AppearanceSettings } from "../settings/appearance-settings";
 import { GeneralSettings } from "../settings/general";
 import { KeysSettings } from "../settings/keys";
@@ -19,6 +19,7 @@ import { settingsColumnClass } from "../settings/pages";
 import { RunnerSettings } from "../settings/runner";
 import { UpdatesSettings } from "../settings/updates";
 import { LaunchView } from "../launch/launch-view";
+import { LaunchAdsView } from "../launch/ads-view";
 import { MeasureView } from "../measure/measure-view";
 import { PlaygroundView } from "../playground/playground-view";
 import { StudioView } from "../studio/studio-view";
@@ -27,14 +28,16 @@ import {
   MenuLabel, MenuSeparator, MenuSub, Page, PageHeader, Pagination, SearchField, SectionHeader, Segmented, SelectPill, SettingsGroup, SettingsRow, Stat, StatRow,
   StatStrip, StatusPill, Table, Td, Th, Toggle, Tr,
 } from "../ui";
-import { BrandView } from "../brand/brand-view";
+import { AppSettingsView } from "../brand/brand-view";
+import { AllApps } from "../all-apps";
+import { SocialPosts } from "../social-posts";
 import { CompetitorForm } from "../competitor-form";
-import { Dashboard } from "../dashboard";
-import { ProductForm } from "../product-form";
+import { NewAppFlow } from "../onboarding/new-app";
 import { ProjectView } from "../project-view";
 import { ResearchAds } from "../research-ads";
 import { ConnectFor, FreeRoute, useFirstLocked } from "../research/gates";
 import { WorkspaceOverview } from "../workspace/workspace-overview";
+import { OnboardingFlow } from "../onboarding/onboarding-flow";
 import { APP_A, APP_B, installSampleApi } from "./sample";
 
 const VIEWS: { view: string; label: string }[] = [
@@ -50,38 +53,50 @@ const VIEWS: { view: string; label: string }[] = [
   { view: "settings/updates", label: "Settings: Updates" },
   { view: "settings/runner", label: "Settings: Desktop runner (add ?keys=none|some|all)" },
   { view: "studio", label: "Studio (add ?keys=none|some|all)" },
-  { view: "playground", label: "Playground (add ?keys=none|some|all)" },
+  { view: "studio/remix", label: "Studio: Remix (add ?keys=none|some|all)" },
+  { view: "studio/templates", label: "Studio: Templates" },
   { view: "launch", label: "Launch (add ?keys=none|some|all)" },
+  { view: "launch-ads", label: "Launch: Ads and results (add ?ads=0 for the empty state, ?ad=120001 to open one)" },
   { view: "measure", label: "Measure (add ?keys=none|some|all, and &source=meta|revenuecat|appstack for one source)" },
-  { view: "settings/app", label: "Settings: an app (the main one)" },
-  { view: "settings/app2", label: "Settings: an app that can be deleted" },
-  { view: "pages/home", label: "Research side: Home (?apps=0, ?analyses=0, ?keys=all)" },
+  { view: "app-settings", label: "App settings: Connections (the main app)" },
+  { view: "app-settings2", label: "App settings: Advanced (an app that can be deleted)" },
+  { view: "pages/apps", label: "All apps (?apps=0)" },
   { view: "pages/app", label: "Research side: an app's Home (?bare=1, ?keys=all|none)" },
   { view: "pages/research", label: "Research side: Research (?ads=0, ?keys=all)" },
-  { view: "pages/brand", label: "Research side: Brand" },
+  { view: "pages/brand", label: "App settings: Brand" },
+  { view: "pages/social", label: "Research: Social posts (?analyses=0)" },
   { view: "pages/new", label: "Research side: New analysis (?keys=all)" },
   { view: "pages/new-app", label: "Research side: New app form" },
   { view: "pages/analysis", label: "Research side: an analysis waiting for review" },
   { view: "login", label: "Log in" },
   { view: "signup", label: "Sign up" },
+  { view: "onboarding", label: "First run: three steps (add ?keys=none|all)" },
 ];
 
 /** The app pages drawn whole on sample data (their requests are answered by sample-creative.ts). */
-const MODULE_VIEWS = ["studio", "playground", "launch", "measure"];
+const MODULE_VIEWS = ["studio", "studio/remix", "studio/templates", "launch", "measure", "launch-ads"];
 
 export function PreviewScreen({ view, role, fail }: { view: string; role: string; fail: boolean }) {
   // Before anything below asks for data: answer /api from the sample (once per page load).
   useState(() => { if (typeof window !== "undefined") installSampleApi(role, fail); return true; });
   // Studio and Playground open a live channel to the project: without one they wait for the browser.
   const inBrowser = useSyncExternalStore(() => () => {}, () => true, () => false);
+  const { t } = useT();
   if (MODULE_VIEWS.includes(view) && !inBrowser) return null;
 
+  if (view === "onboarding") {
+    return (
+      <div className="flex min-h-dvh flex-1 flex-col bg-shell">
+        <main className="@container mx-auto mt-11 mb-2 w-full min-w-0 max-w-[748px] flex-1 border-line bg-canvas sm:mb-8 sm:rounded-frame sm:border sm:shadow-frame"><OnboardingFlow draft={null} /></main>
+      </div>
+    );
+  }
   if (view === "login" || view === "signup") return <EntryFrame><Suspense><AuthForm mode={view} signupOpen /></Suspense></EntryFrame>;
   if (!VIEWS.some((v) => v.view === view)) {
     return (
       <div className="mx-auto w-full max-w-md px-6 py-12">
         <h1 className="text-display font-medium">Preview</h1>
-        <p className="mt-1.5 text-sm text-muted">Sample data, no session. Add ?role=member or ?role=legacy to see what others see, and &amp;fail=1 for a failed install request.</p>
+        <p className="mt-1.5 text-sm text-muted">Sample data, no session. Add ?role=member or ?role=legacy to see what others see, ?mode=accounts for an account of the hosted service (not staff), and &amp;fail=1 for a failed install request.</p>
         <Card className="mt-6 divide-y divide-line">
           {VIEWS.map((v) => <a key={v.view} href={`/preview/${v.view}`} className="block px-4 py-2.5 text-sm hover:bg-hover">{v.label}</a>)}
         </Card>
@@ -89,18 +104,20 @@ export function PreviewScreen({ view, role, fail }: { view: string; role: string
     );
   }
 
-  const settings = view.startsWith("settings");
+  const settings = view.startsWith("settings/") || view === "settings";
   const path = view === "home" ? "/app"
     : view === "locked" ? `/app/w/${APP_A}/launch`
     : view === "components" ? `/app/w/${APP_B}/research`
+    : view === "launch-ads" ? `/app/w/${APP_A}/launch/ads`
     : MODULE_VIEWS.includes(view) ? `/app/w/${APP_A}/${view}`
     : view === "settings" ? "/app/settings"
-    : view === "settings/app" ? `/app/settings/apps/${APP_A}`
-    : view === "settings/app2" ? `/app/settings/apps/${APP_B}`
-    : view === "pages/home" ? "/app"
+    : view === "app-settings" ? `/app/w/${APP_A}/settings`
+    : view === "app-settings2" ? `/app/w/${APP_B}/settings`
+    : view === "pages/apps" ? "/app/apps"
+    : view === "pages/social" ? `/app/w/${APP_A}/research/social`
     : view === "pages/app" ? `/app/w/${APP_A}`
     : view === "pages/research" ? `/app/w/${APP_A}/research`
-    : view === "pages/brand" ? `/app/w/${APP_A}/brand`
+    : view === "pages/brand" ? `/app/w/${APP_A}/settings`
     : view === "pages/new" ? "/app/new"
     : view === "pages/new-app" ? "/app/product/new"
     : view === "pages/analysis" ? "/app/p/p1"
@@ -115,19 +132,22 @@ export function PreviewScreen({ view, role, fail }: { view: string; role: string
     : view === "settings/members" ? <MembersSettings />
     : view === "settings/appearance" ? <AppearanceSettings initial="light" />
     : view === "settings/updates" ? <UpdatesSettings />
-    : view === "pages/home" ? <Dashboard />
+    : view === "pages/apps" ? <AllApps />
+    : view === "pages/social" ? <SocialPosts productId={APP_A} />
     : view === "pages/app" ? <WorkspaceOverview id={APP_A} />
     : view === "pages/research" ? <ResearchAds productId={APP_A} />
-    : view === "pages/brand" ? <BrandView productId={APP_A} tab="brand" />
+    : view === "pages/brand" ? <AppSettingsView productId={APP_A} tab="brand" />
     : view === "pages/new" ? <NewAnalysisSample />
-    : view === "pages/new-app" ? <Page className="max-w-3xl"><PageHeader crumbs={[{ label: "Home" }, { label: "New app" }]} title="Add an app" subtitle="Each app keeps its own profile, brand, competitors and creatives." /><ProductForm onDone={() => {}} /></Page>
+    : view === "pages/new-app" ? <NewAppFlow />
     : view === "pages/analysis" ? <Suspense><ProjectView id="p1" /></Suspense>
     : view === "settings/runner" ? <RunnerSettings />
     : view === "studio" ? <StudioView productId={APP_A} />
-    : view === "playground" ? <PlaygroundView key={APP_A} productId={APP_A} />
+    : view === "studio/remix" ? <PlaygroundView key={APP_A} productId={APP_A} />
+    : view === "studio/templates" ? <PlaygroundView key={APP_A} productId={APP_A} library />
     : view === "launch" ? <LaunchView productId={APP_A} />
+    : view === "launch-ads" ? <LaunchAdsView productId={APP_A} initialAd={new URLSearchParams(location.search).get("ad")} />
     : view === "measure" ? <MeasureView productId={APP_A} name="Trailmix" />
-    : <AppSettings id={view === "settings/app2" ? APP_B : APP_A} />;
+    : <AppSettingsView productId={view === "app-settings2" ? APP_B : APP_A} tab={view === "app-settings2" ? "advanced" : "connections"} />;
 
   return (
     <PathOverride value={path}>
@@ -138,10 +158,11 @@ export function PreviewScreen({ view, role, fail }: { view: string; role: string
 
 /** The new-analysis page's two states: what to connect, or the competitor form. */
 function NewAnalysisSample() {
+  const { t } = useT();
   const locked = useFirstLocked(["research.collect", "ai"]);
   return (
     <Page className="max-w-3xl">
-      <PageHeader crumbs={[{ label: "Home" }, { label: "New analysis" }]} title={locked ? "New analysis" : "Find your competitors"} subtitle="An analysis collects accounts' recent posts and reads what works in them." />
+      <PageHeader crumbs={[{ label: t("Home") }, { label: t("New analysis") }]} title={locked ? t("New analysis") : t("Find your competitors")} subtitle={t("An analysis collects accounts' recent posts and reads what works in them.")} />
       {locked ? <Card><ConnectFor state={locked} otherwise={<FreeRoute productId={APP_A} />} /></Card> : <CompetitorForm onBack={() => {}} />}
     </Page>
   );
@@ -149,17 +170,18 @@ function NewAnalysisSample() {
 
 /** A page in the target layout: slim header, pill tabs, a centred column with an input card, filters and a two-column grid of cards. */
 function SamplePage() {
+  const { t } = useT();
   const [tab, setTab] = useState("mine");
   const [filter, setFilter] = useState("all");
   const cards = [
     { icon: <IconCompass />, title: "Hiking apps, autumn", body: "Six competitors across Instagram and TikTok. The list is ready for you to check before the run.", meta: ["Competitors", "30 days", "240 posts"], badge: <Badge tone="caution">Ready to run</Badge> },
     { icon: <IconChart />, title: "@peakfinder", body: "Every post from one account, month by month. Reading the last 60 days now.", meta: ["Account", "60 days", "80 posts"], badge: <Badge tone="accent">Analyzing</Badge> },
     { icon: <IconRocket />, title: "Spring creator push", body: "Creators posting for one brand: the best clips and who is worth booking again.", meta: ["Campaign", "30 days", "52 posts"], badge: <Badge tone="win">Report ready</Badge> },
-    { icon: <IconSparkles />, title: "Trail snacks, paid ads", body: "What has run longest in the Ad Library, and the hooks those ads open with.", meta: ["Competitors", "90 days", "118 ads"], badge: <Badge>Draft</Badge> },
+    { icon: <IconSparkles />, title: "Hiking apps, paid ads", body: "What has run longest in the Ad Library, and the hooks those ads open with.", meta: ["Competitors", "90 days", "118 ads"], badge: <Badge>Draft</Badge> },
   ];
   return (
     <Page>
-      <PageHeader title="Home" actions={<><IconButton label="Filters"><IconFilters /></IconButton><ButtonLink href="/preview/home" size="sm"><IconPlus />New analysis</ButtonLink></>} />
+      <PageHeader title={t("Home")} actions={<><IconButton label={t("Filters")}><IconFilters /></IconButton><ButtonLink href="/preview/home" size="sm"><IconPlus />{t("New analysis")}</ButtonLink></>} />
       <Segmented label="Which analyses" className="-mt-2 mb-8" value={tab} onChange={setTab} options={[{ value: "mine", label: "My analyses" }, { value: "all", label: "All" }]} />
       <div className="mx-auto max-w-3xl">
         <h2 className="text-display font-medium">What do you want to look into?</h2>

@@ -1,0 +1,54 @@
+{
+  "source": "https://github.com/google/fonts/tree/869789e84da92782c144d83d69b64cec54905b5f",
+  "licence": "SIL Open Font License 1.1 (OFL.txt)",
+  "fonts": {
+    "NotoSansTC-400.ttf": {
+      "script": "zh-TW",
+      "weight": 400,
+      "characters": 5908,
+      "bytes": 1979252,
+      "sha256": "146459da9c7efcc6e1445ea41d22028fa8dc6fb82891b35a248ec0ac9e4bf694",
+      "sourceSha256": "864727d210d54f2537bbe23b3a839436c3992af72de9322af5270897246bd44f"
+    },
+    "NotoSansTC-700.ttf": {
+      "script": "zh-TW",
+      "weight": 700,
+      "characters": 5908,
+      "bytes": 1977760,
+      "sha256": "ba3ce7e5b911bb3f398a14bc32cd98235c72ed12226c48bfc7ab43abf783d097",
+      "sourceSha256": "864727d210d54f2537bbe23b3a839436c3992af72de9322af5270897246bd44f"
+    },
+    "NotoSansJP-400.ttf": {
+      "script": "ja",
+      "weight": 400,
+      "characters": 2865,
+      "bytes": 1020824,
+      "sha256": "cca64f432dbd54eb73a9cbbb67753c0ebb35c12d83931c1fe5331050046766f8",
+      "sourceSha256": "c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f"
+    },
+    "NotoSansJP-700.ttf": {
+      "script": "ja",
+      "weight": 700,
+      "characters": 2865,
+      "bytes": 1023232,
+      "sha256": "2a1acc41edf0c1d2aed3295ebe8f400b21408d8e3ee9609735971457380de4b8",
+      "sourceSha256": "c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f"
+    },
+    "NotoSansKR-400.ttf": {
+      "script": "ko",
+      "weight": 400,
+      "characters": 2903,
+      "bytes": 536988,
+      "sha256": "646ca8a027e0f7aef0f0fedd44bbf29b6aaecbca9c96599b557a78b5a759a9df",
+      "sourceSha256": "194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252"
+    },
+    "NotoSansKR-700.ttf": {
+      "script": "ko",
+      "weight": 700,
+      "characters": 2903,
+      "bytes": 537776,
+      "sha256": "caf26bf9a6fa9d1ff5241dca67f65acfde77309465a6cdf0da5730691fe9df84",
+      "sourceSha256": "194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252"
+    }
+  }
+}

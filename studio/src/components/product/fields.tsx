@@ -2,6 +2,7 @@
 // (the form's question labels and option labels instead of keys and values), an even grid for them,
 // chip rows, and social handles as linked chips.
 import type { ReactNode } from "react";
+import { m, type Translator } from "@/lib/i18n/translate";
 import type { ProductKind } from "@/lib/db";
 import { ALL_QUESTIONS, KIND_QUESTIONS, PRICES, SALES, type Question } from "@/lib/product-questions";
 import { PLATFORMS, type Platform } from "@/lib/types";
@@ -9,8 +10,11 @@ import { cx, PlatformBadge } from "../ui";
 
 export type Fact = { label: string; value: string };
 
+/** Leaves English as written: the default when a caller has no translator. */
+const same: Translator["t"] = (text) => text;
+
 /** A question's label as a field label: "Who buys it?" → "Who buys it". */
-const asLabel = (label: string) => label.replace(/\?\s*$/, "");
+const asLabel = (label: string) => label.replace(/[?？]\s*$/, "");
 const humanize = (key: string) => {
   const words = key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").trim().toLowerCase();
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -21,13 +25,16 @@ function questionFor(kind: ProductKind | null | undefined, key: string): Questio
   return (kind ? KIND_QUESTIONS[kind]?.find((q) => q.key === key) : undefined) ?? ALL_QUESTIONS.find((q) => q.key === key);
 }
 
-const option = (options: { value: string; label: string }[], value: string) => options.find((o) => o.value === value)?.label;
+const option = (options: { value: string; label: string }[], value: string, t: Translator["t"] = same) => {
+  const label = options.find((o) => o.value === value)?.label;
+  return label === undefined ? undefined : t(label);
+};
 
-export const priceLabel = (value: string | null | undefined) => (value ? option(PRICES, value) ?? humanize(value) : "");
-export const salesLabel = (value: string | null | undefined) => (value && value !== "unknown" ? option(SALES, value) ?? humanize(value) : "");
+export const priceLabel = (value: string | null | undefined, t: Translator["t"] = same) => (value ? option(PRICES, value, t) ?? humanize(value) : "");
+export const salesLabel = (value: string | null | undefined, t: Translator["t"] = same) => (value && value !== "unknown" ? option(SALES, value, t) ?? humanize(value) : "");
 
 /** Every non-empty answer, labelled, in the order the form asks them (the kind's questions, others, then "What makes it different"). */
-export function answerFacts(kind: ProductKind | null | undefined, answers: Record<string, string> | null | undefined): Fact[] {
+export function answerFacts(kind: ProductKind | null | undefined, answers: Record<string, string> | null | undefined, t: Translator["t"] = same): Fact[] {
   const entries = Object.entries(answers ?? {}).filter(([, v]) => typeof v === "string" && v.trim());
   const order = [...(kind ? KIND_QUESTIONS[kind] ?? [] : []), ...ALL_QUESTIONS].map((q) => q.key);
   const rank = (key: string) => (key === "differentiator" ? 1e4 : order.includes(key) ? order.indexOf(key) : 1e3);
@@ -35,22 +42,22 @@ export function answerFacts(kind: ProductKind | null | undefined, answers: Recor
     .sort(([a], [b]) => rank(a) - rank(b))
     .map(([key, value]) => {
       const q = questionFor(kind, key);
-      const shown = q?.options ? option(q.options, value) ?? value.replace(/_/g, " ") : value.trim();
-      return { label: q ? asLabel(q.label) : humanize(key), value: shown };
+      const shown = q?.options ? option(q.options, value, t) ?? value.replace(/_/g, " ") : value.trim();
+      return { label: q ? asLabel(t(q.label)) : humanize(key), value: shown };
     });
 }
 
 /** The product's profile fields, labelled, empty ones left out. */
 export function profileFacts(p: {
   kind?: ProductKind | null; audience?: string | null; price_tier?: string | null; sales_channel?: string | null; region?: string | null; answers?: Record<string, string> | null;
-}): Fact[] {
+}, t: Translator["t"] = same): Fact[] {
   const core: Fact[] = [
-    { label: "Who it's for", value: p.audience?.trim() ?? "" },
-    { label: "Price point", value: priceLabel(p.price_tier) },
-    { label: "Where people buy", value: salesLabel(p.sales_channel) },
-    { label: "Market", value: p.region?.trim() ?? "" },
+    { label: t(m("Who it's for")), value: p.audience?.trim() ?? "" },
+    { label: t(m("Price point")), value: priceLabel(p.price_tier, t) },
+    { label: t(m("Where people buy")), value: salesLabel(p.sales_channel, t) },
+    { label: t(m("Market")), value: p.region?.trim() ?? "" },
   ];
-  return [...core, ...answerFacts(p.kind, p.answers)].filter((f) => f.value);
+  return [...core, ...answerFacts(p.kind, p.answers, t)].filter((f) => f.value);
 }
 
 /** Values longer than this take a whole row, so one long answer doesn't stretch its neighbours. */

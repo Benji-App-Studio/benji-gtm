@@ -10,7 +10,7 @@
 // Routes (all POST unless noted):
 //   GET  health              what's connected
 //   qa                       { creativeIds }  signed-in owner: (re)run QA
-//   copy                     { creativeId, instructions, input }  signed-in owner: A/B ad copy from OpenAI (core/copy.ts)
+//   copy                     { creativeId, instructions, input, copyLanguage? }  signed-in owner: A/B ad copy from OpenAI (core/copy.ts)
 //   prompt/improve           { productId, instructions, prompt, blocked }  signed-in owner: a generation prompt rewritten
 //                            more precisely (core/prompt_improve.ts); an answer that breaks the rules is refused
 //   runner/claim             { runnerId, limit, models? }            x-creatives-runner: <secret>
@@ -23,8 +23,8 @@
 //   runner/catalog           { kind: avatars|hooks|settings, items }
 //   tick                     x-radar-worker: <RADAR_WORKER_SECRET> (pg_cron, every 30 s)
 import { createClient } from "@supabase/supabase-js";
-import { COPY_INPUT_MAX, writeCopy } from "./core/copy.ts";
-import { IMPROVE_MAX, improvePrompt } from "./core/prompt_improve.ts";
+import { COPY_INPUT_MAX, copyInstructions, copyLanguage, writeCopy } from "./core/copy.ts";
+import { IMPROVE_MAX, improveInstructions, improvePrompt } from "./core/prompt_improve.ts";
 import { cutoutAssetId, cutoutPatch } from "./core/cutout.ts";
 import { driveClient } from "./core/drive.ts";
 import { API_MODELS, apiRequestFor, HiggsfieldApiError, higgsfieldApi, referenceUrls } from "./core/hf_api.ts";
@@ -40,10 +40,13 @@ import type { CreativeStyle, KnownCopy, OcrResult, QaContext } from "./core/type
 import { JudgeError } from "../_shared/ai/judge.ts";
 import { modelOverrides, resolveModels } from "../_shared/ai/models.ts";
 import { createJudge, judgeAvailability } from "../_shared/ai/provider.ts";
-import { createAuth, HttpError } from "../_shared/auth.ts";
-import { addKeyMessage, createKeys, sameSecret } from "../_shared/keys.ts";
-import { resolveLimits, uploadMaxBytes } from "../_shared/limits.ts";
-import { resultTooBigNote, STORAGE_FULL_NOTE, storageErrorText, storageRoom } from "../_shared/storage.ts";
+import { HttpError } from "../_shared/auth.ts";
+import { addKeyMessage, sameSecret } from "../_shared/keys.ts";
+import { uploadMaxBytes } from "../_shared/limits.ts";
+import { resultTooBigNote, storageErrorText } from "../_shared/storage.ts";
+import { tenantLocale } from "../_shared/language.ts";
+import { createTenancy, type Tenant } from "../_shared/tenant.ts";
+import { groupByUser, keyGoneNote } from "./core/claims.ts";
 
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
@@ -72,30 +75,34 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
 
 // MARK: Keys and callers
 
-/** Every key comes from the shared reader (edge function secret first, then Vault; the worker secret Vault only). */
-const secrets = createKeys(db);
-const auth = createAuth(db);
+/**
+ * Whose keys, settings and storage each piece of work uses (_shared/tenant.ts): in install and legacy
+ * mode one shared reader for everyone, as before; in accounts mode each job, creative and request uses
+ * its own account's. The worker secret and the desktop runner's secret are the platform's.
+ */
+const tenancy = createTenancy(db);
+const platform = tenancy.platform();
 /** A plain switch (a concurrency limit): edge function environment only. */
 const env = (name: string) => Deno.env.get(name)?.trim() || undefined;
 
 /** The watchdog's secret, from Vault, shared by the creatives tick. */
-const radarWorkerSecret = () => secrets.get("RADAR_WORKER_SECRET");
+const radarWorkerSecret = () => platform.get("RADAR_WORKER_SECRET");
+
+/** In install and legacy mode every user is the same tenant: the install-wide one (any id gives it). */
+const INSTALL_WIDE = "00000000-0000-0000-0000-000000000000";
 
 /** The OpenAI key for OCR, ad copy and OpenAI image jobs. */
-async function openAiKey() {
-  return await secrets.get("OPENAI_API_KEY").catch(() => undefined);
+async function openAiKey(tenant: Tenant) {
+  return await tenant.keys.get("OPENAI_API_KEY").catch(() => undefined);
 }
 
-/** The install's settings; undefined on an install from before setup existed (no install row). */
-const installSettings = async () => (await auth.install())?.settings;
-
-/** What decides which AI answers: the keys and the install's settings (_shared/ai/provider.ts). */
-const aiChoice = async () => ({ keys: secrets, settings: await installSettings() });
+/** What decides which AI answers: the tenant's keys and settings (_shared/ai/provider.ts). */
+const aiChoice = (tenant: Tenant) => ({ keys: tenant.keys, settings: tenant.settings });
 
 /** The judge QA asks: OpenAI, or TypeSafe when Settings choose it. A missing key says what to add. */
-async function aiJudge() {
+async function aiJudge(tenant: Tenant) {
   try {
-    return await createJudge(await aiChoice());
+    return await createJudge(aiChoice(tenant));
   } catch (error) {
     if (error instanceof JudgeError && error.kind === "config") throw new Error(`QA checks aren't connected. ${error.message}`);
     throw error;
@@ -103,10 +110,7 @@ async function aiJudge() {
 }
 
 /** The model for each step: an environment variable or stored key, else Settings > Models, else the default. */
-const models = async () => resolveModels((await installSettings())?.models, await modelOverrides(secrets));
-
-/** What the Supabase plan allows (_shared/limits.ts); the old numbers on an install with no install row. */
-const planLimits = async () => resolveLimits(await auth.install(), (name) => Deno.env.get(name));
+const models = async (tenant: Tenant) => resolveModels(tenant.settings?.models, await modelOverrides(tenant.keys));
 
 // MARK: HTTP
 
@@ -117,15 +121,23 @@ const CORS = {
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
-/** The signed-in caller's user id; 403 unless this install lets them in. */
-async function signedInUser(req: Request): Promise<string> {
-  return (await auth.member(req)).id;
+/** The signed-in caller (403 unless this install lets them in) and the tenant their work runs as. */
+async function signedIn(req: Request): Promise<{ user: string; tenant: Tenant }> {
+  const caller = await tenancy.member(req);
+  return { user: caller.id, tenant: caller.tenant };
 }
 
-async function requireRunner(req: Request) {
-  const secret = await secrets.get("CREATIVES_RUNNER_SECRET");
+/**
+ * Which jobs the desktop runner may touch. The runner holds the platform's secret: in accounts mode it
+ * works only staff accounts' jobs (phase 1); in install and legacy mode every job, as before.
+ */
+interface RunnerScope { staffOnly: boolean }
+
+async function requireRunner(req: Request): Promise<RunnerScope> {
+  const secret = await platform.get("CREATIVES_RUNNER_SECRET");
   if (!secret) throw new HttpError(503, "The desktop runner isn't set up yet. Create its secret in Settings > API keys, then give it to the runner.");
   if (!sameSecret(req.headers.get("x-creatives-runner") ?? "", secret)) throw new HttpError(403, "Forbidden");
+  return { staffOnly: await tenancy.mode() === "accounts" };
 }
 
 async function requireWorker(req: Request) {
@@ -150,18 +162,18 @@ Deno.serve(async (req) => {
   const route = parts.slice(at + 1).join("/");
   try {
     switch (route) {
-      case "health": return json(await health());
-      case "qa": return json(await qaRoute(await signedInUser(req), await body(req)));
-      case "copy": return json(await copyRoute(await signedInUser(req), await body(req)));
-      case "prompt/improve": return json(await improveRoute(await signedInUser(req), await body(req)));
-      case "templates": return json(await templatesDone(await signedInUser(req), await body(req)));
-      case "drive/export": return json(await driveExport(await signedInUser(req), await body(req)));
-      case "runner/claim": await requireRunner(req); return json(await claim(await body(req)));
-      case "runner/heartbeat": await requireRunner(req); return json(await heartbeat(await body(req)));
-      case "runner/submitted": await requireRunner(req); return json(await submitted(await body(req)));
-      case "runner/upload": await requireRunner(req); return json(await uploadUrls(await body(req)));
-      case "runner/complete": await requireRunner(req); return json(await complete(await body(req)));
-      case "runner/fail": await requireRunner(req); return json(await fail(await body(req)));
+      case "health": return json(await health(req));
+      case "qa": return json(await qaRoute(await signedIn(req), await body(req)));
+      case "copy": return json(await copyRoute(await signedIn(req), await body(req)));
+      case "prompt/improve": return json(await improveRoute(await signedIn(req), await body(req)));
+      case "templates": return json(await templatesDone((await signedIn(req)).user, await body(req)));
+      case "drive/export": return json(await driveExport(await signedIn(req), await body(req)));
+      case "runner/claim": return json(await claim(await requireRunner(req), await body(req)));
+      case "runner/heartbeat": return json(await heartbeat(await requireRunner(req), await body(req)));
+      case "runner/submitted": return json(await submitted(await requireRunner(req), await body(req)));
+      case "runner/upload": return json(await uploadUrls(await requireRunner(req), await body(req)));
+      case "runner/complete": return json(await complete(await requireRunner(req), await body(req)));
+      case "runner/fail": return json(await fail(await requireRunner(req), await body(req)));
       case "runner/catalog": await requireRunner(req); return json(await catalog(await body(req)));
       case "tick": {
         await requireWorker(req);
@@ -177,15 +189,20 @@ Deno.serve(async (req) => {
   }
 });
 
-async function health() {
-  const set = await secrets.flags(["HIGGSFIELD_API_KEY", "CREATIVES_RUNNER_SECRET", "GOOGLE_SERVICE_ACCOUNT_JSON", "OPENAI_API_KEY"]);
-  const ai = await judgeAvailability(await aiChoice());
-  const limits = await planLimits();
+async function health(req: Request) {
+  // Accounts mode without a session: nobody's keys are described to a stranger.
+  const tenant = await tenancy.healthTenant(req);
+  if (!tenant) return { ok: true, mode: "accounts" };
+  const set = await tenant.keys.flags(["HIGGSFIELD_API_KEY", "GOOGLE_SERVICE_ACCOUNT_JSON", "OPENAI_API_KEY"]);
+  // The desktop runner is the platform's: set for everyone in install and legacy mode, for staff only in accounts mode.
+  const runner = Boolean(await platform.get("CREATIVES_RUNNER_SECRET")) && (tenant.mode !== "accounts" || tenant.staff);
+  const ai = await judgeAvailability(aiChoice(tenant));
+  const limits = tenant.limits;
   return {
     // `typesafe` is the name the app has always read for "QA checks are on": true with an OpenAI key,
     // or a TypeSafe key when that provider is chosen.
     typesafe: ai.ok, ai: ai.ok, aiProvider: ai.ok ? ai.provider : null,
-    higgsfieldApi: set.HIGGSFIELD_API_KEY, runner: set.CREATIVES_RUNNER_SECRET, drive: set.GOOGLE_SERVICE_ACCOUNT_JSON,
+    higgsfieldApi: set.HIGGSFIELD_API_KEY, runner, drive: set.GOOGLE_SERVICE_ACCOUNT_JSON,
     ocr: set.OPENAI_API_KEY,
     // GPT Image 2.5 straight from OpenAI (image jobs whose provider is "openai"): the same key.
     openaiImages: set.OPENAI_API_KEY,
@@ -204,6 +221,20 @@ interface JobRow {
   backend: string; status: string; cost_estimate: number; cost_credits: number | null; attempts: number; retries: number; runner_id: string | null; external_id: string | null; created_at: string;
   /** When the job was first taken (creatives_claim_jobs); a submitted Higgsfield job's age counts from it. */
   started_at?: string | null;
+  /** Accounts mode: which kind of key the job was sent with (the account's own, or the platform's for staff); its result is collected with the same one. */
+  key_source?: "account" | "platform" | null;
+}
+
+/**
+ * The key a job already sent is collected with: the kind it was sent with (key_source), so a staff job sent
+ * on the platform's key is never polled with a key of their own saved later, or the other way round. A job
+ * from before the column (null) uses the account's usual key. Undefined for a suspended account.
+ */
+async function sentWithKey(tenant: Tenant, job: Pick<JobRow, "key_source">, name: string): Promise<string | undefined> {
+  if (!tenant.active) return undefined;
+  const source = job.key_source === "account" || job.key_source === "platform" ? job.key_source : null;
+  const reader = tenancy.keysFor(tenant, source);
+  return reader ? await reader.get(name).catch(() => undefined) : undefined;
 }
 interface BatchRow { id: string; settings: Record<string, any>; context: QaContext }
 
@@ -213,28 +244,41 @@ async function batchOf(id: string | null): Promise<BatchRow | null> {
   return data as BatchRow | null;
 }
 
-async function runnerJob(runnerId: string, jobId: string): Promise<JobRow> {
+/** Whether a job is one the runner's scope covers (accounts mode: staff accounts' jobs only). */
+async function inScope(scope: RunnerScope, userId: string): Promise<boolean> {
+  return !scope.staffOnly || (await tenancy.for(userId)).staff;
+}
+
+async function runnerJob(scope: RunnerScope, runnerId: string, jobId: string): Promise<JobRow> {
   const { data } = await db.from("creative_jobs").select("*").eq("id", jobId).maybeSingle();
   const job = data as JobRow | null;
-  if (!job) throw new HttpError(404, "No such job.");
+  if (!job || !(await inScope(scope, job.user_id))) throw new HttpError(404, "No such job.");
   if (job.status !== "running" || job.runner_id !== runnerId) throw new HttpError(409, "This runner no longer holds the job (it was cancelled or handed to another runner).");
   return job;
 }
 
 // MARK: Runner
 
-async function claim(input: Record<string, any>) {
+async function claim(scope: RunnerScope, input: Record<string, any>) {
   const runnerId = String(input.runnerId ?? "").slice(0, 80);
   if (!runnerId) throw new HttpError(400, "Name the runner.");
   const limit = Math.max(0, Math.min(8, Number(input.limit) || 1));
   const models = Array.isArray(input.models) ? input.models.map(String) : null;
-  const { data, error } = await db.rpc("creatives_claim_jobs", { p_runner: runnerId, p_backend: "local", p_models: models, p_limit: limit, p_seconds: LOCAL_LEASE_SECONDS });
+  const args = { p_runner: runnerId, p_backend: "local", p_models: models, p_limit: limit, p_seconds: LOCAL_LEASE_SECONDS };
+  // Accounts mode: staff accounts' jobs only, fairly between them (20261120140000_fair_claims.sql).
+  const { data, error } = scope.staffOnly
+    ? await db.rpc("creatives_claim_jobs", { ...args, p_provider: "higgsfield", p_user: null, p_per_user: null, p_staff_only: true })
+    : await db.rpc("creatives_claim_jobs", args);
   if (error) throw new Error(error.message);
   const claimed = (data ?? []) as JobRow[];
   // Storage is full: nothing new can be saved, so nothing is made (and paid for). Each claimed job fails with what to do.
-  const full = claimed.length ? !(await roomToSave()) : false;
-  if (full) for (const job of claimed) await requeueOrFail(job, STORAGE_FULL_NOTE, false, 0);
-  const jobs = full ? [] : claimed;
+  const rooms = new Map<string, Promise<string | null>>();
+  const jobs: JobRow[] = [];
+  for (const job of claimed) {
+    if (!rooms.has(job.user_id)) rooms.set(job.user_id, tenancy.for(job.user_id).then(roomToSave));
+    const full = await rooms.get(job.user_id)!;
+    if (full) await requeueOrFail(job, full, false, 0); else jobs.push(job);
+  }
   const batches = new Map<string, BatchRow | null>();
   for (const job of jobs) if (job.batch_id && !batches.has(job.batch_id)) batches.set(job.batch_id, await batchOf(job.batch_id));
   return {
@@ -246,13 +290,21 @@ async function claim(input: Record<string, any>) {
   };
 }
 
-async function heartbeat(input: Record<string, any>) {
-  const ids = (Array.isArray(input.jobIds) ? input.jobIds : []).map((id: unknown) => uuid(id, "job"));
+async function heartbeat(scope: RunnerScope, input: Record<string, any>) {
+  const asked = (Array.isArray(input.jobIds) ? input.jobIds : []).map((id: unknown) => uuid(id, "job")) as string[];
+  // Only jobs the runner's scope covers get a longer lease (accounts mode: staff accounts' jobs); the rest come back as released.
+  let ids = asked;
+  if (scope.staffOnly && asked.length) {
+    const { data: rows } = await db.from("creative_jobs").select("id, user_id").in("id", asked);
+    const allowed = new Set<string>();
+    for (const row of (rows ?? []) as { id: string; user_id: string }[]) if (await inScope(scope, row.user_id)) allowed.add(row.id);
+    ids = asked.filter((id) => allowed.has(id));
+  }
   const { data } = await db.rpc("creatives_extend_lease", { p_runner: String(input.runnerId ?? ""), p_jobs: ids, p_seconds: LOCAL_LEASE_SECONDS });
   // Jobs the runner no longer holds (cancelled in the studio) come back so it can stop them.
   const { data: held } = await db.from("creative_jobs").select("id").in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).eq("status", "running").eq("runner_id", String(input.runnerId ?? ""));
   const keep = new Set(((held ?? []) as { id: string }[]).map((r) => r.id));
-  return { extended: data ?? 0, released: ids.filter((id: string) => !keep.has(id)) };
+  return { extended: data ?? 0, released: asked.filter((id: string) => !keep.has(id)) };
 }
 
 /**
@@ -262,9 +314,9 @@ async function heartbeat(input: Record<string, any>) {
  * submission (same model, prompt and settings) gets `conflict` when another job already has it (and a
  * 409, like every runner route, when it no longer holds the job).
  */
-async function submitted(input: Record<string, any>) {
+async function submitted(scope: RunnerScope, input: Record<string, any>) {
   const runnerId = String(input.runnerId ?? "");
-  const job = await runnerJob(runnerId, uuid(input.jobId, "job"));
+  const job = await runnerJob(scope, runnerId, uuid(input.jobId, "job"));
   const externalId = String(input.externalId ?? "").trim().slice(0, 200);
   if (!externalId) throw new HttpError(400, "Which Higgsfield job?");
   if (job.external_id && job.external_id !== externalId) return { saved: false, conflict: true, error: `This job already has Higgsfield job ${job.external_id}.` };
@@ -279,8 +331,8 @@ async function submitted(input: Record<string, any>) {
   return { saved: true };
 }
 
-async function uploadUrls(input: Record<string, any>) {
-  const job = await runnerJob(String(input.runnerId ?? ""), uuid(input.jobId, "job"));
+async function uploadUrls(scope: RunnerScope, input: Record<string, any>) {
+  const job = await runnerJob(scope, String(input.runnerId ?? ""), uuid(input.jobId, "job"));
   const files = (Array.isArray(input.files) ? input.files : []).slice(0, 12);
   const out = [];
   for (const file of files) {
@@ -335,8 +387,8 @@ async function saveOutputs(job: JobRow, outputs: Output[]) {
   return ((data ?? []) as { id: string }[]).map((r) => r.id);
 }
 
-async function complete(input: Record<string, any>) {
-  const job = await runnerJob(String(input.runnerId ?? ""), uuid(input.jobId, "job"));
+async function complete(scope: RunnerScope, input: Record<string, any>) {
+  const job = await runnerJob(scope, String(input.runnerId ?? ""), uuid(input.jobId, "job"));
   const outputs: Output[] = Array.isArray(input.outputs) ? input.outputs : [];
   const ids = await finalize(job, () => Promise.resolve(outputs), {
     // No charge reported (a job collected after a dropped wait): keep the price recorded at submit.
@@ -386,8 +438,8 @@ async function saveCutout(job: JobRow, assetId: string, outputs: Output[]) {
  * with Higgsfield's status and reason (not charged unless Higgsfield said so); a busy or dropped one goes
  * back to the queue, keeping its Higgsfield job so the next claim collects it; anything else fails.
  */
-async function fail(input: Record<string, any>) {
-  const job = await runnerJob(String(input.runnerId ?? ""), uuid(input.jobId, "job"));
+async function fail(scope: RunnerScope, input: Record<string, any>) {
+  const job = await runnerJob(scope, String(input.runnerId ?? ""), uuid(input.jobId, "job"));
   const message = String(input.error ?? "The runner couldn't finish this job.").slice(0, 600);
   const text = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null);
   const patch = afterRunnerFailure(job, {
@@ -448,8 +500,8 @@ async function templatesDone(user: string, input: Record<string, any>) {
 
 // MARK: Drive
 
-async function driveExport(user: string, input: Record<string, any>) {
-  const raw = await secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON");
+async function driveExport({ user, tenant }: { user: string; tenant: Tenant }, input: Record<string, any>) {
+  const raw = await tenant.keys.get("GOOGLE_SERVICE_ACCOUNT_JSON");
   if (!raw) throw new HttpError(501, `Drive export isn't set up. ${addKeyMessage("GOOGLE_SERVICE_ACCOUNT_JSON")} Then share your Drive folder with the service account's email.`);
   const ids = (Array.isArray(input.creativeIds) ? input.creativeIds : []).slice(0, 50).map((id: unknown) => uuid(id, "creative"));
   const { data } = await db.from("creatives").select("id, batch_id, storage_path, mime, title, drive_file_id").in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]).eq("user_id", user).eq("approval", "approved");
@@ -479,9 +531,10 @@ async function driveExport(user: string, input: Record<string, any>) {
 
 // MARK: QA
 
-async function qaRoute(user: string, input: Record<string, any>) {
+async function qaRoute({ user, tenant }: { user: string; tenant: Tenant }, input: Record<string, any>) {
   const ids = (Array.isArray(input.creativeIds) ? input.creativeIds : [input.creativeId]).filter(Boolean).slice(0, 60).map((id: unknown) => uuid(id, "creative"));
   if (!ids.length) throw new HttpError(400, "Which creatives?");
+  await tenancy.rate(tenant, "creatives.qa");
   const { data } = await db.from("creatives").select("id, kind, style, storage_path, ocr, batch_id").in("id", ids).eq("user_id", user);
   const rows = (data ?? []) as { id: string; kind: string; style: string; storage_path: string | null; ocr: OcrResult | null; batch_id: string | null }[];
   const own = rows.map((r) => r.id);
@@ -498,22 +551,26 @@ async function qaRoute(user: string, input: Record<string, any>) {
  * rules and the creative (studio/src/lib/creative-copy.ts), this asks OpenAI with the key it holds
  * (core/copy.ts) and returns the raw variants; the studio finishes and saves them.
  */
-async function copyRoute(user: string, input: Record<string, any>) {
+async function copyRoute({ user, tenant }: { user: string; tenant: Tenant }, input: Record<string, any>) {
   const id = uuid(input.creativeId, "creative");
+  await tenancy.rate(tenant, "creatives.copy");
   const { data } = await db.from("creatives").select("id").eq("id", id).eq("user_id", user).maybeSingle();
   if (!data) throw new HttpError(404, "This creative doesn't exist.");
   const instructions = typeof input.instructions === "string" ? input.instructions : "";
   const text = typeof input.input === "string" ? input.input : "";
   if (instructions.length > COPY_INPUT_MAX || text.length > COPY_INPUT_MAX) throw new HttpError(400, "The copy request is too long.");
   try {
-    return await writeCopy({ apiKey: await openAiKey(), model: (await models()).copy, instructions, input: text });
+    // In the language the ad's audience reads: `copyLanguage` when the studio names one, else the person's.
+    const language = copyLanguage(input.copyLanguage, await tenantLocale(db, tenant));
+    return await writeCopy({ apiKey: await openAiKey(tenant), model: (await models(tenant)).copy, instructions: copyInstructions(instructions, language), input: text });
   } catch (error) {
     throw new HttpError(502, errorText(error));
   }
 }
 
-async function improveRoute(user: string, input: Record<string, any>) {
+async function improveRoute({ user, tenant }: { user: string; tenant: Tenant }, input: Record<string, any>) {
   const productId = uuid(input.productId, "app");
+  await tenancy.rate(tenant, "creatives.improve");
   const { data } = await db.from("products").select("id").eq("id", productId).eq("user_id", user).maybeSingle();
   if (!data) throw new HttpError(404, "This app doesn't exist.");
   const instructions = typeof input.instructions === "string" ? input.instructions : "";
@@ -521,7 +578,7 @@ async function improveRoute(user: string, input: Record<string, any>) {
   if (instructions.length > IMPROVE_MAX || prompt.length > IMPROVE_MAX) throw new HttpError(400, "The prompt is too long to improve.");
   const blocked = (Array.isArray(input.blocked) ? input.blocked : []).filter((w: unknown): w is string => typeof w === "string").map((w: string) => w.slice(0, 80)).slice(0, 60);
   try {
-    return await improvePrompt({ apiKey: await openAiKey(), model: (await models()).copy, instructions, prompt, blocked });
+    return await improvePrompt({ apiKey: await openAiKey(tenant), model: (await models(tenant)).copy, instructions: improveInstructions(instructions, await tenantLocale(db, tenant)), prompt, blocked });
   } catch (error) {
     throw new HttpError(/isn't connected/.test(errorText(error)) ? 400 : 502, errorText(error));
   }
@@ -535,7 +592,7 @@ async function qaMany(ids: string[]) {
 }
 
 interface QaRow {
-  id: string; style: CreativeStyle; kind: "video" | "image"; aspect: string | null; prompt: string | null; copy: KnownCopy | null; ocr: OcrResult | null; batch_id: string | null; job_id: string | null;
+  id: string; user_id: string; style: CreativeStyle; kind: "video" | "image"; aspect: string | null; prompt: string | null; copy: KnownCopy | null; ocr: OcrResult | null; batch_id: string | null; job_id: string | null;
   product_id: string; storage_path: string | null; mime: string | null;
   headline?: string | null; primary_text?: string | null;
   /** Static generation v2 columns (migration 20261009100000): absent until it's applied, so read defensively. */
@@ -547,13 +604,16 @@ async function qaCreative(id: string) {
   const { data } = await db.from("creatives").select("*").eq("id", id).maybeSingle();
   if (!data) throw new HttpError(404, "No such creative.");
   const creative = data as QaRow;
+  // QA runs as the creative's own account: its keys, its AI settings.
+  const tenant = await tenancy.for(creative.user_id);
+  if (!tenant.active) return { id, verdict: "error", error: "This account is suspended." };
   const batch = await batchOf(creative.batch_id);
   const context: QaContext = batch?.context?.appName ? batch.context : await fallbackContext(creative.product_id);
   const { data: job } = creative.job_id ? await db.from("creative_jobs").select("params").eq("id", creative.job_id).maybeSingle() : { data: null };
   const params = (job as { params: Record<string, unknown> } | null)?.params ?? null;
   const placed = logoPlaced(params, creative.copy);
   await db.from("creatives").update({ qa_status: "running" }).eq("id", id);
-  creative.ocr = await serverReads(creative, context.logoUrl, placed);
+  creative.ocr = await serverReads(tenant, creative, context.logoUrl, placed);
   // Written only while still running: if the file or its words changed meanwhile, the review trigger
   // set it back to pending and this verdict is about the old version (the tick runs QA again).
   const settle = (patch: Record<string, unknown>) => db.from("creatives").update({ ...patch, qa_at: new Date().toISOString() }).eq("id", id).eq("qa_status", "running");
@@ -561,7 +621,7 @@ async function qaCreative(id: string) {
     const report = await runQa({
       style: creative.style, kind: creative.kind, prompt: creative.prompt, copy: creative.copy ?? {}, ocr: creative.ocr,
       ...(creative.aspect ? { aspect: creative.aspect } : {}), logoPlaced: placed, realProduct: realProductUsed(params, creative.copy), adCopy: adCopyOf(creative),
-    }, context, await aiJudge());
+    }, context, await aiJudge(tenant));
     await settle({ qa_status: report.verdict, qa: report });
     return { id, verdict: report.verdict };
   } catch (error) {
@@ -576,7 +636,7 @@ async function qaCreative(id: string) {
  * with the real one. Kept on the creative only while the file is still the one read. Never throws: a
  * failure is recorded in `ocr.error` (QA treats the text as unread) or `ocr.logo.error` (not compared).
  */
-async function serverReads(creative: QaRow, logoUrl: string | undefined, placed: boolean): Promise<OcrResult | null> {
+async function serverReads(tenant: Tenant, creative: QaRow, logoUrl: string | undefined, placed: boolean): Promise<OcrResult | null> {
   const text = needsServerOcr(creative);
   const logo = needsLogoRead(creative, logoUrl, placed);
   if (!text && !logo) return creative.ocr;
@@ -587,8 +647,8 @@ async function serverReads(creative: QaRow, logoUrl: string | undefined, placed:
     if (error || !file) throw new Error(`Couldn't load the image: ${error?.message ?? "missing file"}`);
     const bytes = new Uint8Array(await file.arrayBuffer());
     const type = (creative.mime && creative.mime.startsWith("image/") ? creative.mime : file.type || mimeFromUrl(path)).split(";")[0];
-    const apiKey = await openAiKey();
-    const model = (await models()).vision;
+    const apiKey = await openAiKey(tenant);
+    const model = (await models(tenant)).vision;
     // A fresh read keeps a logo comparison that is still good for this file.
     if (text) ocr = { ...await readImageText({ apiKey, model, bytes, mime: type, source: path }), ...(!logo && ocr.logo ? { logo: ocr.logo } : {}) };
     if (logo) ocr = { ...ocr, logo: await readLogo({ apiKey, model, bytes, mime: type, source: path, logoUrl: logoUrl! }) };
@@ -629,8 +689,14 @@ const missingFunction = (error: { code?: string; message?: string } | null) => B
  * (20261005900000_image_provider.sql); before that migration, with the old claim, and any OpenAI job
  * it took is put straight back for the OpenAI worker (never made by Higgsfield).
  */
-async function claimHiggsfieldJobs(limit: number): Promise<JobRow[]> {
+async function claimHiggsfieldJobs(limit: number, accounts: boolean): Promise<JobRow[]> {
   const args = { p_runner: "edge-api", p_backend: "api", p_models: [...API_MODELS], p_limit: limit, p_seconds: API_LEASE_SECONDS };
+  // Accounts mode: round-robin between accounts, each capped at its plan's concurrency (20261120140000_fair_claims.sql).
+  if (accounts) {
+    const { data, error } = await db.rpc("creatives_claim_jobs", { ...args, p_provider: "higgsfield", p_user: null, p_per_user: null, p_staff_only: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as JobRow[];
+  }
   const scoped = await db.rpc("creatives_claim_jobs", { ...args, p_provider: "higgsfield" });
   if (!scoped.error) return (scoped.data ?? []) as JobRow[];
   if (!missingFunction(scoped.error)) throw new Error(scoped.error.message);
@@ -643,39 +709,84 @@ async function claimHiggsfieldJobs(limit: number): Promise<JobRow[]> {
   return jobs.filter((j) => jobProvider(j.params) === "higgsfield");
 }
 
+/** One account's way to reach a provider in this tick: its tenant and key (none when unset or the account is suspended). */
+interface Client { tenant: Tenant; key: string | undefined }
+
+/** Memoised per account for one tick: each account's jobs go out with that account's own key. */
+function clientsFor(name: "HIGGSFIELD_API_KEY" | "OPENAI_API_KEY") {
+  const memo = new Map<string, Promise<Client>>();
+  return (userId: string) => {
+    let hit = memo.get(userId);
+    if (!hit) {
+      hit = tenancy.for(userId).then(async (tenant) => ({
+        tenant, key: tenant.active ? await tenant.keys.get(name).catch(() => undefined) : undefined,
+      }));
+      memo.set(userId, hit);
+    }
+    return hit;
+  };
+}
+
+/** A submitted job whose account no longer has the key (or is suspended): it fails, its result can't be collected. */
+async function failKeyGone(job: JobRow, provider: "Higgsfield" | "OpenAI", tenant: Tenant) {
+  await db.from("creative_jobs").update({
+    status: "failed", error: keyGoneNote(provider, !tenant.active), finished_at: new Date().toISOString(), lease_until: null,
+  }).eq("id", job.id).in("status", ["running", "finalizing"]);
+}
+
 async function higgsfieldTick() {
-  const key = await secrets.get("HIGGSFIELD_API_KEY");
-  if (!key) return { api: false };
-  const api = higgsfieldApi(key);
+  const accounts = await tenancy.mode() === "accounts";
+  // Install and legacy mode: one key for everyone, and nothing to do without it (as before).
+  if (!accounts && !(await (await tenancy.for(INSTALL_WIDE)).keys.get("HIGGSFIELD_API_KEY"))) return { api: false };
+  const client = clientsFor("HIGGSFIELD_API_KEY");
+  // The most jobs at Higgsfield at once in one tick (accounts mode: shared by every account; each one is
+  // also capped by its plan's concurrency in the claim).
   const limit = Number(env("HIGGSFIELD_API_CONCURRENCY")) || 4;
 
   const { data: running } = await db.from("creative_jobs").select("*").eq("status", "running").eq("backend", "api");
   // OpenAI's jobs are running too, but there's nothing of theirs to poll at Higgsfield.
   const active = ((running ?? []) as JobRow[]).filter((j) => jobProvider(j.params) === "higgsfield");
-  // Each submitted job is looked at once (core/hf_poll.ts): a stuck one past its limit is cancelled at
-  // Higgsfield and failed, so it never keeps the tick calling this function.
-  for (const job of active) {
-    await pollHiggsfieldJob(job, {
-      status: (id) => api.status(id),
-      cancel: (id, url) => api.cancel(id, url),
-      update: async (patch) => { await db.from("creative_jobs").update(patch).eq("id", job.id).eq("status", "running"); },
-      // A second tick that sees the same finished job gets null from finalize and leaves it alone.
-      collect: async (urls) => { await finalize(job, () => collectOutputs(job, urls)); },
-      pollLater: (message) => pollLater(job, message),
-      leaseSeconds: API_LEASE_SECONDS,
-    });
+  // Each submitted job is looked at once (core/hf_poll.ts), with its own account's key: a stuck one past
+  // its limit is cancelled at Higgsfield and failed, so it never keeps the tick calling this function.
+  for (const [userId, jobs] of groupByUser(active)) {
+    const { tenant } = await client(userId);
+    for (const job of jobs) {
+      // Collected with the kind of key it was sent with (sentWithKey); install and legacy: the one key.
+      const key = await sentWithKey(tenant, job, "HIGGSFIELD_API_KEY");
+      if (!key) {
+        // The key went away after it was sent: a submitted one can't be collected; one not sent yet is failed by the claim's rule below.
+        if (job.external_id) await failKeyGone(job, "Higgsfield", tenant);
+        continue;
+      }
+      const api = higgsfieldApi(key);
+      await pollHiggsfieldJob(job, {
+        status: (id) => api.status(id),
+        cancel: (id, url) => api.cancel(id, url),
+        update: async (patch) => { await db.from("creative_jobs").update(patch).eq("id", job.id).eq("status", "running"); },
+        // A second tick that sees the same finished job gets null from finalize and leaves it alone.
+        collect: async (urls) => { await finalize(job, () => collectOutputs(job, urls)); },
+        pollLater: (message) => pollLater(job, message),
+        leaseSeconds: API_LEASE_SECONDS,
+      });
+    }
   }
 
   const free = Math.max(0, limit - active.filter((j) => j.external_id).length);
   if (!free) return { api: true, polled: active.length, submitted: 0 };
-  const claimed = await claimHiggsfieldJobs(free);
+  const claimed = await claimHiggsfieldJobs(free, accounts);
   let submitted = 0;
-  // Checked once per tick, before anything is paid for: with storage full the result couldn't be saved.
-  const room = claimed.some(shouldSubmit) ? await roomToSave() : true;
+  // Checked once per account per tick, before anything is paid for: with storage full the result couldn't be saved.
+  const rooms = new Map<string, Promise<string | null>>();
   for (const job of claimed) {
     // Already submitted (its lease ran out while ticks stopped): poll it on the next tick, never pay twice.
     if (!shouldSubmit(job)) continue;
-    if (!room) { await requeueOrFail(job, STORAGE_FULL_NOTE, false, 0); continue; }
+    const { tenant, key } = await client(job.user_id);
+    // No key on this account: the job fails at once with what to add (it is never held).
+    if (!key) { await requeueOrFail(job, tenant.active ? addKeyMessage("HIGGSFIELD_API_KEY") : "This account is suspended.", false, 0); continue; }
+    if (!rooms.has(job.user_id)) rooms.set(job.user_id, roomToSave(tenant));
+    const full = await rooms.get(job.user_id)!;
+    if (full) { await requeueOrFail(job, full, false, 0); continue; }
+    const api = higgsfieldApi(key);
     const batch = await batchOf(job.batch_id);
     // In the order the prompt describes: the competitor's image (Recreate), our logo, our own picked images, then our screens.
     // `image_refs` (the Playground) is that list already, exact and in order: the reference, then the person's images.
@@ -694,7 +805,11 @@ async function higgsfieldTick() {
       const result = await api.submit(request, job.id);
       // The charge as Higgsfield quoted it (the API reports no other); afterRequestEnded clears it to 0
       // when the request ends without a result.
-      await db.from("creative_jobs").update({ external_id: result.request_id, ...(Number.isFinite(estimate) ? { cost_credits: estimate } : {}) }).eq("id", job.id);
+      // Accounts mode: which kind of key it was sent with, so the result is collected with the same one.
+      const keySource = await tenancy.keySource(tenant, "HIGGSFIELD_API_KEY");
+      await db.from("creative_jobs").update({
+        external_id: result.request_id, ...(Number.isFinite(estimate) ? { cost_credits: estimate } : {}), ...(keySource ? { key_source: keySource } : {}),
+      }).eq("id", job.id);
       submitted++;
     } catch (error) {
       // Only a submit (or estimate) error puts a job back in the queue, and only when Higgsfield was busy:
@@ -718,34 +833,97 @@ async function higgsfieldTick() {
  * what to do, instead of waiting in the queue.
  */
 async function openAiTick(startedAt = Date.now()) {
-  const key = await openAiKey();
+  if (await tenancy.mode() === "accounts") return openAiTickAccounts(startedAt);
+  const tenant = await tenancy.for(INSTALL_WIDE);
+  const key = await openAiKey(tenant);
   const limit = Number(env("OPENAI_IMAGE_CONCURRENCY")) || 3;
   const steps: JobStep[] = [];
   if (key) {
     // Requests waiting at OpenAI: look at each, save the ones that are ready.
-    const { data: waiting } = await db.from("creative_jobs").select("*").eq("status", "running").eq("backend", "api").eq("runner_id", OPENAI_RUNNER)
-      .eq("params->>provider", "openai").like("external_id", `${OPENAI_BACKGROUND}%`).order("created_at").limit(20);
-    for (const job of (waiting ?? []) as OpenAiJobRow[]) steps.push(await advanceOpenAiJob(job, await openAiJobDeps(job, key, startedAt)));
+    for (const job of await waitingOpenAiJobs()) steps.push(await advanceOpenAiJob(job, await openAiJobDeps(job, key, startedAt, tenant)));
   }
-  const { count } = await db.from("creative_jobs").select("id", { count: "exact", head: true })
-    .eq("status", "running").eq("backend", "api").eq("params->>provider", "openai").gt("lease_until", new Date().toISOString());
-  const free = key ? Math.max(0, limit - (count ?? 0)) : 20;
+  const free = key ? Math.max(0, limit - await runningOpenAi()) : 20;
   const jobs = await claimOpenAiJobs(free);
   if (!key) {
-    for (const job of jobs) await settleOpenAi(job, afterOpenAiFailure(job, { retryable: false, message: `OpenAI isn't connected. ${addKeyMessage("OPENAI_API_KEY")} Then retry, or try with Higgsfield instead.` }));
+    for (const job of jobs) await settleOpenAi(job, afterOpenAiFailure(job, { retryable: false, message: openAiMissing() }));
     return { claimed: jobs.length, failed: jobs.length };
   }
   // Storage is full: nothing is sent to OpenAI (and paid for), each job fails with what to do.
-  if (jobs.length && !(await roomToSave())) {
-    for (const job of jobs) await settleOpenAi(job, afterOpenAiFailure(job, { retryable: false, message: STORAGE_FULL_NOTE }));
+  const full = jobs.length ? await roomToSave(tenant) : null;
+  if (full) {
+    for (const job of jobs) await settleOpenAi(job, afterOpenAiFailure(job, { retryable: false, message: full }));
     return { claimed: jobs.length, failed: jobs.length, storageFull: true };
   }
-  steps.push(...await Promise.all(jobs.map(async (job) => advanceOpenAiJob(job, await openAiJobDeps(job, key, startedAt)))));
+  steps.push(...await Promise.all(jobs.map(async (job) => advanceOpenAiJob(job, await openAiJobDeps(job, key, startedAt, tenant)))));
   const count_ = (step: JobStep) => steps.filter((s) => s === step).length;
   return { claimed: jobs.length, made: count_("made"), submitted: count_("submitted"), waiting: count_("pending"), failed: count_("failed") };
 }
 
+/**
+ * Accounts mode: each waiting request is collected with its own account's key (one whose key is gone
+ * fails: its result can't be collected); new jobs are taken round-robin between accounts, each capped at
+ * its plan's concurrency (the database's fair claim); a job whose account has no OpenAI key fails at once
+ * with what to add, and one whose account's storage is full fails with what to delete.
+ */
+async function openAiTickAccounts(startedAt: number) {
+  const client = clientsFor("OPENAI_API_KEY");
+  const limit = Number(env("OPENAI_IMAGE_CONCURRENCY")) || 3;
+  const steps: JobStep[] = [];
+  for (const [userId, jobs] of groupByUser(await waitingOpenAiJobs())) {
+    const { tenant } = await client(userId);
+    for (const job of jobs) {
+      const key = await sentWithKey(tenant, job, "OPENAI_API_KEY");
+      if (!key) { await failKeyGone(job, "OpenAI", tenant); steps.push("failed"); continue; }
+      steps.push(await advanceOpenAiJob(job, await openAiJobDeps(job, key, startedAt, tenant)));
+    }
+  }
+  const jobs = await claimOpenAiJobsFairly(Math.max(0, limit - await runningOpenAi()));
+  const rooms = new Map<string, Promise<string | null>>();
+  let failed = 0;
+  const ready: { job: OpenAiJobRow; key: string; tenant: Tenant }[] = [];
+  for (const job of jobs) {
+    const { tenant, key } = await client(job.user_id);
+    if (!key) { await settleOpenAi(job, afterOpenAiFailure(job, { retryable: false, message: tenant.active ? openAiMissing() : "This account is suspended." })); failed++; continue; }
+    if (!rooms.has(job.user_id)) rooms.set(job.user_id, roomToSave(tenant));
+    const full = await rooms.get(job.user_id)!;
+    if (full) { await settleOpenAi(job, afterOpenAiFailure(job, { retryable: false, message: full })); failed++; continue; }
+    // Which kind of key it is sent with, before anything is sent, so a request handed over is collected with the same one.
+    const keySource = await tenancy.keySource(tenant, "OPENAI_API_KEY");
+    if (keySource) { await settleOpenAi(job, { key_source: keySource }); job.key_source = keySource; }
+    ready.push({ job, key, tenant });
+  }
+  steps.push(...await Promise.all(ready.map(async ({ job, key, tenant }) => advanceOpenAiJob(job, await openAiJobDeps(job, key, startedAt, tenant)))));
+  const count_ = (step: JobStep) => steps.filter((s) => s === step).length;
+  return { claimed: jobs.length, made: count_("made"), submitted: count_("submitted"), waiting: count_("pending"), failed: count_("failed") + failed };
+}
+
+/** What an OpenAI image job says when its account (or the install) has no OpenAI key. */
+const openAiMissing = () => `OpenAI isn't connected. ${addKeyMessage("OPENAI_API_KEY")} Then retry, or try with Higgsfield instead.`;
+
 type OpenAiJobRow = JobRow & { started_at: string | null };
+
+/** Requests handed to OpenAI that a later tick collects (oldest first, 20 at a time). */
+async function waitingOpenAiJobs(): Promise<OpenAiJobRow[]> {
+  const { data } = await db.from("creative_jobs").select("*").eq("status", "running").eq("backend", "api").eq("runner_id", OPENAI_RUNNER)
+    .eq("params->>provider", "openai").like("external_id", `${OPENAI_BACKGROUND}%`).order("created_at").limit(20);
+  return (data ?? []) as OpenAiJobRow[];
+}
+
+/** OpenAI image jobs held by a worker right now. */
+async function runningOpenAi(): Promise<number> {
+  const { count } = await db.from("creative_jobs").select("id", { count: "exact", head: true })
+    .eq("status", "running").eq("backend", "api").eq("params->>provider", "openai").gt("lease_until", new Date().toISOString());
+  return count ?? 0;
+}
+
+/** Takes one queued job with a conditional update (queued → running), so two ticks never take one. */
+async function takeOpenAiJob(job: OpenAiJobRow, now: Date): Promise<OpenAiJobRow | null> {
+  const { data: row } = await db.from("creative_jobs").update({
+    status: "running", runner_id: OPENAI_RUNNER, attempts: job.attempts + 1, error: null,
+    lease_until: new Date(now.getTime() + API_LEASE_SECONDS * 1000).toISOString(), started_at: job.started_at ?? now.toISOString(),
+  }).eq("id", job.id).eq("status", "queued").select("*");
+  return row?.length ? row[0] as OpenAiJobRow : null;
+}
 
 /** Queued OpenAI jobs, oldest first, each taken with a conditional update (queued → running) so two ticks never take one. */
 async function claimOpenAiJobs(limit: number): Promise<OpenAiJobRow[]> {
@@ -755,13 +933,26 @@ async function claimOpenAiJobs(limit: number): Promise<OpenAiJobRow[]> {
     .or(`not_before.is.null,not_before.lte.${now.toISOString()}`).order("created_at").limit(Math.min(limit, 20));
   const taken: OpenAiJobRow[] = [];
   for (const job of (data ?? []) as OpenAiJobRow[]) {
-    const { data: row } = await db.from("creative_jobs").update({
-      status: "running", runner_id: OPENAI_RUNNER, attempts: job.attempts + 1, error: null,
-      lease_until: new Date(now.getTime() + API_LEASE_SECONDS * 1000).toISOString(), started_at: job.started_at ?? now.toISOString(),
-    }).eq("id", job.id).eq("status", "queued").select("*");
-    if (row?.length) taken.push(row[0] as OpenAiJobRow);
+    const row = await takeOpenAiJob(job, now);
+    if (row) taken.push(row);
   }
   return taken;
+}
+
+/**
+ * Accounts mode: queued OpenAI jobs taken by the database's fair claim (20261120140000_fair_claims.sql):
+ * each account's oldest first, round-robin between accounts, never past an account's plan concurrency
+ * minus the jobs it has running, never a suspended account's. Done in SQL over every account's queue (per
+ * account heads with row_number()), so one account's backlog can't starve the others.
+ */
+async function claimOpenAiJobsFairly(limit: number): Promise<OpenAiJobRow[]> {
+  if (limit <= 0) return [];
+  const { data, error } = await db.rpc("creatives_claim_jobs", {
+    p_runner: OPENAI_RUNNER, p_backend: "api", p_models: null, p_limit: Math.min(limit, 20), p_seconds: API_LEASE_SECONDS,
+    p_provider: "openai", p_user: null, p_per_user: null, p_staff_only: false,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as OpenAiJobRow[];
 }
 
 /** Writes a job's outcome while this worker still holds it (a cancelled or retaken job is left alone). */
@@ -769,11 +960,11 @@ const settleOpenAi = (job: JobRow, patch: Record<string, unknown>) =>
   db.from("creative_jobs").update(patch).eq("id", job.id).eq("status", "running").eq("runner_id", OPENAI_RUNNER);
 
 /** What core/openai_jobs.ts needs to take one job a step further: this install's plan, models, storage and queue. */
-async function openAiJobDeps(job: OpenAiJobRow, key: string, startedAt: number): Promise<OpenAiJobDeps> {
-  const use = await models();
+async function openAiJobDeps(job: OpenAiJobRow, key: string, startedAt: number, tenant: Tenant): Promise<OpenAiJobDeps> {
+  const use = await models(tenant);
   return {
     apiKey: key,
-    limits: await planLimits(),
+    limits: tenant.limits,
     collect: collectSetting(env("OPENAI_IMAGE_COLLECT")),
     usedMs: () => Date.now() - startedAt,
     textModel: use.text,
@@ -826,7 +1017,7 @@ async function storeOpenAiImages(job: JobRow, images: Uint8Array[]): Promise<Out
 /** Downloads a finished API job's files into the creatives bucket. */
 async function collectOutputs(job: JobRow, urls: string[]): Promise<Output[]> {
   const outputs: Output[] = [];
-  const maxBytes = uploadMaxBytes(await planLimits(), RESULT_BUCKET_BYTES);
+  const maxBytes = uploadMaxBytes((await tenancy.for(job.user_id)).limits, RESULT_BUCKET_BYTES);
   for (const [i, url] of urls.entries()) {
     const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     if (!response.ok) throw new Error(`Couldn't download the result (${response.status}).`);
@@ -873,10 +1064,14 @@ async function failTooBig(job: JobRow, urls: string[], bytes: number | null, max
   }).eq("id", job.id);
 }
 
-/** Whether there is room to save a new result (a database that can't say counts as room: never fail closed). */
-async function roomToSave(): Promise<boolean> {
-  const room = await storageRoom(db, await planLimits()).catch(() => null);
-  return !room || room.level !== "full";
+/**
+ * Null when there is room to save a new result for this tenant (a database that can't say counts as
+ * room: never fail closed); otherwise the note to fail with, in the words for whose storage is full (the
+ * project's, or in accounts mode the account's own: what to delete).
+ */
+async function roomToSave(tenant: Tenant): Promise<string | null> {
+  const room = await tenancy.room(tenant).catch(() => null);
+  return room && room.level === "full" ? tenancy.fullNote(room) : null;
 }
 
 /**

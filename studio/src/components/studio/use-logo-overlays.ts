@@ -5,10 +5,11 @@
 // a way to try again). The updated row comes back over Realtime.
 import type { CreativeJobRow, CreativeView } from "@/lib/creative-types";
 import { pendingLogos } from "@/lib/logo-overlay";
+import { m } from "@/lib/i18n/translate";
 import { useRetriedPosts } from "./use-retried-posts";
 
 const logoUrl = (id: string) => `/api/studio/creatives/${id}/logo`;
 
 export function useLogoOverlays(jobs: CreativeJobRow[], creatives: CreativeView[], onPlaced?: () => void) {
-  return useRetriedPosts(pendingLogos(jobs, creatives), logoUrl, "Our logo wasn't placed", onPlaced);
+  return useRetriedPosts(pendingLogos(jobs, creatives), logoUrl, m("Our logo wasn't placed"), onPlaced);
 }

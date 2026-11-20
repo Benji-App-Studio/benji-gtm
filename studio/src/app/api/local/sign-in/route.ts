@@ -1,3 +1,4 @@
+import { getTranslator } from "@/lib/i18n/server";
 import { writeStoredOwner } from "@/lib/install/config";
 import { localSignIn } from "@/lib/server/owner-flows";
 import { NO_STORE, localModeRequest, refuse } from "@/lib/server/provision/request-access";
@@ -9,7 +10,7 @@ import { createClient } from "@/lib/supabase/server";
  * in the local config, so the app signs in by itself from then on. Works in local mode only.
  */
 export async function POST(request: Request) {
-  if (!localModeRequest(request)) return refuse(403, "This only works in the app on the computer it runs on.");
+  if (!localModeRequest(request)) return refuse(403, (await getTranslator()).t("This only works in the app on the computer it runs on."));
   const body = (await request.json().catch(() => null)) as { email?: unknown; password?: unknown } | null;
   const email = typeof body?.email === "string" ? body.email : "";
   const password = typeof body?.password === "string" ? body.password : "";

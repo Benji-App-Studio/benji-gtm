@@ -2,15 +2,16 @@
 // the Product page or collected by the AI reader from the website and store listing; the AI sorts them
 // (kind, label, group, what each suits). Recreate and Studio suggest them as Higgsfield references, but
 // only the user's picks are ever used. Safe in the browser.
+import { fill, m, type Vars } from "./i18n/translate";
 
 export type AssetKind = "app_screen" | "product" | "packaging" | "lifestyle" | "person" | "logo" | "other";
 
 /** Whether a pictured person agreed to appear in ads (product_assets.consent). */
 export type AssetConsent = "confirmed" | "unknown" | "not_given";
 export const CONSENT_OPTIONS: { id: AssetConsent; label: string; hint: string }[] = [
-  { id: "confirmed", label: "Consent confirmed", hint: "They agreed to appear in our ads." },
-  { id: "unknown", label: "Consent unknown", hint: "Nobody has asked yet." },
-  { id: "not_given", label: "No consent", hint: "They didn't agree: don't use them." },
+  { id: "confirmed", label: m("Consent confirmed"), hint: m("They agreed to appear in our ads.") },
+  { id: "unknown", label: m("Consent unknown"), hint: m("Nobody has asked yet.") },
+  { id: "not_given", label: m("No consent"), hint: m("They didn't agree: don't use them.") },
 ];
 
 export interface ProductAsset {
@@ -52,8 +53,8 @@ export const ASSET_COLUMNS = "id, product_id, url, storage_path, source, source_
 export function peopleToCheck(assets: Pick<ProductAsset, "id" | "kind" | "label" | "consent" | "possible_minor">[]): { id: string; label: string; reasons: string[] }[] {
   return assets.filter((a) => a.kind === "person").map((a) => {
     const reasons = [
-      ...(a.consent === "not_given" ? ["no consent"] : (a.consent ?? "unknown") !== "confirmed" ? ["consent unknown"] : []),
-      ...(a.possible_minor ? ["may be a minor"] : []),
+      ...(a.consent === "not_given" ? [m("no consent")] : (a.consent ?? "unknown") !== "confirmed" ? [m("consent unknown")] : []),
+      ...(a.possible_minor ? [m("may be a minor")] : []),
     ];
     return { id: a.id, label: a.label?.trim() || "A person", reasons };
   }).filter((p) => p.reasons.length);
@@ -99,16 +100,16 @@ export function cutoutChoices(assets: Pick<ProductAsset, "id" | "kind" | "label"
 }
 
 export const ASSET_KINDS: { id: AssetKind; label: string; plural: string }[] = [
-  { id: "app_screen", label: "App screen", plural: "App screens" },
-  { id: "product", label: "Product", plural: "Products" },
-  { id: "packaging", label: "Packaging", plural: "Packaging" },
-  { id: "lifestyle", label: "Lifestyle", plural: "Lifestyle" },
-  { id: "person", label: "People", plural: "People" },
-  { id: "logo", label: "Logo", plural: "Logos" },
-  { id: "other", label: "Other", plural: "Other" },
+  { id: "app_screen", label: m("App screen"), plural: m("App screens") },
+  { id: "product", label: m("Product"), plural: m("Products") },
+  { id: "packaging", label: m("Packaging"), plural: m("Packaging") },
+  { id: "lifestyle", label: m("Lifestyle"), plural: m("Lifestyle") },
+  { id: "person", label: m("People"), plural: m("People") },
+  { id: "logo", label: m("Logo"), plural: m("Logos") },
+  { id: "other", label: m("Other"), plural: m("Other") },
 ];
 export const ASSET_KIND_LABEL = Object.fromEntries(ASSET_KINDS.map((k) => [k.id, k.label])) as Record<AssetKind, string>;
-export const ASSET_SOURCE_LABEL: Record<ProductAsset["source"], string> = { upload: "Uploaded", website: "From the website", app_store: "From the App Store", google_play: "From Google Play" };
+export const ASSET_SOURCE_LABEL: Record<ProductAsset["source"], string> = { upload: m("Uploaded"), website: m("From the website"), app_store: m("From the App Store"), google_play: m("From Google Play") };
 
 /** At most this many of our images go to Higgsfield with one creative (after the competitor's). */
 export const PRODUCT_REFERENCES = 3;
@@ -125,9 +126,10 @@ export interface AdFit {
   suggested_asset_ids: string[];
 }
 
-export const FIT_LABEL: Record<AdFit["level"], string> = { fits: "Fits your offer", partly: "Partly fits", doesnt_fit: "Doesn't fit your offer" };
+/** Display words (translate with t() where shown); the AI scan's data keeps the level and the `ad_sells` code. */
+export const FIT_LABEL: Record<AdFit["level"], string> = { fits: m("Fits your offer"), partly: m("Partly fits"), doesnt_fit: m("Doesn't fit your offer") };
 export const SELLS_LABEL: Record<AdSells, string> = {
-  specific_drug: "a named medicine", product: "a product", service: "a service or membership", app: "an app", education: "information or tips", other: "something else",
+  specific_drug: m("a named medicine"), product: m("a product"), service: m("a service or membership"), app: m("an app"), education: m("information or tips"), other: m("something else"),
 };
 
 /** Which of our image kinds answer what their ad shows, best first. */
@@ -144,7 +146,9 @@ const KINDS_FOR: Record<AdSells, AssetKind[]> = {
  * Our images ordered for one ad: the AI scan's picks first (when it ran), then the kinds that answer
  * what the ad shows, the rest after. Suggestions only: nothing is picked for the user.
  */
-export function suggestAssets(assets: ProductAsset[], o: { fit?: AdFit | null; sells?: AdSells; video?: boolean }): { asset: ProductAsset; suggested: boolean; why: string | null }[] {
+export function suggestAssets(
+  assets: ProductAsset[], o: { fit?: AdFit | null; sells?: AdSells; video?: boolean }, t: (text: string, vars?: Vars) => string = fill,
+): { asset: ProductAsset; suggested: boolean; why: string | null }[] {
   const visible = assets.filter((a) => !a.hidden);
   const picked = new Set(o.fit?.suggested_asset_ids ?? []);
   const kinds = KINDS_FOR[o.fit?.ad_sells ?? o.sells ?? "other"];
@@ -155,7 +159,7 @@ export function suggestAssets(assets: ProductAsset[], o: { fit?: AdFit | null; s
     return {
       asset,
       suggested: byAi || byKind,
-      why: byAi ? "Suggested by the AI scan for this ad" : byKind ? `${ASSET_KIND_LABEL[asset.kind]}: matches what this ad shows` : null,
+      why: byAi ? t("Suggested by the AI scan for this ad") : byKind ? t("{kind}: matches what this ad shows", { kind: t(ASSET_KIND_LABEL[asset.kind]) }) : null,
     };
   });
 }

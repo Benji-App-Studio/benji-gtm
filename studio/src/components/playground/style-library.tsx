@@ -26,7 +26,31 @@ import { showOriginal } from "@/lib/thumb";
 import { readBrandKit } from "@/lib/workspace-schema";
 import { IconAlert, IconCheck, IconChevronDown, IconChevronLeft } from "../icons";
 import { Badge, Button, cx, inputClass, Segmented, Thumb } from "../ui";
-import { UI_LOCALE } from "@/lib/ui-locale";
+import { useT } from "@/lib/i18n/client";
+import { m, type Translator } from "@/lib/i18n/translate";
+
+// A table field's label carries its row number ("Reason 2: us"); each is translated as its pattern.
+const NUMBERED_LABELS = new Set<string>([
+  m("Reason {n}"), m("Reason {n}: us"), m("Reason {n}: them"), m("Stat {n}"), m("Stat {n}: what it measures"), m("Benefit {n}"), m("Callout {n}"), m("Badge {n}"),
+  m("Question {n}"), m("Moment {n}"), m("Moment {n}: line"), m("Bubble {n}: problem"), m("Bubble {n}: solution"), m("Bubble {n}: benefit"),
+]);
+/** A style field's label in the page's language: a plain label, or a numbered one ("Stat 2") by its pattern. */
+export function fieldLabel(label: string, t: Translator["t"]): string {
+  const n = /\b(\d+)\b/.exec(label)?.[1];
+  const pattern = n ? label.replace(/\b\d+\b/, "{n}") : "";
+  return n && NUMBERED_LABELS.has(pattern) ? t(pattern, { n }) : t(label);
+}
+/** A validation message from lib/ad-styles.ts validateStyleFields, translated ("Required", "40/36 characters"…). */
+export function fieldError(error: string, t: Translator["t"]): string {
+  const count = /^(\d+)\/(\d+) characters$/.exec(error);
+  return count ? t("{n}/{max} characters", { n: count[1], max: count[2] }) : t(error);
+}
+// The angles the starters are filed under (lib/ad-styles.ts), as the "What it's for" badge shows them.
+const ANGLE_LABELS = new Set<string>([
+  m("Social proof"), m("Problem awareness"), m("Price comparison"), m("Proof in numbers"), m("Authority"), m("Visible results"),
+  m("Trust"), m("Education"), m("Curiosity"), m("Value"),
+]);
+const angleText = (angle: string | undefined, t: Translator["t"]) => { const label = angleLabel(angle); return ANGLE_LABELS.has(label) ? t(label) : label; };
 
 /** The workspace's product images (public URLs) the person can attach to a template; `kind` is the image's AssetKind, when known. */
 export type ProductImage = { url: string; label: string | null; kind?: string | null };
@@ -90,6 +114,7 @@ export function StyleDetail({ style, title, ctx, loading, productKind = null, pr
   /** For the review picker's "Fetch reviews". */
   productId?: string;
 }) {
+  const { t, tn } = useT();
   // Only what the person changed is state; the rest follows the product profile as it loads.
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [picked, setPicked] = useState<string[] | null>(null);
@@ -122,7 +147,7 @@ export function StyleDetail({ style, title, ctx, loading, productKind = null, pr
   };
   const shownError = (f: StyleField) => {
     const e = errors[f.key];
-    return e && (tried || e !== "Required") ? e : undefined;
+    return e && (tried || e !== "Required") ? fieldError(e, t) : undefined;
   };
 
   // The plain fields above the table (if any) and those after it in the style's order (e.g. a footnote under the stats).
@@ -141,23 +166,23 @@ export function StyleDetail({ style, title, ctx, loading, productKind = null, pr
 
   return (
     <div>
-      <DetailHeader title={title || style.name} aspect={aspect} onBack={onBack} />
+      <DetailHeader title={title || t(style.name)} aspect={aspect} onBack={onBack} />
       <WhatItsFor guidance={style} productKind={productKind} productName={context.appName} />
 
       <div className="grid gap-4 @3xl:grid-cols-[232px_minmax(0,1fr)]">
         <aside className="flex gap-3 @3xl:flex-col">
-          <a href={style.referenceImage} target="_blank" rel="noreferrer" className="block w-24 shrink-0 overflow-hidden rounded-small border border-line bg-control @3xl:w-full" title="Open the example">
-            <StyleThumb src={style.referenceImage} alt={`${style.name} example`} className="w-full" fallbackClassName="aspect-[4/5]" />
+          <a href={style.referenceImage} target="_blank" rel="noreferrer" className="block w-24 shrink-0 overflow-hidden rounded-small border border-line bg-control @3xl:w-full" title={t("Open the example")}>
+            <StyleThumb src={style.referenceImage} alt={t("{name} example", { name: t(style.name) })} className="w-full" fallbackClassName="aspect-[4/5]" />
           </a>
           <div className="min-w-0 space-y-3">
-            <Note title="Why it works">{style.why}</Note>
-            <Note title="Runs best">{style.audience}</Note>
-            <p className="text-xs leading-4 text-faint">The example is another brand&apos;s ad, used only for its layout. Its brand is replaced with yours and kept out of the result.</p>
+            <Note title={t("Why it works")}>{t(style.why)}</Note>
+            <Note title={t("Runs best")}>{t(style.audience)}</Note>
+            <p className="text-xs leading-4 text-faint">{t("The example is another brand's ad, used only for its layout. Its brand is replaced with yours and kept out of the result.")}</p>
           </div>
         </aside>
 
         <div className="min-w-0 space-y-4">
-          {style.caution && <p className="rounded-inner bg-caution-soft px-3 py-2 text-xs text-caution-ink">{style.caution}</p>}
+          {style.caution && <p className="rounded-inner bg-caution-soft px-3 py-2 text-xs text-caution-ink">{t(style.caution)}</p>}
           {slot && (
             <ReviewPicker reviews={context.reviews ?? []} maxLength={style.fields.find((f) => f.key === slot.text)?.maxLength ?? 160} picked={reviewIds.length ? review : null} productId={productId}
               onPick={(r) => { setReview(r); setEdits((e) => insertReview(e, slot, r)); }} />
@@ -169,30 +194,30 @@ export function StyleDetail({ style, title, ctx, loading, productKind = null, pr
 
           {style.aspects.length > 1 && (
             <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-medium text-muted">Ratio</span>
-              <Segmented label="Ratio" value={aspect} onChange={setAspect} options={style.aspects.map((a) => ({ value: a, label: a }))} />
+              <span className="text-xs font-medium text-muted">{t("Ratio")}</span>
+              <Segmented label={t("Ratio")} value={aspect} onChange={setAspect} options={style.aspects.map((a) => ({ value: a, label: a }))} />
             </div>
           )}
 
-          <ProductImagePicker productImages={productImages} chosen={chosen} onToggle={toggle} hint={style.imageHint}
-            empty={`No product images yet. Add photos or app screens under Brand > Assets${style.needsImages ? ", or the model will have to imagine your product" : ""}.`} />
+          <ProductImagePicker productImages={productImages} chosen={chosen} onToggle={toggle} hint={t(style.imageHint)}
+            empty={style.needsImages ? t("No product images yet. Add photos or app screens in App settings › Brand, or the model will have to imagine your product.") : t("No product images yet. Add photos or app screens in App settings › Brand.")} />
 
           {style.textBudget && textLength > style.textBudget && (
-            <p className="text-xs text-caution-ink">{textLength} characters on the image; over ~{style.textBudget} may not fit the {aspect} safe area. Shorter reads better too.</p>
+            <p className="text-xs text-caution-ink">{t("{n} characters on the image; over ~{max} may not fit the {aspect} safe area. Shorter reads better too.", { n: textLength, max: style.textBudget, aspect })}</p>
           )}
           {rivals.length > 0 && (
-            <p className="text-xs text-caution-ink">Your text names {rivals.join(", ")}. Ads that name competitors are often rejected; it&apos;s kept as you wrote it.</p>
+            <p className="text-xs text-caution-ink">{t("Your text names {names}. Ads that name competitors are often rejected; it's kept as you wrote it.", { names: rivals.join(", ") })}</p>
           )}
 
           <PromptPreview prompt={built.prompt} overBy={built.overBy} mustAvoid={built.request.mustAvoid} />
 
           <FormFooter warn={Boolean((tried && errorCount) || noName || built.overBy)} canReset={Object.keys(edits).length > 0}
             onReset={() => { setEdits({}); setTried(false); }} onUse={use} disabled={loading || noName}>
-            {noName ? "Add your product's name under Brand > Product first."
-              : built.overBy ? `The prompt is ${built.overBy} characters over the Playground's limit; shorten the text.`
-              : tried && errorCount ? `Fill in ${errorCount === 1 ? "1 field" : `${errorCount} fields`} first.`
-              : loading ? "Loading your product…"
-              : `2 versions · ${aspect} · nothing is generated until you confirm in the Playground.`}
+            {noName ? t("Add your app's name in App settings › Profile first.")
+              : built.overBy ? tn(built.overBy, "The prompt is {n} character over the limit; shorten the text.", "The prompt is {n} characters over the limit; shorten the text.")
+              : tried && errorCount ? tn(errorCount, "Fill in {n} field first.", "Fill in {n} fields first.")
+              : loading ? t("Loading your product…")
+              : t("2 versions · {aspect} · nothing is generated until you confirm in Remix.", { aspect })}
           </FormFooter>
         </div>
       </div>
@@ -204,9 +229,10 @@ export function StyleDetail({ style, title, ctx, loading, productKind = null, pr
 
 /** "‹ Library / Name  4:5" above a template's form. */
 export function DetailHeader({ title, aspect, onBack }: { title: string; aspect: Aspect; onBack: () => void }) {
+  const { t } = useT();
   return (
     <div className="mb-3 flex min-w-0 items-center gap-2">
-      <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2"><IconChevronLeft />Library</Button>
+      <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2"><IconChevronLeft />{t("Library")}</Button>
       <span className="text-faint">/</span>
       <span className="min-w-0 truncate text-sm font-medium text-ink" title={title}>{title}</span>
       <Badge className="shrink-0 tabular-nums">{aspect}</Badge>
@@ -219,20 +245,21 @@ export function DetailHeader({ title, aspect, onBack }: { title: string; aspect:
  * product (green) or how to adapt it (amber). Advice only, never a block. Nothing when there's no guidance.
  */
 export function WhatItsFor({ guidance, productKind, productName }: { guidance: TemplateGuidance | null | undefined; productKind: ProductFitKind | null; productName: string }) {
-  const fit = templateFit(guidance, productKind, productName);
+  const { t } = useT();
+  const fit = templateFit(guidance, productKind, productName, t);
   if (!guidance?.bestFor && !guidance?.angle && !fit) return null;
   return (
-    <section aria-label="What it's for" className="mb-4 rounded-inner border border-line bg-raised px-3 py-2.5">
+    <section aria-label={t("What it's for")} className="mb-4 rounded-inner border border-line bg-raised px-3 py-2.5">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="text-xs font-medium text-muted">What it&apos;s for</span>
-        {guidance?.angle && <Badge>{angleLabel(guidance.angle)}</Badge>}
+        <span className="text-xs font-medium text-muted">{t("What it's for")}</span>
+        {guidance?.angle && <Badge>{angleText(guidance.angle, t)}</Badge>}
       </div>
-      {guidance?.bestFor && <p className="mt-1 text-caption text-muted">{guidance.bestFor}</p>}
+      {guidance?.bestFor && <p className="mt-1 text-caption text-muted">{t(guidance.bestFor)}</p>}
       {fit && (
         <p className={cx("mt-2 flex items-start gap-1.5 rounded-control px-2 py-1.5 text-caption [&_svg]:mt-[3px] [&_svg]:size-3 [&_svg]:shrink-0",
           fit.fit === "good" ? "bg-win-soft text-win" : "bg-caution-soft text-caution-ink")}>
           {fit.fit === "good" ? <IconCheck /> : <IconAlert />}
-          <span>{fit.text}{fit.fit === "adapt" && <> {fit.tip}</>}</span>
+          <span>{fit.fit === "good" ? t("Good fit for {name}", { name: productName.trim() || t("Your product") }) : fit.text}{fit.fit === "adapt" && <> {t(fit.tip)}</>}</span>
         </p>
       )}
     </section>
@@ -241,13 +268,14 @@ export function WhatItsFor({ guidance, productKind, productName }: { guidance: T
 
 /** The product images to attach, as a grid of toggles (in the order they go to Higgsfield). */
 export function ProductImagePicker({ productImages, chosen, onToggle, hint, empty }: { productImages: ProductImage[]; chosen: string[]; onToggle: (url: string) => void; hint: string; empty: string }) {
+  const { t, tn } = useT();
   // Folded away until opened (a product can have 100+ images); what's attached stays in view.
   const [open, setOpen] = useState(false);
   return (
     <section>
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-xs font-medium text-muted">Your images</span>
-        <span className="text-xs text-faint tabular-nums">{chosen.length} of {Math.min(PLAYGROUND_MAX_INPUTS, productImages.length)} attached</span>
+        <span className="text-xs font-medium text-muted">{t("Your images")}</span>
+        <span className="text-xs text-faint tabular-nums">{t("{n} of {max} attached", { n: chosen.length, max: Math.min(PLAYGROUND_MAX_INPUTS, productImages.length) })}</span>
       </div>
       <p className="mt-0.5 text-xs text-muted">{hint}</p>
       {productImages.length > 0 && (
@@ -255,7 +283,7 @@ export function ProductImagePicker({ productImages, chosen, onToggle, hint, empt
           <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
             className="inline-flex h-7 items-center gap-1.5 rounded-control border border-hairline bg-raised px-2.5 text-xs font-medium text-ink transition hover:bg-hover">
             <IconChevronDown className={cx("size-3.5 transition", !open && "-rotate-90")} />
-            {open ? "Hide images" : `Show ${productImages.length} image${productImages.length === 1 ? "" : "s"}`}
+            {open ? t("Hide images") : tn(productImages.length, "Show {n} image", "Show {n} images")}
           </button>
           {!open && chosen.map((url) => (
             <button key={url} type="button" onClick={() => setOpen(true)} className="relative size-8 overflow-hidden rounded-md border border-accent">
@@ -270,10 +298,10 @@ export function ProductImagePicker({ productImages, chosen, onToggle, hint, empt
             const on = chosen.includes(img.url);
             const full = !on && chosen.length >= PLAYGROUND_MAX_INPUTS;
             return (
-              <button key={img.url} type="button" onClick={() => onToggle(img.url)} disabled={full} aria-pressed={on} title={img.label ?? "Product image"}
+              <button key={img.url} type="button" onClick={() => onToggle(img.url)} disabled={full} aria-pressed={on} title={img.label ?? t("Product image")}
                 className={cx("relative aspect-square overflow-hidden rounded-control border bg-control transition disabled:opacity-40",
                   on ? "border-accent ring-2 ring-accent/30" : "border-line hover:border-ink/20")}>
-                <Thumb src={img.url} size={160} alt={img.label ?? "Product image"} className="size-full" />
+                <Thumb src={img.url} size={160} alt={img.label ?? t("Product image")} className="size-full" />
                 {on && <span className="absolute top-1 right-1 grid size-4 place-items-center rounded-full bg-accent text-on-ink [&_svg]:size-2.5"><IconCheck /></span>}
               </button>
             );
@@ -288,15 +316,16 @@ export function ProductImagePicker({ productImages, chosen, onToggle, hint, empt
 
 /** The exact prompt the template builds, folded away, with its length against the Playground's limit. */
 export function PromptPreview({ prompt, overBy, mustAvoid }: { prompt: string; overBy: number; mustAvoid?: string[] }) {
+  const { t, intl } = useT();
   return (
     <details className="group rounded-inner border border-line bg-raised">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-medium text-muted [&::-webkit-details-marker]:hidden">
-        <span className="flex items-center gap-1.5"><IconChevronDown className="size-3.5 -rotate-90 transition group-open:rotate-0" />Prompt preview</span>
-        <span className={cx("font-normal tabular-nums", overBy ? "text-warn" : "text-faint")}>{prompt.length.toLocaleString(UI_LOCALE)} / {STYLE_PROMPT_MAX.toLocaleString(UI_LOCALE)}</span>
+        <span className="flex items-center gap-1.5"><IconChevronDown className="size-3.5 -rotate-90 transition group-open:rotate-0" />{t("Prompt preview")}</span>
+        <span className={cx("font-normal tabular-nums", overBy ? "text-warn" : "text-faint")}>{prompt.length.toLocaleString(intl)} / {STYLE_PROMPT_MAX.toLocaleString(intl)}</span>
       </summary>
       <div className="border-t border-line px-3 py-2.5">
         <pre className="max-h-72 overflow-auto font-mono text-[11px] leading-[1.55] whitespace-pre-wrap text-label">{prompt}</pre>
-        {mustAvoid?.length ? <p className="mt-2 text-xs text-muted">Kept out of the result: {mustAvoid.join(", ")}</p> : null}
+        {mustAvoid?.length ? <p className="mt-2 text-xs text-muted">{t("Kept out of the result: {names}", { names: mustAvoid.join(", ") })}</p> : null}
       </div>
     </details>
   );
@@ -304,12 +333,13 @@ export function PromptPreview({ prompt, overBy, mustAvoid }: { prompt: string; o
 
 /** The status line and "Use this template" under a template's form. */
 export function FormFooter({ warn, canReset, onReset, onUse, disabled, children }: { warn: boolean; canReset: boolean; onReset: () => void; onUse: () => void; disabled: boolean; children: ReactNode }) {
+  const { t } = useT();
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
       <p className={cx("text-xs", warn ? "text-warn" : "text-muted")}>{children}</p>
       <div className="flex items-center gap-2">
-        {canReset && <Button variant="ghost" size="sm" onClick={onReset}>Reset</Button>}
-        <Button onClick={onUse} disabled={disabled}>Use this template</Button>
+        {canReset && <Button variant="ghost" size="sm" onClick={onReset}>{t("Reset")}</Button>}
+        <Button onClick={onUse} disabled={disabled}>{t("Use this template")}</Button>
       </div>
     </div>
   );
@@ -336,23 +366,26 @@ export function Note({ title, children }: { title: string; children: ReactNode }
 }
 
 export function FieldInput({ field, value, error, onChange, className }: { field: StyleField; value: string; error?: string; onChange: (value: string) => void; className?: string }) {
+  const { t } = useT();
   const id = `style-field-${field.key}`;
   const over = value.trim().length > field.maxLength;
+  const label = fieldLabel(field.label, t);
+  const placeholder = field.placeholder ? t(field.placeholder) : field.placeholder;
   return (
     <div className={cx("flex min-w-0 flex-col gap-1", className)}>
       <div className="flex h-[18px] items-baseline justify-between gap-2">
-        <label htmlFor={id} className="text-xs font-medium text-muted">{field.label}</label>
+        <label htmlFor={id} className="text-xs font-medium text-muted">{label}</label>
         {!field.options && <span className={cx("text-xs tabular-nums", over ? "text-warn" : "text-faint")}>{value.trim().length}/{field.maxLength}</span>}
       </div>
       {field.options ? (
-        <Segmented label={field.label} value={value} onChange={onChange} options={field.options} className="self-start" />
+        <Segmented label={label} value={value} onChange={onChange} options={field.options.map((o) => ({ value: o.value, label: t(o.label) }))} className="self-start" />
       ) : field.multiline ? (
-        <textarea id={id} value={value} onChange={(e) => onChange(e.target.value)} placeholder={field.placeholder} rows={field.maxLength > 300 ? 4 : 2}
+        <textarea id={id} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} rows={field.maxLength > 300 ? 4 : 2}
           className={cx(inputClass, "resize-y leading-[1.45]", error && "border-warn/60")} />
       ) : (
-        <input id={id} value={value} onChange={(e) => onChange(e.target.value)} placeholder={field.placeholder} className={cx(inputClass, error && "border-warn/60")} />
+        <input id={id} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={cx(inputClass, error && "border-warn/60")} />
       )}
-      {error ? <p className="text-xs text-warn">{error}</p> : field.hint ? <p className="text-xs text-muted">{field.hint}</p> : null}
+      {error ? <p className="text-xs text-warn">{error}</p> : field.hint ? <p className="text-xs text-muted">{t(field.hint)}</p> : null}
     </div>
   );
 }
@@ -361,6 +394,7 @@ export function FieldInput({ field, value, error, onChange, className }: { field
 function FieldTable({ table, cells, fields, errors, set }: {
   table: NonNullable<AdStyle["table"]>; cells: StyleField[]; fields: Record<string, string>; errors: Record<string, string>; set: (key: string, value: string) => void;
 }) {
+  const { t } = useT();
   const rows = [...new Set(cells.map((c) => c.cell!.row))];
   const at = (row: number, col: string) => cells.find((c) => c.cell!.row === row && c.cell!.col === col);
   const head = "truncate text-xs font-medium text-faint";
@@ -369,22 +403,22 @@ function FieldTable({ table, cells, fields, errors, set }: {
     <section>
       <div className="grid gap-x-2 gap-y-1.5" style={{ gridTemplateColumns: template }}>
         {table.columns.map((c) => {
-          const label = (c.labelFrom && fields[c.labelFrom]) || c.label;
+          const label = (c.labelFrom && fields[c.labelFrom]) || t(c.label);
           return <span key={c.col} className={cx(head, c.center && "text-center")} title={label}>{label}</span>;
         })}
         {rows.map((row) => table.columns.map((c) => {
           const f = at(row, c.col);
           if (!f) return <span key={`${row}-${c.col}`} />;
           return (
-            <input key={f.key} aria-label={f.label} value={fields[f.key] ?? ""} placeholder={f.placeholder} maxLength={f.maxLength + 20}
+            <input key={f.key} aria-label={fieldLabel(f.label, t)} value={fields[f.key] ?? ""} placeholder={f.placeholder ? t(f.placeholder) : f.placeholder} maxLength={f.maxLength + 20}
               onChange={(e) => set(f.key, e.target.value)}
               className={cx(inputClass, c.center && "text-center", errors[f.key] && "border-warn/60")} />
           );
         }))}
       </div>
       {Object.keys(errors).some((k) => cells.some((c) => c.key === k))
-        ? <p className="mt-1 text-xs text-warn">{table.note}</p>
-        : cells.some((c) => c.evidence) && <p className="mt-1 text-xs text-muted">{table.note}</p>}
+        ? <p className="mt-1 text-xs text-warn">{t(table.note)}</p>
+        : cells.some((c) => c.evidence) && <p className="mt-1 text-xs text-muted">{t(table.note)}</p>}
     </section>
   );
 }

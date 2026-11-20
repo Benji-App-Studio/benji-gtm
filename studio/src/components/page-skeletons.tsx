@@ -2,6 +2,7 @@
 // built from the kit in ./skeleton. A page shows its own while its data loads, and app/app/loading.tsx
 // shows the same one while the route loads, so the switch from one to the other is invisible.
 import { UNLOCKABLE } from "@/lib/capabilities";
+import { m } from "@/lib/i18n/translate";
 import { columnClass, pageClass } from "./ui";
 import {
   Bone, Skeleton, SkeletonAdGrid, SkeletonBadge, SkeletonButton, SkeletonCard, SkeletonFilterBar, SkeletonForm, SkeletonLine,
@@ -16,7 +17,7 @@ const productHeader = (props: Parameters<typeof SkeletonPageHeader>[0] = {}) => 
 /** Research → Ads: header with its buttons, the Competitors/Our ads switch, the competitor list, stats, filters, and the ad grid. */
 export function ResearchSkeleton() {
   return (
-    <Skeleton label="Loading ads" className={pageClass}>
+    <Skeleton label={m("Loading ads")} className={pageClass}>
       {productHeader({ title: "w-44", subtitle: 2, actions: ["w-28", "w-44"] })}
       <SkeletonTabs widths={[150, 92]} className="mb-4" />
       <SkeletonCard className="mb-4 overflow-hidden">
@@ -39,7 +40,7 @@ export function ResearchSkeleton() {
 
 export function ProductsSkeleton() {
   return (
-    <Skeleton label="Loading your apps" className={`${pageClass} ${columnClass}`}>
+    <Skeleton label={m("Loading your apps")} className={`${pageClass} ${columnClass}`}>
       <SkeletonPageHeader eyebrow="w-28" title="w-44" subtitleWidth="w-80" actions={["w-28"]} actionSize="sm" />
       <div className="grid gap-3"><SkeletonProductCard /></div>
     </Skeleton>
@@ -51,7 +52,7 @@ export function ProductsSkeleton() {
 /** The format library below its header: the filter card and format tiles. */
 export function FormatsBodySkeleton() {
   return (
-    <Skeleton label="Loading formats">
+    <Skeleton label={m("Loading formats")}>
       <SkeletonCard className="mt-4 grid grid-cols-2 gap-3 p-4 @2xl:flex @2xl:flex-wrap @2xl:items-end">
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="flex min-w-0 flex-col gap-1">
@@ -95,7 +96,7 @@ export function FormatsSkeleton() {
 export function StudioSkeleton() {
   const heading = (className?: string) => <SkeletonLine size="title" width="w-28" className={className} />;
   return (
-    <Skeleton label="Loading the studio" className={pageClass}>
+    <Skeleton label={m("Loading the studio")} className={pageClass}>
       {productHeader({ title: "w-36", subtitle: 2, aside: <div className="flex flex-wrap gap-1.5"><SkeletonBadge width="w-16" /><SkeletonBadge width="w-32" /><SkeletonBadge width="w-28" /></div> })}
       <section className="mb-6">
         <div className="mb-3 flex items-center justify-between">{heading()}<SkeletonLine size="xs" width="w-8" /></div>
@@ -137,7 +138,7 @@ export function StudioSkeleton() {
 export function PlaygroundSkeleton() {
   const row = (w: number) => <div className="flex items-center justify-between gap-2"><SkeletonLine size="xs" width="w-14" /><Bone className="h-[30px] rounded-inner" style={{ width: w }} /></div>;
   return (
-    <Skeleton label="Loading the playground" className={pageClass}>
+    <Skeleton label={m("Loading Remix")} className={pageClass}>
       {productHeader({ title: "w-44", subtitle: 1, subtitleWidth: "w-3/4",
         aside: <div className="flex flex-wrap gap-2"><SkeletonBadge width="w-36" /><SkeletonBadge width="w-32" /></div> })}
       <div className="grid items-start gap-3 @4xl:grid-cols-[minmax(340px,400px)_minmax(0,1fr)]">
@@ -169,7 +170,7 @@ export function PlaygroundSkeleton() {
 
 export function LaunchSkeleton() {
   return (
-    <Skeleton label="Loading Launch" className={pageClass}>
+    <Skeleton label={m("Loading Launch")} className={pageClass}>
       {productHeader({ title: "w-36", subtitle: 2,
         aside: <div className="flex flex-col items-start gap-1 @md:items-end"><SkeletonLine size="sm" width="w-48" /><SkeletonLine size="xs" width="w-40" /></div> })}
       <div className="grid gap-6">
@@ -200,7 +201,7 @@ export function LaunchSkeleton() {
 export function MeasureBodySkeleton() {
   const panel = "min-w-0 rounded-card border border-line bg-card";
   return (
-    <Skeleton label="Loading Measure">
+    <Skeleton label={m("Loading Measure")}>
       <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2"><SkeletonLine size="sm" width="w-52" /><SkeletonTabs widths={[78, 54, 156]} /></div>
       <div aria-hidden className={`${panel} mt-4 grid gap-px overflow-hidden bg-line! @2xl:grid-cols-2 @5xl:grid-cols-4`}>
         {[0, 1, 2, 3].map((i) => (
@@ -245,7 +246,7 @@ export function WorkspaceOverviewSkeleton() {
     </div>
   ));
   return (
-    <Skeleton label="Loading the app" className={pageClass}>
+    <Skeleton label={m("Loading the app")} className={pageClass}>
       {productHeader({ title: "w-48", subtitle: 1, subtitleWidth: "w-80", actions: ["w-16"], actionSize: "sm" })}
       <div className="grid items-start gap-x-10 gap-y-8 @4xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="grid min-w-0 gap-3">
@@ -274,7 +275,7 @@ export function WorkspaceOverviewSkeleton() {
 
 export function WorkspaceSettingsSkeleton() {
   return (
-    <Skeleton label="Loading settings" className={pageClass}>
+    <Skeleton label={m("Loading settings")} className={pageClass}>
       {productHeader({ title: "w-36", subtitle: 2 })}
       <div className="grid max-w-[700px] gap-4">
         <SkeletonCard className="flex flex-wrap items-center gap-3 p-4">
@@ -297,7 +298,7 @@ export function WorkspaceSettingsSkeleton() {
 /** The Brand page: header with Import and Save, the tabs, then its section cards. */
 export function BrandSkeleton() {
   return (
-    <Skeleton label="Loading the brand" className={pageClass}>
+    <Skeleton label={m("Loading the brand")} className={pageClass}>
       {productHeader({ title: "w-20", subtitle: 1, subtitleWidth: "w-2/3", actions: ["w-40", "w-16"] })}
       <SkeletonTabs widths={[60, 70, 62, 74]} className="mb-4" />
       <div className="grid gap-4">
@@ -317,7 +318,7 @@ export function BrandSkeleton() {
 /** A list of analyses of one kind (Accounts, Campaigns): header and cards. */
 export function WorkflowListSkeleton() {
   return (
-    <Skeleton label="Loading analyses" className={pageClass}>
+    <Skeleton label={m("Loading analyses")} className={pageClass}>
       <SkeletonPageHeader eyebrow="w-28" title="w-28" subtitleWidth="w-3/4" actions={["w-44"]} />
       <SkeletonProjectCards />
     </Skeleton>
@@ -327,7 +328,7 @@ export function WorkflowListSkeleton() {
 /** A report's tabs, its stat strip and the first cards. */
 export function ReportSkeleton() {
   return (
-    <Skeleton label="Loading report">
+    <Skeleton label={m("Loading report")}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
         <SkeletonTabs widths={[76, 108, 70, 70, 112]} />
         <SkeletonLine size="caption" width="w-64" />
@@ -346,7 +347,7 @@ export function ReportSkeleton() {
 /** An analysis: crumbs, name and badges, description, buttons, then its report. */
 export function ProjectSkeleton() {
   return (
-    <Skeleton label="Loading the analysis" className={pageClass}>
+    <Skeleton label={m("Loading the analysis")} className={pageClass}>
       <SkeletonPageHeader eyebrow="w-40" title="w-64" subtitleWidth="w-2/3" actions={["w-20", "w-48", "w-14"]} actionSize="sm" />
       <ReportSkeleton />
     </Skeleton>
@@ -358,7 +359,7 @@ export function ProjectSkeleton() {
 /** Home below its header while the apps and the latest report load: the apps as list rows, then the overview's cards. */
 export function OverviewSkeleton() {
   return (
-    <Skeleton label="Loading Home">
+    <Skeleton label={m("Loading Home")}>
       <div className="mb-8">
         <div className="mb-2 flex min-h-7 items-center justify-between"><SkeletonLine size="sm" width="w-20" /><SkeletonLine size="sm" width="w-16" /></div>
         {[0, 1].map((i) => (
@@ -388,7 +389,7 @@ export function DashboardSkeleton() {
       <OverviewSkeleton />
       <section className="mt-8">
         <div className="mb-2 flex min-h-7 items-center"><SkeletonLine size="sm" width="w-24" /></div>
-        <Skeleton label="Loading analyses"><SkeletonProjectCards /></Skeleton>
+        <Skeleton label={m("Loading analyses")}><SkeletonProjectCards /></Skeleton>
       </section>
     </div>
   );
@@ -411,7 +412,7 @@ export function CompetitorFormSkeleton() {
   const label = (width = "w-20") => <SkeletonLine size="sm" width={width} className="mb-2" />;
   const check = (lines: number) => <div className="flex items-start gap-2"><Bone className="mt-0.5 size-4 rounded-xs" /><SkeletonText lines={lines} className="flex-1" /></div>;
   return (
-    <Skeleton label="Loading your apps">
+    <Skeleton label={m("Loading your apps")}>
       <SkeletonCard className="p-4">
         <SkeletonText lines={2} />
         <div className="mt-5">{label("w-10")}<div className="grid gap-2 @xl:grid-cols-2">{[0, 1].map((i) => <Bone key={i} className="h-[62px] rounded-control" />)}</div></div>
@@ -434,7 +435,7 @@ export function CompetitorFormSkeleton() {
 /** Market below its header: the tabs, then a list of apps (icon, name and developer, rating, price, version). */
 export function MarketBodySkeleton() {
   return (
-    <Skeleton label="Loading apps">
+    <Skeleton label={m("Loading apps")}>
       <SkeletonTabs widths={[120, 92, 112]} className="mb-5" />
       <div aria-hidden className="grid">
         {[0, 1, 2, 3, 4].map((i) => (

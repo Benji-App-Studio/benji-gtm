@@ -16,12 +16,12 @@ the layout, the kind of hook, the order of the message and the shape (4:5, 9:16�
 It changes everything that is **theirs** into **yours**: your app's name, what it does, who it's for,
 the outcome it promises, your colours (as exact hex codes), your fonts, your tone, your logo and your
 screens. Their brand name, logo, people and exact words are never copied, and the claims it may make
-come only from your Brand page.
+come only from your app's **App settings › Brand** tab.
 
 ## Before you start (once)
 
 1. Open your app's **Brand** page and fill in at least your **colours** and a **logo** (or app icon).
-   ✅ **Checkpoint:** the Brand page shows your colours and logo. Without them the prompt still works,
+   ✅ **Checkpoint:** **App settings › Brand** shows your colours and logo. Without them the prompt still works,
    with plainer wording, and the sheet tells you what's missing.
 2. Optional: on the **Product** page, add a few **app screen** images. They are sent with the prompt so
    the ad shows your real app.
@@ -60,7 +60,7 @@ their brand is refused and your prompt stays; **Undo** puts the earlier one back
 
 **No image key yet?** The part says so, with the guides: [OpenAI](keys/openai.md) (one key, the one you
 may already have for reading ads) or [Higgsfield](keys/higgsfield.md) (its Marketing Studio ad models,
-with its own credits). Add either under **Settings > API keys**.
+with its own credits). Add either under **Settings > Your keys**.
 
 ## Steps: a full batch in Studio
 

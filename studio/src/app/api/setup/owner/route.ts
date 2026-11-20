@@ -1,3 +1,4 @@
+import { getTranslator } from "@/lib/i18n/server";
 import { writeStoredOwner } from "@/lib/install/config";
 import { completeAccountStep, isEmail } from "@/lib/server/provision";
 import { isResponse } from "@/lib/server/auth";
@@ -16,7 +17,8 @@ import { serverSignIn } from "@/lib/server/owner-session";
 export async function POST(request: Request) {
   const caller = await setupCaller(request);
   if (isResponse(caller)) return caller;
-  if (caller.mode !== "first-run") return refuse(409, "This install already has its owner.");
+  const { t } = await getTranslator();
+  if (caller.mode !== "first-run") return refuse(409, t("This install already has its owner."));
   const input = await readSetupBody(request);
   if (isResponse(input)) return input;
   const ref = targetRef(caller, input.body);
@@ -24,8 +26,8 @@ export async function POST(request: Request) {
   const connectOnly = input.body.connectOnly === true;
   const email = typeof input.body.email === "string" ? input.body.email.trim() : "";
   const password = typeof input.body.password === "string" ? input.body.password : "";
-  if (!connectOnly && !isEmail(email)) return refuse(400, "That doesn't look like an email address. Check it for typos.");
-  if (password.length < 8) return refuse(400, "Use a password with at least 8 characters.");
+  if (!connectOnly && !isEmail(email)) return refuse(400, t("That doesn't look like an email address. Check it for typos."));
+  if (password.length < 8) return refuse(400, t("Use a password with at least 8 characters."));
   let deps;
   try { deps = provisionDeps(); } catch (error) { return refuseError(error); }
 

@@ -42,9 +42,14 @@ export const chartSummaryUsd = () => textUsd(5_000, 2_000);
 /** A Google Play refresh: the Apify reviews actor reads up to 150 reviews, about $0.02 (release/docs/MARKET.md). */
 export const PLAY_REFRESH_USD = 0.02;
 
-/** "≈ $0.02" style: two decimals, or three below ten cents so a small cost isn't rounded to nothing. */
-export function approxUsd(amount: number): string {
-  if (!Number.isFinite(amount) || amount <= 0) return "$0";
-  if (amount < 0.005) return "under $0.01";
-  return `≈ $${amount < 0.1 ? amount.toFixed(3).replace(/0$/, "") : amount.toFixed(2)}`;
+/**
+ * "≈ $0.02" style: two decimals, or three below ten cents so a small cost isn't rounded to nothing. Pass
+ * the translator's `intl` for the amount in the page's language ("≈ US$0.02" in Chinese and Korean, like
+ * every other amount there) and its `t` for the words.
+ */
+export function approxUsd(amount: number, intl = "en-US", t: (text: string) => string = (text) => text): string {
+  const money = (n: number, decimals: number) => new Intl.NumberFormat(intl, { style: "currency", currency: "USD", minimumFractionDigits: Math.min(2, decimals), maximumFractionDigits: decimals }).format(n);
+  if (!Number.isFinite(amount) || amount <= 0) return money(0, 0);
+  if (amount < 0.005) return t("under $0.01");
+  return `≈ ${money(amount, amount < 0.1 ? 3 : 2)}`;
 }

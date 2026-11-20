@@ -1,9 +1,11 @@
 // When a creative may be approved, and when a template remake may become the template: one set of rules
 // for the review route (studio/src/app/api/studio/creatives/[id]/route.ts), the Studio's review panel
 // and the template library. The database enforces QA and the poster frame too; the rest lives here.
-// Plain TypeScript, safe in the browser.
+// Plain TypeScript, safe in the browser. Messages and badge labels are English, marked with m(): show
+// them with t().
 import { composedParam } from "./composed-ads";
 import { overlayParam } from "./logo-overlay";
+import { m } from "./i18n/translate";
 
 interface Reviewed {
   kind: string;
@@ -17,9 +19,9 @@ interface Reviewed {
 export function pendingWork(creative: Pick<Reviewed, "kind" | "copy">, jobParams: Record<string, unknown> | null | undefined): string | null {
   if (creative.kind !== "image") return null;
   const copy = creative.copy ?? {};
-  if (copy.composeError) return "The text didn't fit the layout: edit it (Edit text) before approving.";
-  if (composedParam(jobParams) && !copy.composed) return "The text isn't set on this ad yet. Wait for it, or try again.";
-  if (overlayParam(jobParams) && !copy.logo && !copy.logoRemoved) return "Our logo isn't placed on this ad yet. Wait for it, or try again.";
+  if (copy.composeError) return m("The text didn't fit the layout: edit it (Edit text) before approving.");
+  if (composedParam(jobParams) && !copy.composed) return m("The text isn't set on this ad yet. Wait for it, or try again.");
+  if (overlayParam(jobParams) && !copy.logo && !copy.logoRemoved) return m("Our logo isn't placed on this ad yet. Wait for it, or try again.");
   return null;
 }
 
@@ -32,12 +34,12 @@ export const needsHuman = (creative: Pick<Reviewed, "qa">) => (creative.qa?.need
  */
 export function approvalProblem(creative: Reviewed, jobParams: Record<string, unknown> | null | undefined, note: string | undefined): { error: string; status: number } | null {
   if (!["pass", "warn"].includes(creative.qa_status)) {
-    return { error: creative.qa_status === "fail" ? "QA failed this creative; fix it and make a new one." : "Wait for QA to finish first.", status: 409 };
+    return { error: creative.qa_status === "fail" ? m("QA failed this creative; fix it and make a new one.") : m("Wait for QA to finish first."), status: 409 };
   }
   const pending = pendingWork(creative, jobParams);
   if (pending) return { error: pending, status: 409 };
-  if (creative.kind === "video" && !creative.thumbnail_url) return { error: "This video has no poster frame, which Launch needs. Make it again.", status: 409 };
-  if (creative.qa_status === "warn" && !note) return { error: "QA raised warnings: add a note saying why it's fine to ship.", status: 400 };
+  if (creative.kind === "video" && !creative.thumbnail_url) return { error: m("This video has no poster frame, which Launch needs. Make it again."), status: 409 };
+  if (creative.qa_status === "warn" && !note) return { error: m("QA raised warnings: add a note saying why it's fine to ship."), status: 400 };
   // QA's "check yourself" items (needsHuman) are shown in the review panel; they don't block approving.
   return null;
 }
@@ -65,6 +67,6 @@ export function remakeOutcome(made: { id: string; qa_status: string; qa: { check
 
 /** How a QA verdict reads on a badge (the Studio's gallery and review panel, the Playground's results). */
 export const QA_BADGE: Record<string, { label: string; tone: "neutral" | "accent" | "win" | "warn" | "highlight" }> = {
-  pending: { label: "QA queued", tone: "neutral" }, running: { label: "Checking", tone: "accent" }, pass: { label: "QA passed", tone: "win" },
-  warn: { label: "QA warnings", tone: "highlight" }, fail: { label: "QA failed", tone: "warn" }, error: { label: "QA error", tone: "warn" },
+  pending: { label: m("QA queued"), tone: "neutral" }, running: { label: m("Checking"), tone: "accent" }, pass: { label: m("QA passed"), tone: "win" },
+  warn: { label: m("QA warnings"), tone: "highlight" }, fail: { label: m("QA failed"), tone: "warn" }, error: { label: m("QA error"), tone: "warn" },
 };

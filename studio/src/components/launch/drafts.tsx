@@ -4,17 +4,19 @@ import { useState } from "react";
 import type { LaunchDraft } from "@/lib/launch/types";
 import { Badge, Card, EmptyState, Gear } from "../ui";
 import { IN_PROGRESS, Section } from "./parts";
+import { m } from "@/lib/i18n/translate";
+import { useT } from "@/lib/i18n/client";
 
 const STATUS: Record<LaunchDraft["status"], { label: string; tone: "neutral" | "accent" | "win" | "warn" }> = {
-  queued: { label: "Queued", tone: "neutral" },
-  processing: { label: "Meta is processing the video", tone: "accent" },
-  creating: { label: "Creating the ad", tone: "accent" },
-  draft: { label: "Paused draft", tone: "win" },
-  error: { label: "Failed", tone: "warn" },
-  cancelled: { label: "Cancelled", tone: "neutral" },
+  queued: { label: m("Queued"), tone: "neutral" },
+  processing: { label: m("Meta is processing the video"), tone: "accent" },
+  creating: { label: m("Creating the ad"), tone: "accent" },
+  draft: { label: m("Paused draft"), tone: "win" },
+  error: { label: m("Failed"), tone: "warn" },
+  cancelled: { label: m("Cancelled"), tone: "neutral" },
 };
 
-const SOURCE: Record<LaunchDraft["source"], string> = { manual: "", automation: "daily upload", promotion: "promoted" };
+const SOURCE: Record<LaunchDraft["source"], string> = { manual: "", automation: m("daily upload"), promotion: m("promoted") };
 
 export function adsManagerAd(adAccountId: string | undefined, adId: string) {
   return adAccountId ? `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${adAccountId}&selected_ad_ids=${adId}` : `https://adsmanager.facebook.com/adsmanager/manage/ads?selected_ad_ids=${adId}`;
@@ -24,10 +26,11 @@ export function Drafts({ drafts, adAccountId }: { drafts: LaunchDraft[]; adAccou
   const [all, setAll] = useState(false);
   const shown = all ? drafts : drafts.slice(0, 12);
   const working = drafts.filter((d) => IN_PROGRESS.has(d.status)).length;
+  const { t } = useT();
   return (
-    <Section id="drafts" title="Drafts on Meta" hint={working ? `${working} on the way` : "Publish them in Ads Manager when you're happy with them."}>
+    <Section id="drafts" title={t("Drafts on Meta")} hint={working ? t("{n} on the way", { n: working }) : t("Publish them in Ads Manager when you're happy with them.")}>
       {drafts.length === 0 ? (
-        <EmptyState className="py-8" title="Nothing launched yet" body="Pick approved creatives above and launch them: they arrive here as paused drafts." />
+        <EmptyState className="py-8" title={t("Nothing launched yet")} body={t("Pick approved creatives above and launch them: they arrive here as paused drafts.")} />
       ) : (
         <Card className="overflow-hidden py-1">
           {shown.map((d) => {
@@ -40,15 +43,15 @@ export function Drafts({ drafts, adAccountId }: { drafts: LaunchDraft[]; adAccou
                   {d.error && <p className="mt-1 text-xs text-warn">{d.error}</p>}
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  {SOURCE[d.source] && <Badge>{SOURCE[d.source]}</Badge>}
-                  <Badge>{d.stage === "TEST" ? "testing" : "scaling"}</Badge>
-                  <Badge tone={s.tone}>{IN_PROGRESS.has(d.status) && <Gear className="size-3" />}{s.label}</Badge>
-                  {d.ad_id && <a href={adsManagerAd(adAccountId, d.ad_id)} target="_blank" rel="noreferrer" className="text-xs font-medium underline-offset-2 hover:underline">Ads Manager ↗</a>}
+                  {SOURCE[d.source] && <Badge>{t(SOURCE[d.source])}</Badge>}
+                  <Badge>{d.stage === "TEST" ? t("testing") : t("scaling")}</Badge>
+                  <Badge tone={s.tone}>{IN_PROGRESS.has(d.status) && <Gear className="size-3" />}{t(s.label)}</Badge>
+                  {d.ad_id && <a href={adsManagerAd(adAccountId, d.ad_id)} target="_blank" rel="noreferrer" className="text-xs font-medium underline-offset-2 hover:underline">{t("Ads Manager ↗")}</a>}
                 </div>
               </div>
             );
           })}
-          {drafts.length > shown.length && <button type="button" onClick={() => setAll(true)} className="h-9 w-full px-3 text-left text-xs text-muted hover:text-ink">Show all {drafts.length}</button>}
+          {drafts.length > shown.length && <button type="button" onClick={() => setAll(true)} className="h-9 w-full px-3 text-left text-xs text-muted hover:text-ink">{t("Show all {n}", { n: drafts.length })}</button>}
         </Card>
       )}
     </Section>

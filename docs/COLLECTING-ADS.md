@@ -48,7 +48,7 @@ particular competitor. That's why both paid TikTok sources start switched off.
 ## Steps: set up automatic collection (once)
 
 1. Add your Apify key: follow [keys/apify.md](keys/apify.md) (about 5 minutes).
-   ✅ **Checkpoint:** **Settings > API keys** shows Apify as saved and checked.
+   ✅ **Checkpoint:** **Settings > Your keys** shows Apify as saved and checked.
 2. Open **Settings > Research sources**.
    ✅ **Checkpoint:** **Meta ads** and **Google ads** say **On**. Both are on **Auto**, which turns a
    source on as soon as its key is saved.
@@ -101,7 +101,7 @@ $1. Apify takes it from your Apify credit; see your usage at https://console.api
 ## Troubleshooting
 
 - **"No source can collect yet."** No key is saved for any source that is switched on. Add the Apify key
-  (Settings > API keys), or switch a source on in Settings > Research sources.
+  (Settings > Your keys), or switch a source on in Settings > Research sources.
 - **"Apify's monthly credit is used up."** Add credit or upgrade at https://console.apify.com/billing,
   then collect again. Nothing was charged for the ads that didn't come in.
 - **Google found ads from the wrong company.** The competitor has no website or Google advertiser id, so

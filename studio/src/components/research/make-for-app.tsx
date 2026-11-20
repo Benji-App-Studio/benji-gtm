@@ -14,13 +14,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { featureState } from "@/lib/capabilities";
+import { useExample } from "@/lib/example-mode";
 import { repoFileUrl } from "@/lib/brand-config";
-import type { ImageQuality, ImageResolution } from "@/lib/creative-plan";
+import type { ImageQuality, ImageResolution, SourceAdRef } from "@/lib/creative-plan";
 import { fmtUsd, otherProvider, PROVIDER_NAME, providerOfJob, type ImageProvider, type OpenAiImagePlan } from "@/lib/image-provider";
 import { useInstall } from "@/lib/install/use-install";
 import {
   appFromBrand, brandGaps, buildPrompts, generatePlan, improveCostUsd, makeCost, makeHandoff, makeReferenceCount, makeRequest, providerErrorText, providerSizes, sizeAllowed,
-  VARIANT_HOW, VARIANT_LABEL, type PromptVariant,
+  VARIANT_HOW, VARIANT_LABEL, type AdBlueprint, type PromptVariant,
 } from "@/lib/make-for-app";
 import type { Aspect } from "@/lib/meta-formats";
 import type { ProductAsset } from "@/lib/product-assets";
@@ -36,9 +37,19 @@ import { StorageNotice, useStorageGuard } from "../storage-notice";
 import { confirmRetry } from "../studio/retry-confirm";
 import { Badge, Button, ButtonLink, cx, Gear, inputClass, Segmented, Spinner } from "../ui";
 import { CopyButton, downloadFile, fileName } from "./copy-ad";
+import { appSettingsHref } from "@/lib/nav-model";
+import { useT } from "@/lib/i18n/client";
+import { m } from "@/lib/i18n/translate";
+import { sentenceGap } from "@/lib/i18n/join";
+import { rich } from "../rich";
 
 const GUIDE = repoFileUrl("docs/RECREATE-ADS.md");
-const QUALITY_LABEL: Record<ImageQuality, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
+const QUALITY_LABEL: Record<ImageQuality, string> = { low: m("Low"), medium: m("Medium"), high: m("High"), xhigh: m("Extra high"), max: m("Max") };
+
+/** The blueprint's format name in the page's language: its m()-marked label translated, else their own name as it is. */
+function formatName(blueprint: Pick<AdBlueprint, "format" | "formatText">, t: (text: string, vars?: Record<string, string | number>) => string): string {
+  return blueprint.formatText ? t(blueprint.formatText.text, blueprint.formatText.vars) : blueprint.format;
+}
 
 interface Job { id: string; status: string; error: string | null; params: Record<string, unknown>; aspect: string; variant: number; model: string; cost_estimate: number }
 interface Made { id: string; job_id: string | null; url: string; thumbnail_url: string | null; kind: string; aspect: string }
@@ -72,7 +83,7 @@ async function copyText(text: string): Promise<void> {
     area.select();
     const ok = document.execCommand("copy");
     area.remove();
-    if (!ok) throw new Error("The browser didn't allow copying.");
+    if (!ok) throw new Error("copy refused");
   }
 }
 
@@ -103,9 +114,13 @@ export function MakeForApp({ productId, ad, brand, assets, measured, media, open
   /** Opens the detailed Recreate sheet (every flag and option) on the same ad. */
   onOpenRecreate: () => void;
 }) {
+  const { t, intl, locale } = useT();
   const router = useRouter();
-  const app = useMemo(() => appFromBrand(brand, assets), [brand, assets]);
-  const appName = app.name || "your app";
+  // The example app's pictures are bundled with the app (same address, http while developing): they count as the real ones would.
+  const example = useExample();
+  const fetchable = useCallback((url: string) => /^https:\/\//.test(url) || (example && url.startsWith(`${window.location.origin}/`)), [example]);
+  const app = useMemo(() => appFromBrand(brand, assets, fetchable), [brand, assets, fetchable]);
+  const appName = app.name || t("your app");
   const gaps = brandGaps(app);
   const mainGaps = gaps.filter((g) => g.main && g.key !== "name");
   const src = useMemo(() => sourceFromAd(ad, measured), [ad, measured]);
@@ -115,7 +130,7 @@ export function MakeForApp({ productId, ad, brand, assets, measured, media, open
   // Their image: the stored copy, else the preview link if it still loads. A video's poster stands in for it.
   const first = media[0];
   const candidate = (video ? first?.thumbnail_url ?? ad.thumb : media.find((m) => m.type === "image")?.url ?? ad.thumb) ?? null;
-  const loads = useLoads(candidate && /^https:\/\//.test(candidate) ? candidate : null);
+  const loads = useLoads(candidate && fetchable(candidate) ? candidate : null);
   const reference = loads ? candidate : null;
 
   const gen = useMemo(() => generatePlan(app, reference), [app, reference]);
@@ -126,20 +141,20 @@ export function MakeForApp({ productId, ad, brand, assets, measured, media, open
   const [improving, setImproving] = useState(false);
   const text = edits[variant] ?? prompts[variant];
   const { install } = useInstall();
-  const ai = featureState("ai", install);
+  const ai = featureState("ai", install, null, { t, intl });
   const openaiKey = !install || Boolean(install.keys.OPENAI_API_KEY?.set);
   const higgsfieldKey = !install || Boolean(install.keys.HIGGSFIELD_API_KEY?.set);
-  const images = featureState("studio.images", install);
+  const images = featureState("studio.images", install, null, { t, intl });
 
   async function improve() {
     const cost = improveCostUsd(text.length);
-    const ok = await ask({ title: "Improve this prompt with AI?", confirm: `Spend at most ≈${fmtUsd(cost)} at OpenAI`, body: <Facts rows={[["What", "OpenAI rewrites it more precisely, keeping every fact, colour, font and rule"], ["Estimated OpenAI cost", `at most ≈ ${fmtUsd(cost)}`]]} note="It never adds a claim, number or brand. A rewrite that breaks your brand rules is refused and your prompt stays." /> });
+    const ok = await ask({ title: t("Improve this prompt with AI?"), confirm: t("Spend at most ≈{usd} at OpenAI", { usd: fmtUsd(cost, intl) }), body: <Facts rows={[[t("What"), t("OpenAI rewrites it more precisely, keeping every fact, colour, font and rule")], [t("Estimated OpenAI cost"), t("at most ≈ {usd}", { usd: fmtUsd(cost, intl) })]]} note={t("It never adds a claim, number or brand. A rewrite that breaks your brand rules is refused and your prompt stays.")} /> });
     if (!ok) return;
     setImproving(true);
     const response = await fetch(`/api/products/${productId}/improve-prompt`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: text, mustAvoid: prompts.mustAvoid }) }).catch(() => null);
     const data = await response?.json().catch(() => null) as { prompt?: string; note?: string; error?: string } | null;
     setImproving(false);
-    if (!response?.ok || !data?.prompt) return notice(data?.error ?? "OpenAI didn't answer. Try again.");
+    if (!response?.ok || !data?.prompt) return notice(data?.error ?? t("OpenAI didn't answer. Try again."));
     setImproved({ variant, before: text, note: data.note ?? "" });
     setEdits((e) => ({ ...e, [variant]: data.prompt }));
   }
@@ -154,84 +169,84 @@ export function MakeForApp({ productId, ad, brand, assets, measured, media, open
   return (
     <PanelPortal onClose={onClose}>
       <div className={`${MODAL_OVERLAY} z-[45]`} onClick={(e) => { e.stopPropagation(); onClose(); }}>
-        <aside className={`${MODAL} max-w-2xl`} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Make this for ${appName}`}>
+        <aside className={`${MODAL} max-w-2xl`} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t("Make this for {app}", { app: appName })}>
           <div className="sticky top-0 z-10 flex min-h-11 items-center justify-between gap-2 border-b border-line bg-card px-4 py-2">
-            <span className="truncate text-sm font-medium">Make this for {appName}</span>
-            <button type="button" onClick={onClose} className="grid size-7 shrink-0 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink" aria-label="Close"><IconX className="size-3.5" /></button>
+            <span className="truncate text-sm font-medium">{t("Make this for {app}", { app: appName })}</span>
+            <button type="button" onClick={onClose} className="grid size-7 shrink-0 place-items-center rounded-control text-muted hover:bg-hover hover:text-ink" aria-label={t("Close")}><IconX className="size-3.5" /></button>
           </div>
           <div className="grid gap-5 p-4">
             <div className="flex gap-3">
               {candidate && loads !== false && (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={candidate} alt={`The ad from ${ad.competitor ?? ad.page_name}`} className="h-20 w-auto shrink-0 rounded-small border border-line object-cover" />
+                <img src={candidate} alt={t("The ad from {name}", { name: ad.competitor ?? ad.page_name })} className="h-20 w-auto shrink-0 rounded-small border border-line object-cover" />
               )}
               <div className="grid min-w-0 content-start gap-1 text-xs text-muted">
-                <p className="text-sm text-ink">The same kind of ad as {ad.competitor ?? ad.page_name}&apos;s, made for {appName}.</p>
-                <p>It keeps their format, layout, hook and message order ({prompts.blueprint.format.toLowerCase()}, {prompts.blueprint.aspect}) and swaps in your product. Their name, logo, people and words are never copied.</p>
-                <p>{prompts.blueprint.fromRead ? "Built from the AI's read of their ad." : "Built from the ad's own text and type (read the ad for a closer match)."} <a href={GUIDE} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 rounded-xs text-accent hover:underline">How this works<IconExternal className="size-3" /></a></p>
+                <p className="text-sm text-ink">{t("The same kind of ad as {name}'s, made for {app}.", { name: ad.competitor ?? ad.page_name, app: appName })}</p>
+                <p>{t("It keeps their format, layout, hook and message order ({format}, {aspect}) and swaps in your product. Their name, logo, people and words are never copied.", { format: locale === "en" ? prompts.blueprint.format.toLowerCase() : formatName(prompts.blueprint, t), aspect: prompts.blueprint.aspect })}</p>
+                <p>{prompts.blueprint.fromRead ? t("Built from the AI's read of their ad.") : t("Built from the ad's own text and type (read the ad for a closer match).")}{sentenceGap(locale)}<a href={GUIDE} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 rounded-xs text-accent hover:underline">{t("How this works")}<IconExternal className="size-3" /></a></p>
               </div>
             </div>
 
             {mainGaps.length > 0 && (
               <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-small border border-caution/30 bg-caution-soft px-3 py-2 text-xs text-caution-ink">
-                <span className="min-w-0 flex-[1_1_260px]">Your brand has no {mainGaps.map((g) => g.label).join(" or ")} yet, so the prompt uses plainer wording. You can still continue.</span>
-                <Link href={workspaceHref(productId, "brand")} className="shrink-0 rounded-xs font-medium text-accent hover:underline">Add them on Brand</Link>
+                <span className="min-w-0 flex-[1_1_260px]">{t("Your brand has no {items} yet, so the prompt uses plainer wording. You can still continue.", { items: new Intl.ListFormat(intl, { type: "disjunction" }).format(mainGaps.map((g) => t(g.label))) })}</span>
+                <Link href={appSettingsHref(productId, "brand")} className="shrink-0 rounded-xs font-medium text-accent hover:underline">{t("Add them in App settings")}</Link>
               </div>
             )}
             {video && (
               <div className="grid gap-1.5">
-                <Segmented label="What to make from their video" value={mode} onChange={setMode} options={[{ value: "still", label: "A still image in its style" }, { value: "video", label: "A video prompt" }]} />
-                <p className="text-xs text-muted">{mode === "still" ? "One image ad that looks like a frame of their video, from its poster. It is not a video." : "A shot-by-shot prompt for a video tool (Higgsfield's Seedance, Sora, Veo). Generate here makes stills only; for a video, send it to Studio."}</p>
+                <Segmented label={t("What to make from their video")} value={mode} onChange={setMode} options={[{ value: "still", label: t("A still image in its style") }, { value: "video", label: t("A video prompt") }]} />
+                <p className="text-xs text-muted">{mode === "still" ? t("One image ad that looks like a frame of their video, from its poster. It is not a video.") : t("A shot-by-shot prompt for a video tool (Higgsfield's Seedance, Sora, Veo). Generate here makes stills only; for a video, send it to Studio.")}</p>
               </div>
             )}
             {!reference && (
-              <p className="text-xs text-muted">{loads === null && candidate ? "Checking their image…" : "Their image wasn't saved and its link no longer loads, so there's no reference to download or send: the prompts describe the layout instead."}</p>
+              <p className="text-xs text-muted">{loads === null && candidate ? t("Checking their image…") : t("Their image wasn't saved and its link no longer loads, so there's no reference to download or send: the prompts describe the layout instead.")}</p>
             )}
 
-            <Section n={1} title="Ready-made prompt" hint="Paste it into ChatGPT, Higgsfield or another tool. No key needed.">
-              <Segmented label="Prompt for" value={variant} onChange={setVariant} options={(Object.keys(VARIANT_LABEL) as PromptVariant[]).map((v) => ({ value: v, label: VARIANT_LABEL[v] }))} />
-              <textarea className={cx(inputClass, "min-h-56 font-mono text-xs leading-relaxed")} value={text} aria-label={`${VARIANT_LABEL[variant]} prompt`}
+            <Section n={1} title={t("Ready-made prompt")} hint={t("Paste it into ChatGPT, Higgsfield or another tool. No key needed.")}>
+              <Segmented label={t("Prompt for")} value={variant} onChange={setVariant} options={(Object.keys(VARIANT_LABEL) as PromptVariant[]).map((v) => ({ value: v, label: t(VARIANT_LABEL[v]) }))} />
+              <textarea className={cx(inputClass, "min-h-56 font-mono text-xs leading-relaxed")} value={text} aria-label={t("{tool} prompt", { tool: t(VARIANT_LABEL[variant]) })}
                 onChange={(e) => setEdits((all) => ({ ...all, [variant]: e.target.value }))} />
-              <p className="text-xs text-muted">{VARIANT_HOW[variant]}</p>
+              <p className="text-xs text-muted">{t(VARIANT_HOW[variant])}</p>
               {improved?.variant === variant && (
-                <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted"><IconCheck className="size-3.5 text-win" />Improved with AI{improved.note ? `: ${improved.note}` : "."}
-                  <button type="button" className="rounded-xs text-accent hover:underline" onClick={() => { setEdits((e) => ({ ...e, [variant]: improved.before })); setImproved(null); }}>Undo</button>
+                <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted"><IconCheck className="size-3.5 text-win" />{improved.note ? t("Improved with AI: {note}", { note: improved.note }) : t("Improved with AI.")}
+                  <button type="button" className="rounded-xs text-accent hover:underline" onClick={() => { setEdits((e) => ({ ...e, [variant]: improved.before })); setImproved(null); }}>{t("Undo")}</button>
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
-                <CopyButton label="Copy prompt" variant="secondary" run={() => copyText(text)} />
-                {reference && <CopyButton label="Download reference" icon="download" variant="ghost" run={() => downloadFile(reference, `${fileName(ad)}-reference`)} />}
-                <a href={`/api/products/${productId}/brand-kit`} download className="inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-sm font-medium text-ink transition-colors hover:bg-hover"><IconDownload className="size-3.5" />Download my brand kit</a>
+                <CopyButton label={t("Copy prompt")} variant="secondary" run={() => copyText(text)} />
+                {reference && <CopyButton label={t("Download reference")} icon="download" variant="ghost" run={() => downloadFile(reference, `${fileName(ad)}-reference`)} />}
+                <a href={`/api/products/${productId}/brand-kit`} download className="inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-sm font-medium text-ink transition-colors hover:bg-hover"><IconDownload className="size-3.5" />{t("Download my brand kit")}</a>
                 {ai.ok && openaiKey && !ai.unknown && (
-                  <Button size="sm" variant="ghost" disabled={improving} onClick={improve} title="One short OpenAI request with your key">
-                    {improving && <Spinner className="size-3.5" />}Improve with AI<span className="font-normal opacity-60">· ≤{fmtUsd(improveCostUsd(text.length))}</span>
+                  <Button size="sm" variant="ghost" disabled={improving} onClick={improve} title={t("One short OpenAI request with your key")}>
+                    {improving && <Spinner className="size-3.5" />}{t("Improve with AI")}<span className="font-normal opacity-60">· ≤{fmtUsd(improveCostUsd(text.length), intl)}</span>
                   </Button>
                 )}
               </div>
             </Section>
 
-            <Section n={2} title="Generate here" hint={`One image, made with your own key and saved to Studio, where you can approve, edit or download it.${video ? " From a video ad, this makes a still." : ""}`}>
+            <Section n={2} title={t("Generate here")} hint={video ? t("One image, made with your own key and saved to Studio, where you can approve, edit or download it. From a video ad, this makes a still.") : t("One image, made with your own key and saved to Studio, where you can approve, edit or download it.")}>
               {images.ok ? (
-                <GenerateHere productId={productId} prompt={prompts.generate} mustAvoid={prompts.mustAvoid} blueprint={prompts.blueprint} reference={reference}
+                <GenerateHere productId={productId} prompt={prompts.generate} mustAvoid={prompts.mustAvoid} blueprint={prompts.blueprint} reference={reference} sourceAd={{ adId: src.adId, libraryId: src.libraryId, pageName: src.competitor ?? src.pageName }}
                   gen={gen} screenshots={app.screenshots} openaiKey={openaiKey} higgsfieldKey={higgsfieldKey} openaiPlan={openaiPlan} />
               ) : (
                 <div className="grid gap-2 rounded-small border border-line bg-raised p-3 text-xs">
-                  <p className="flex items-center gap-1.5 text-sm font-medium text-ink"><IconLock className="size-3.5 text-muted" />Add an image key to generate here</p>
-                  <p className="text-muted">OpenAI: one key, the one you may already have for reading ads. Higgsfield: its Marketing Studio ad models, with its own credits.</p>
+                  <p className="flex items-center gap-1.5 text-sm font-medium text-ink"><IconLock className="size-3.5 text-muted" />{t("Add an image key to generate here")}</p>
+                  <p className="text-muted">{t("OpenAI: one key, the one you may already have for reading ads. Higgsfield: its Marketing Studio ad models, with its own credits.")}</p>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                    <a href={repoFileUrl("docs/keys/openai.md")} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xs font-medium text-accent hover:underline">OpenAI key guide<IconExternal className="size-3" /></a>
-                    <a href={repoFileUrl("docs/keys/higgsfield.md")} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xs font-medium text-accent hover:underline">Higgsfield key guide<IconExternal className="size-3" /></a>
-                    <ButtonLink href="/app/settings/keys" size="sm" variant="secondary">Settings &gt; API keys</ButtonLink>
+                    <a href={repoFileUrl("docs/keys/openai.md")} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xs font-medium text-accent hover:underline">{t("OpenAI key guide")}<IconExternal className="size-3" /></a>
+                    <a href={repoFileUrl("docs/keys/higgsfield.md")} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xs font-medium text-accent hover:underline">{t("Higgsfield key guide")}<IconExternal className="size-3" /></a>
+                    <ButtonLink href="/app/settings/keys" size="sm" variant="secondary">{t("Settings › Your keys")}</ButtonLink>
                   </div>
-                  <p className="text-muted">Until then, copy the prompt above into ChatGPT or Higgsfield.</p>
+                  <p className="text-muted">{t("Until then, copy the prompt above into ChatGPT or Higgsfield.")}</p>
                 </div>
               )}
             </Section>
 
-            <Section n={3} title="Send to Studio" hint="For a full batch: several angles and sizes from the same prompt, made and checked in Studio.">
+            <Section n={3} title={t("Send to Studio")} hint={t("For a full batch: several angles and sizes from the same prompt, made and checked in Studio.")}>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="secondary" onClick={sendToStudio}>Send to Studio</Button>
-                <Button size="sm" variant="ghost" onClick={onOpenRecreate}>Check every detail first</Button>
+                <Button size="sm" variant="secondary" onClick={sendToStudio}>{t("Send to Studio")}</Button>
+                <Button size="sm" variant="ghost" onClick={onOpenRecreate}>{t("Check every detail first")}</Button>
               </div>
             </Section>
           </div>
@@ -241,10 +256,12 @@ export function MakeForApp({ productId, ad, brand, assets, measured, media, open
   );
 }
 
-function GenerateHere({ productId, prompt, mustAvoid, blueprint, reference, gen, screenshots, openaiKey, higgsfieldKey, openaiPlan }: {
-  productId: string; prompt: string; mustAvoid: string[]; blueprint: ReturnType<typeof buildPrompts>["blueprint"]; reference: string | null;
+function GenerateHere({ productId, prompt, mustAvoid, blueprint, reference, sourceAd, gen, screenshots, openaiKey, higgsfieldKey, openaiPlan }: {
+  productId: string; prompt: string; mustAvoid: string[]; blueprint: ReturnType<typeof buildPrompts>["blueprint"]; reference: string | null; sourceAd: SourceAdRef;
   gen: ReturnType<typeof generatePlan>; screenshots: number; openaiKey: boolean; higgsfieldKey: boolean; openaiPlan?: OpenAiImagePlan | null;
 }) {
+  const { t, tn, intl } = useT();
+  const sep = intl.startsWith("ja") || intl.startsWith("zh") ? "、" : ", ";
   const providers = ([higgsfieldKey ? "higgsfield" : null, openaiKey ? "openai" : null].filter(Boolean) as ImageProvider[]);
   const [provider, setProvider] = useState<ImageProvider>(providers.includes("openai") && !providers.includes("higgsfield") ? "openai" : providers[0] ?? "higgsfield");
   const sizes = providerSizes(provider, openaiPlan);
@@ -252,8 +269,8 @@ function GenerateHere({ productId, prompt, mustAvoid, blueprint, reference, gen,
   const [resolution, setResolution] = useState<ImageResolution>("2k");
   const [quality, setQuality] = useState<ImageQuality>("medium");
   const okSize = sizeAllowed(provider, openaiPlan, resolution, quality);
-  const input = { prompt, blueprint, provider, aspect, resolution, quality, reference, logo: gen.logo, screens: gen.screens, screenshots: gen.screenshots, mustAvoid };
-  const request = useMemo(() => makeRequest(input), [prompt, provider, aspect, resolution, quality, reference, gen.logo, gen.screens, gen.screenshots, mustAvoid]); // eslint-disable-line react-hooks/exhaustive-deps
+  const input = { prompt, blueprint, provider, aspect, resolution, quality, reference, logo: gen.logo, screens: gen.screens, screenshots: gen.screenshots, mustAvoid, sourceAd };
+  const request = useMemo(() => makeRequest(input), [prompt, provider, aspect, resolution, quality, reference, gen.logo, gen.screens, gen.screenshots, mustAvoid, sourceAd.adId]); // eslint-disable-line react-hooks/exhaustive-deps
   const local = makeCost({ provider, aspect, resolution, quality, references: makeReferenceCount(input, screenshots), promptChars: prompt.length + 300 });
   // The exact price from the planner (what the batch route charges); the local estimate shows until it answers.
   const [plan, setPlan] = useState<{ key: string; credits: number; usd: number; errors: string[]; warnings: string[] } | null>(null);
@@ -266,7 +283,8 @@ function GenerateHere({ productId, prompt, mustAvoid, blueprint, reference, gen,
     return () => { live = false; };
   }, [key, productId, request]);
   const exact = plan?.key === key ? plan : null;
-  const label = exact ? (provider === "openai" ? `~${fmtUsd(exact.usd)} at OpenAI` : `~${exact.credits} credit${exact.credits === 1 ? "" : "s"} at Higgsfield`) : local.label;
+  const priced = exact ?? local;
+  const label = provider === "openai" ? t("~{usd} at OpenAI", { usd: fmtUsd(priced.usd, intl) }) : tn(priced.credits, "~{n} credit at Higgsfield", "~{n} credits at Higgsfield");
   const storage = useStorageGuard("generate");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -278,7 +296,7 @@ function GenerateHere({ productId, prompt, mustAvoid, blueprint, reference, gen,
     const response = await fetch(`/api/studio/${productId}/batches`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request, confirmedCredits: exact.credits, confirmedUsd: exact.usd }) }).catch(() => null);
     const data = await response?.json().catch(() => null) as { batchId?: string; error?: string } | null;
     setBusy(false);
-    if (!response?.ok || !data?.batchId) return setError(data?.error ?? "Couldn't start it. Try again.");
+    if (!response?.ok || !data?.batchId) return setError(data?.error ?? t("Couldn't start it. Try again."));
     setBatchId(data.batchId);
     void refreshStorage();
   }
@@ -287,27 +305,27 @@ function GenerateHere({ productId, prompt, mustAvoid, blueprint, reference, gen,
     <div className="grid gap-3">
       <div className="flex flex-wrap items-end gap-2">
         {providers.length > 1 ? (
-          <Segmented label="Provider" value={provider} onChange={setProvider} options={providers.map((p) => ({ value: p, label: PROVIDER_NAME[p] }))} />
+          <Segmented label={t("Provider")} value={provider} onChange={setProvider} options={providers.map((p) => ({ value: p, label: PROVIDER_NAME[p] }))} />
         ) : <Badge>{PROVIDER_NAME[provider]}</Badge>}
-        <select className={cx(inputClass, "h-7 w-auto! py-1 text-xs")} aria-label="Aspect ratio" value={aspect} onChange={(e) => setAspect(e.target.value as Aspect)}>
-          {sizes.aspects.map((a) => <option key={a} value={a}>{a}{a === blueprint.aspect ? " (as theirs)" : ""}</option>)}
+        <select className={cx(inputClass, "h-7 w-auto! py-1 text-xs")} aria-label={t("Aspect ratio")} value={aspect} onChange={(e) => setAspect(e.target.value as Aspect)}>
+          {sizes.aspects.map((a) => <option key={a} value={a}>{a === blueprint.aspect ? t("{aspect} (as theirs)", { aspect: a }) : a}</option>)}
         </select>
-        <select className={cx(inputClass, "h-7 w-auto! py-1 text-xs")} aria-label="Resolution" value={resolution} onChange={(e) => setResolution(e.target.value as ImageResolution)}>
+        <select className={cx(inputClass, "h-7 w-auto! py-1 text-xs")} aria-label={t("Resolution")} value={resolution} onChange={(e) => setResolution(e.target.value as ImageResolution)}>
           {sizes.resolutions.map((r) => <option key={r} value={r}>{r.toUpperCase()}</option>)}
         </select>
-        <select className={cx(inputClass, "h-7 w-auto! py-1 text-xs")} aria-label="Quality" value={quality} onChange={(e) => setQuality(e.target.value as ImageQuality)}>
-          {sizes.qualities.map((q) => <option key={q} value={q} disabled={!sizeAllowed(provider, openaiPlan, resolution, q)}>{QUALITY_LABEL[q]}</option>)}
+        <select className={cx(inputClass, "h-7 w-auto! py-1 text-xs")} aria-label={t("Quality")} value={quality} onChange={(e) => setQuality(e.target.value as ImageQuality)}>
+          {sizes.qualities.map((q) => <option key={q} value={q} disabled={!sizeAllowed(provider, openaiPlan, resolution, q)}>{t(QUALITY_LABEL[q])}</option>)}
         </select>
       </div>
-      {provider === "higgsfield" && aspect === "4:5" && <p className="text-xs text-muted">Higgsfield&apos;s API makes 4:5 as 3:4; Meta trims it to 4:5.</p>}
-      {!okSize && <p className="text-xs text-warn">This quality at {resolution.toUpperCase()} takes longer than your Supabase plan allows one run. Pick a lower quality or resolution.</p>}
+      {provider === "higgsfield" && aspect === "4:5" && <p className="text-xs text-muted">{t("Higgsfield's API makes 4:5 as 3:4; Meta trims it to 4:5.")}</p>}
+      {!okSize && <p className="text-xs text-warn">{t("This quality at {resolution} takes longer than your Supabase plan allows one run. Pick a lower quality or resolution.", { resolution: resolution.toUpperCase() })}</p>}
       {exact?.errors[0] && <p className="text-xs text-warn">{exact.errors[0]}</p>}
       <StorageNotice action="generate" />
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" disabled={busy || !exact || Boolean(exact.errors.length) || !okSize || storage.block} onClick={start}>
-          {busy && <Spinner className="size-3.5" />}{batchId ? "Generate another" : "Generate"}<span className="font-normal opacity-70">· {label}</span>
+          {busy && <Spinner className="size-3.5" />}{batchId ? t("Generate another") : t("Generate")}<span className="font-normal opacity-70">· {label}</span>
         </Button>
-        <span className="text-xs text-muted">{reference ? "Their ad goes as the layout reference" : "No reference image"}{gen.logo ? ", your logo after it" : ""}{gen.refs.screens ? `, ${gen.refs.screens} app screen${gen.refs.screens === 1 ? "" : "s"}` : ""}.</span>
+        <span className="text-xs text-muted">{[reference ? t("Their ad goes as the layout reference") : t("No reference image"), gen.logo ? t("your logo after it") : "", gen.refs.screens ? tn(gen.refs.screens, "{n} app screen", "{n} app screens") : ""].filter(Boolean).join(sep)}</span>
       </div>
       {error && <p role="alert" className="text-xs text-warn">{error}</p>}
       {batchId && <Results key={batchId} productId={productId} batchId={batchId} openaiKey={openaiKey} higgsfieldKey={higgsfieldKey} />}
@@ -317,6 +335,7 @@ function GenerateHere({ productId, prompt, mustAvoid, blueprint, reference, gen,
 
 /** What "Generate here" started, live: each job's status, its image when it's ready, and a way on when it fails. */
 function Results({ productId, batchId, openaiKey, higgsfieldKey }: { productId: string; batchId: string; openaiKey: boolean; higgsfieldKey: boolean }) {
+  const { t, intl } = useT();
   const [data, setData] = useState<{ jobs: Job[]; creatives: Made[] } | null>(null);
   const [acting, setActing] = useState<string | null>(null);
   const supabase = useMemo(() => createClient(), []);
@@ -337,11 +356,11 @@ function Results({ productId, batchId, openaiKey, higgsfieldKey }: { productId: 
   }, [batchId, load, supabase]);
 
   const post = (id: string, body: Record<string, unknown>) => fetch(`/api/studio/jobs/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-    .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({ error: "The server didn't answer. Try again." })) }));
+    .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({ error: t("The server didn't answer. Try again.") })) }));
 
   async function retry(job: Job) {
     const provider = providerOfJob(job.params);
-    if (!(await confirmRetry({ provider, credits: Number(job.cost_estimate) || 0, usd: Number(job.params.est_usd) || 0, what: `Image · ${job.aspect}` }))) return;
+    if (!(await confirmRetry({ provider, credits: Number(job.cost_estimate) || 0, usd: Number(job.params.est_usd) || 0, what: t("Image · {aspect}", { aspect: job.aspect }) }))) return;
     setActing(job.id);
     const done = await post(job.id, { action: "retry" });
     setActing(null);
@@ -354,19 +373,19 @@ function Results({ productId, batchId, openaiKey, higgsfieldKey }: { productId: 
     setActing(job.id);
     const planned = await post(job.id, { action: "plan-switch", provider: to });
     setActing(null);
-    if (!planned.ok) return notice(planned.data.error ?? "Couldn't check the price. Try again.");
+    if (!planned.ok) return notice(planned.data.error ?? t("Couldn't check the price. Try again."));
     const { credits, usd } = planned.data as { credits: number; usd: number };
-    const ok = await ask({ title: `Make it with ${PROVIDER_NAME[to]}?`, confirm: to === "openai" ? `Spend ≈${fmtUsd(usd)} at OpenAI` : `Spend ~${credits} credits`,
-      body: <Facts rows={[["Model", `GPT Image 2.5 · via ${PROVIDER_NAME[to]}`], to === "openai" ? ["Estimated OpenAI cost", `≈ ${fmtUsd(usd)}`] : ["Estimated Higgsfield cost", `${credits} credits`]]} note="The same prompt and images on the other provider." /> });
+    const ok = await ask({ title: t("Make it with {provider}?", { provider: PROVIDER_NAME[to] }), confirm: to === "openai" ? t("Spend ≈{usd} at OpenAI", { usd: fmtUsd(usd, intl) }) : t("Spend ~{n} credits", { n: credits }),
+      body: <Facts rows={[[t("Model"), t("GPT Image 2.5 · via {provider}", { provider: PROVIDER_NAME[to] })], to === "openai" ? [t("Estimated OpenAI cost"), `≈ ${fmtUsd(usd, intl)}`] : [t("Estimated Higgsfield cost"), t("{n} credits", { n: credits })]]} note={t("The same prompt and images on the other provider.")} /> });
     if (!ok) return;
     setActing(job.id);
     const made = await post(job.id, { action: "switch", provider: to, confirmedCredits: credits, confirmedUsd: usd });
     setActing(null);
-    if (!made.ok) return notice(made.data.error ?? "Couldn't queue it. Try again.");
+    if (!made.ok) return notice(made.data.error ?? t("Couldn't queue it. Try again."));
     load();
   }
 
-  if (!data) return <p className="flex items-center gap-1.5 text-xs text-muted"><Spinner className="size-3.5" />Starting…</p>;
+  if (!data) return <p className="flex items-center gap-1.5 text-xs text-muted"><Spinner className="size-3.5" />{t("Starting…")}</p>;
   return (
     <ul className="grid gap-2" aria-live="polite">
       {data.jobs.map((job) => {
@@ -380,28 +399,28 @@ function Results({ productId, batchId, openaiKey, higgsfieldKey }: { productId: 
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={job.status === "done" ? "win" : job.status === "failed" ? "warn" : job.status === "cancelled" ? "neutral" : "accent"}>
                 {["queued", "running", "finalizing"].includes(job.status) && <Gear className="size-3" />}
-                {job.status === "done" ? "Ready" : job.status === "failed" ? "Failed" : job.status === "cancelled" ? "Cancelled" : job.status === "queued" ? "Waiting" : "Making it"}
+                {job.status === "done" ? t("Ready") : job.status === "failed" ? t("Failed") : job.status === "cancelled" ? t("Cancelled") : job.status === "queued" ? t("Waiting") : t("Making it")}
               </Badge>
               <span className="text-muted">{PROVIDER_NAME[provider]} · {job.aspect}</span>
-              {job.status === "done" && <Link href={workspaceHref(productId, "studio")} className="ml-auto rounded-xs font-medium text-accent hover:underline">Open in Studio</Link>}
+              {job.status === "done" && <Link href={workspaceHref(productId, "studio")} className="ml-auto rounded-xs font-medium text-accent hover:underline">{t("Open in Studio")}</Link>}
             </div>
             {made.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {made.map((c) => (
                   <a key={c.id} href={c.url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-small border border-line">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={c.thumbnail_url ?? c.url} alt={`Made for your app, ${c.aspect}`} className="h-40 w-auto object-cover" />
+                    <img src={c.thumbnail_url ?? c.url} alt={t("Made for your app, {aspect}", { aspect: c.aspect })} className="h-40 w-auto object-cover" />
                   </a>
                 ))}
               </div>
             )}
             {job.status === "failed" && (
               <>
-                <p className="text-warn">{providerErrorText(job.error, provider)}</p>
-                {urls.length > 0 && <p className="text-muted">The finished file is still at {PROVIDER_NAME[provider]}: <a href={urls[0]} target="_blank" rel="noopener noreferrer" className="font-medium text-accent hover:underline">download it</a> (the link may expire).</p>}
+                <p className="text-warn">{providerErrorText(job.error, provider, t)}</p>
+                {urls.length > 0 && <p className="text-muted">{rich(t("The finished file is still at {provider}: {link} (the link may expire)."), { provider: PROVIDER_NAME[provider], link: <a href={urls[0]} target="_blank" rel="noopener noreferrer" className="font-medium text-accent hover:underline">{t("download it")}</a> })}</p>}
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="secondary" disabled={acting === job.id} onClick={() => retry(job)}>Retry</Button>
-                  {canSwitch && <Button size="sm" variant="ghost" disabled={acting === job.id} onClick={() => switchProvider(job)}>Try with {PROVIDER_NAME[other]} instead</Button>}
+                  <Button size="sm" variant="secondary" disabled={acting === job.id} onClick={() => retry(job)}>{t("Retry")}</Button>
+                  {canSwitch && <Button size="sm" variant="ghost" disabled={acting === job.id} onClick={() => switchProvider(job)}>{t("Try with {provider} instead", { provider: PROVIDER_NAME[other] })}</Button>}
                 </div>
               </>
             )}

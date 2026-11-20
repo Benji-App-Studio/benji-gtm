@@ -5,6 +5,7 @@
 // Studio's More options.
 import { AD_FORMATS, CAROUSEL, CAROUSEL_PLACEMENTS, PLACEMENTS, SOURCES, SPECS_CHECKED, VOLUME_TIP, type AdFormatId, type Placement, type PlacementId } from "@/lib/meta-formats";
 import { cx } from "../ui";
+import { useT } from "@/lib/i18n/client";
 
 const MEDIA = "bg-accent/25 ring-1 ring-inset ring-accent/40";
 const CHROME = "bg-ink/15";
@@ -77,28 +78,29 @@ export function PlacementPicker({ value, onChange, format, videoToo }: {
   /** Videos are in the batch: show the video lengths. */
   videoToo: boolean;
 }) {
+  const { t } = useT();
   const toggle = (id: PlacementId) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
   const carousel = format === "carousel";
   const picked = PLACEMENTS.filter((p) => value.includes(p.id));
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="text-xs font-medium text-muted">Placements</span>
-        <span className="text-xs text-faint">Meta&apos;s specs, checked {SPECS_CHECKED} · hatched = covered by Meta&apos;s interface</span>
+        <span className="text-xs font-medium text-muted">{t("Placements")}</span>
+        <span className="text-xs text-faint">{t("Meta's specs, checked {date} · hatched = covered by Meta's interface", { date: SPECS_CHECKED })}</span>
       </div>
       <div className="flex flex-wrap gap-2">
         {PLACEMENTS.map((p) => {
           const on = value.includes(p.id);
           const off = carousel && !CAROUSEL_PLACEMENTS.includes(p.id);
           return (
-            <button key={p.id} type="button" aria-pressed={on} onClick={() => toggle(p.id)} title={[p.summary, p.where.join(" · "), ...p.notes].join("\n")}
+            <button key={p.id} type="button" aria-pressed={on} onClick={() => toggle(p.id)} title={[t(p.summary), p.where.map((w) => t(w)).join(" · "), ...p.notes.map((n) => t(n))].join("\n")}
               className={cx("flex items-center gap-2 rounded-small border py-1 pr-3 pl-1 text-left transition", on ? "border-ink/25 bg-control" : "border-hairline bg-card hover:bg-hover", off && "opacity-55")}>
               {/* The drawings at 60%: zoom (unlike a transform) shrinks the space they take too. */}
               <span className="grid w-[84px] shrink-0 place-items-center rounded-small bg-canvas py-2" style={{ zoom: 0.5 }}>
                 <PlacementSketch placement={p} carousel={carousel && !off} />
               </span>
               <span className="grid gap-0.5">
-                <span className="text-xs font-medium">{p.label}</span>
+                <span className="text-xs font-medium">{t(p.label)}</span>
                 <span className="text-xs tabular-nums text-muted">{p.aspect} · {sizeLabel(p)}</span>
               </span>
             </button>
@@ -109,8 +111,8 @@ export function PlacementPicker({ value, onChange, format, videoToo }: {
         <ul className="grid gap-0.5 text-xs text-muted">
           {picked.map((p) => (
             <li key={p.id}>
-              <span className="text-ink">{p.label}:</span> {p.where.join(", ")}.{videoToo ? ` Video: ${p.videoSeconds.recommended}.` : ""}
-              {carousel && !CAROUSEL_PLACEMENTS.includes(p.id) && <span className="text-warn"> Carousel cards are square or 4:5; images skip this one.</span>}
+              <span className="text-ink">{t(p.label)}:</span> {p.where.map((w) => t(w)).join(", ")}.{videoToo ? ` ${t("Video: {length}.", { length: t(p.videoSeconds.recommended) })}` : ""}
+              {carousel && !CAROUSEL_PLACEMENTS.includes(p.id) && <span className="text-warn"> {t("Carousel cards are square or 4:5; images skip this one.")}</span>}
             </li>
           ))}
         </ul>
@@ -126,36 +128,37 @@ export function AdFormatPicker({ format, onFormat, cards, onCards }: {
   cards: number;
   onCards: (n: number) => void;
 }) {
+  const { t } = useT();
   const carousel = format === "carousel";
   const madeHere = AD_FORMATS.filter((f) => f.makesHere);
   const elsewhere = AD_FORMATS.filter((f) => !f.makesHere);
   return (
     <div className="grid gap-2">
-      <span className="text-xs font-medium text-muted">Ad format</span>
+      <span className="text-xs font-medium text-muted">{t("Ad format")}</span>
       <div className="flex flex-wrap items-center gap-2">
         {madeHere.map((f) => {
           const on = f.id === format;
           return (
             <button key={f.id} type="button" aria-pressed={on} onClick={() => onFormat(f.id as AdFormatId)}
               className={cx("grid max-w-[300px] gap-0.5 rounded-small border px-3 py-1.5 text-left transition", on ? "border-ink/25 bg-control" : "border-hairline bg-card hover:bg-hover")}>
-              <span className="text-xs font-medium">{f.label}</span>
-              <span className="text-xs text-muted">{f.summary}</span>
+              <span className="text-xs font-medium">{t(f.label)}</span>
+              <span className="text-xs text-muted">{t(f.summary)}</span>
             </button>
           );
         })}
         {carousel && (
           <label className="flex items-center gap-2 text-sm">
-            Cards
+            {t("Cards")}
             <select className="h-[30px] rounded-control border border-hairline bg-raised px-2.5 text-sm text-ink" value={cards} onChange={(e) => onCards(Number(e.target.value))}>
               {Array.from({ length: CAROUSEL.maxCards - CAROUSEL.minCards + 1 }, (_, i) => i + CAROUSEL.minCards).map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </label>
         )}
       </div>
-      {carousel && <p className="text-xs text-muted">{AD_FORMATS.find((f) => f.id === "carousel")!.note} Each variant is one set of {cards} image cards.</p>}
+      {carousel && <p className="text-xs text-muted">{t(AD_FORMATS.find((f) => f.id === "carousel")!.note)} {t("Each variant is one set of {n} image cards.", { n: cards })}</p>}
       <div className="grid gap-1 text-xs text-faint">
-        <p>Put together in Ads Manager from creatives made here: {elsewhere.map((f, i) => <span key={f.id}>{i ? " · " : ""}<span className="text-muted">{f.label}</span> ({f.note.replace(/\.$/, "")})</span>)}.</p>
-        <p>{VOLUME_TIP} Sources: {SOURCES.map((src, i) => <span key={src.url}>{i ? ", " : ""}<a href={src.url} target="_blank" rel="noreferrer" className="underline decoration-faint underline-offset-2 hover:text-ink">{src.label}</a></span>)}.</p>
+        <p>{t("Put together in Ads Manager from creatives made here:")} {elsewhere.map((f, i) => <span key={f.id}>{i ? " · " : ""}<span className="text-muted">{t(f.label)}</span> ({t(f.note).replace(/[.。]$/, "")})</span>)}</p>
+        <p>{t(VOLUME_TIP)} {t("Sources:")} {SOURCES.map((src, i) => <span key={src.url}>{i ? ", " : ""}<a href={src.url} target="_blank" rel="noreferrer" className="underline decoration-faint underline-offset-2 hover:text-ink">{t(src.label)}</a></span>)}</p>
       </div>
     </div>
   );

@@ -6,6 +6,7 @@
 // and the card offers "Edit text". Updates arrive over Realtime.
 import { pendingComposed } from "@/lib/composed-ads";
 import type { CreativeJobRow, CreativeView } from "@/lib/creative-types";
+import { m } from "@/lib/i18n/translate";
 import { useRetriedPosts } from "./use-retried-posts";
 
 const composeUrl = (id: string) => `/api/studio/creatives/${id}/compose`;
@@ -13,5 +14,5 @@ const composeUrl = (id: string) => `/api/studio/creatives/${id}/compose`;
 const doesntFit = (status: number) => status === 422;
 
 export function useComposedAds(jobs: CreativeJobRow[], creatives: CreativeView[], onComposed?: () => void) {
-  return useRetriedPosts(pendingComposed(jobs, creatives), composeUrl, "The text wasn't set", onComposed, doesntFit);
+  return useRetriedPosts(pendingComposed(jobs, creatives), composeUrl, m("The text wasn't set"), onComposed, doesntFit);
 }

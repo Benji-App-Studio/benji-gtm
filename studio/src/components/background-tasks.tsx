@@ -10,7 +10,7 @@ import type { BackgroundTask } from "@/lib/server/background";
 import { DONE_SHOWN_MS, useLocalTasks, useLocalTasksVersion } from "@/lib/local-tasks";
 import { IconAlert, IconCheckCircle, IconChevronDown } from "./icons";
 import { cx, Gear } from "./ui";
-import { UI_LOCALE } from "@/lib/ui-locale";
+import { useT } from "@/lib/i18n/client";
 
 const POLL_MS = 5_000;
 const IDLE_POLL_MS = 30_000;
@@ -18,6 +18,7 @@ const IDLE_POLL_MS = 30_000;
 interface Shown extends Omit<BackgroundTask, "kind"> { finishedAt?: number; failed?: boolean }
 
 export function BackgroundTasks() {
+  const { t: say, tn, intl } = useT();
   const [server, setServer] = useState<Shown[]>([]);
   const [open, setOpen] = useState(false);
   const previous = useRef<Map<string, Shown>>(new Map());
@@ -98,8 +99,8 @@ export function BackgroundTasks() {
           {running.length ? <Gear className="size-3.5 shrink-0 text-accent" /> : failed.length ? <IconAlert className="size-3.5 shrink-0 text-warn" /> : <IconCheckCircle className="size-3.5 shrink-0 text-win" />}
           <span className="min-w-0 flex-1 truncate">
             {running.length
-              ? <><span className="font-medium">{running.length} running</span><span className="text-muted"> · {first.label}{pct(first) != null ? ` ${pct(first)}%` : ""}</span></>
-              : failed.length ? <><span className="font-medium text-warn">Failed</span><span className="text-muted"> · {failed[0].label}</span></> : <><span className="font-medium">Done</span><span className="text-muted"> · {first.label}</span></>}
+              ? <><span className="font-medium">{tn(running.length, "{n} running", "{n} running")}</span><span className="text-muted"> · {first.label}{pct(first) != null ? ` ${pct(first)}%` : ""}</span></>
+              : failed.length ? <><span className="font-medium text-warn">{say("Failed")}</span><span className="text-muted"> · {failed[0].label}</span></> : <><span className="font-medium">{say("Done")}</span><span className="text-muted"> · {first.label}</span></>}
           </span>
           <IconChevronDown className={cx("size-3.5 shrink-0 text-muted transition-transform", open ? "rotate-180" : "")} />
         </button>
@@ -113,7 +114,7 @@ export function BackgroundTasks() {
                   <span className="flex items-baseline justify-between gap-2 text-sm">
                     <span className="min-w-0 truncate font-medium">{t.label}</span>
                     <span className={cx("shrink-0 text-xs tabular-nums", t.failed ? "text-warn" : "text-muted")}>
-                      {t.failed ? "Failed" : t.finishedAt ? "Done" : t.total ? `${(t.done ?? 0).toLocaleString(UI_LOCALE)} / ${t.total.toLocaleString(UI_LOCALE)}` : "Running"}
+                      {t.failed ? say("Failed") : t.finishedAt ? say("Done") : t.total ? `${(t.done ?? 0).toLocaleString(intl)} / ${t.total.toLocaleString(intl)}` : say("Running")}
                     </span>
                   </span>
                   {(t.productName || t.detail) && <span className={cx("mt-0.5 block truncate text-xs", t.failed ? "text-warn" : "text-muted")}>{[t.productName, t.detail].filter(Boolean).join(" · ")}</span>}

@@ -5,6 +5,7 @@ import "server-only";
 import type { ConnectionKey } from "@/lib/workspace";
 import { verifyAppStack } from "./appstack";
 import { verifyMeta } from "./meta";
+import { verifyMixpanel, verifySuperwall } from "./operating";
 import { verifyRevenueCat } from "./revenuecat";
 import { verifyStorage } from "./storage";
 import type { Verifier } from "./verifier";
@@ -15,5 +16,7 @@ export const VERIFIERS: Record<ConnectionKey, Verifier> = {
   meta: verifyMeta,
   revenuecat: verifyRevenueCat,
   appstack: verifyAppStack,
+  mixpanel: verifyMixpanel,
+  superwall: verifySuperwall,
   storage: verifyStorage,
 };

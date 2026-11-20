@@ -9,6 +9,7 @@
 // every generator reads the merged brand (mergeBrand; lib/server/brand.ts brandFor), where forbidden
 // claims are the kit's, the voice's and the profile's claims_to_avoid together.
 // Pure TypeScript: the browser, the server and the Node tests share it.
+import { m } from "./i18n/translate";
 import { cleanBrandSystem, EMPTY_BRAND_SYSTEM, hasBrandSystem, BRAND_SYSTEM_LIMITS, type BrandColor, type BrandSystem, type ColorRole } from "./brand-system";
 import { profileOf, type ProductInsight, type ProductProfile } from "./product-insight";
 import { BRAND_LIMITS, cleanBrandKit, hexColor, readBrandKit, type BrandKit } from "./workspace-schema";
@@ -205,21 +206,21 @@ export function brandSuggestions(insight: ProductInsight | null | undefined, dra
   if (!insight) return [];
   const brand = insight.brand ?? { colors: [], tone: "", voice: [] };
   const candidates: BrandSuggestion[] = [];
-  if (insight.tagline?.trim()) candidates.push({ key: "tagline", label: "Tagline", value: insight.tagline.trim().slice(0, 160) });
+  if (insight.tagline?.trim()) candidates.push({ key: "tagline", label: m("Tagline"), value: insight.tagline.trim().slice(0, 160) });
   const colors = (brand.colors ?? []).map((c) => ({ hex: hexColor(c.hex) ?? "", name: (c.name ?? "").trim().slice(0, 60), role: roleOf(c.role ?? ""), use: "" })).filter((c) => c.hex);
   const have = new Set(draft.system.palette.map((c) => c.hex.toUpperCase()));
   const newColors = colors.filter((c) => !have.has(c.hex));
-  if (newColors.length) candidates.push({ key: "colors", label: "Brand colours", value: newColors });
+  if (newColors.length) candidates.push({ key: "colors", label: m("Brand colours"), value: newColors });
   const tone = [brand.tone?.trim(), brand.voice?.length ? `(${brand.voice.join(", ")})` : ""].filter(Boolean).join(" ").slice(0, 400);
-  if (tone) candidates.push({ key: "tone", label: "Tone of voice", value: tone });
+  if (tone) candidates.push({ key: "tone", label: m("Tone of voice"), value: tone });
   const claims = (insight.claims_to_avoid ?? []).filter((c) => !draft.system.voice.forbiddenClaims.some((x) => norm(x) === norm(c)));
-  if (claims.length) candidates.push({ key: "claims", label: "Claims to avoid", value: unionList([claims]) });
+  if (claims.length) candidates.push({ key: "claims", label: m("Claims to avoid"), value: unionList([claims]) });
   const store = insight.appStore;
-  if (store?.url && isStoreLink(store.url)) candidates.push({ key: "appStoreUrl", label: "App Store link", value: store.url });
-  if (!draft.basics.iconUrl && store?.iconUrl && isHttps(store.iconUrl)) candidates.push({ key: "icon", label: "App icon (from the store)", value: store.iconUrl });
+  if (store?.url && isStoreLink(store.url)) candidates.push({ key: "appStoreUrl", label: m("App Store link"), value: store.url });
+  if (!draft.basics.iconUrl && store?.iconUrl && isHttps(store.iconUrl)) candidates.push({ key: "icon", label: m("App icon (from the store)"), value: store.iconUrl });
   if (!draft.basics.screenshotUrls.length && store?.screenshots?.length) {
     const shots = store.screenshots.filter(isHttps).slice(0, 8);
-    if (shots.length) candidates.push({ key: "screenshots", label: "Screenshots (from the store)", value: shots });
+    if (shots.length) candidates.push({ key: "screenshots", label: m("Screenshots (from the store)"), value: shots });
   }
   return candidates.filter((s) => JSON.stringify(applySuggestion(draft, s)) !== JSON.stringify(draft));
 }

@@ -16,6 +16,10 @@ export const storageKey = (name: string) => `${STORAGE_PREFIX}.${name}`;
 
 /** Light, dark or system: a cookie (the server renders with it) and a localStorage backup. */
 export const THEME_KEY = `${STORAGE_PREFIX}-theme`;
+/** Cookie: the language the person picked ("en", "zh-TW", "ja", "ko"). The server renders with it. */
+export const LOCALE_COOKIE = `${STORAGE_PREFIX}-locale`;
+/** Cookie (httpOnly, 10 minutes): the email typed on the landing page, filled in on sign-up, so it never sits in an address. */
+export const START_EMAIL_COOKIE = `${STORAGE_PREFIX}-start-email`;
 /** Cookie: the app last opened, so sign-in and the sidebar come back to it. */
 export const WORKSPACE_COOKIE = storageKey("workspace");
 /** sessionStorage: Research's Recreate sheet handing a brief to the Studio. */

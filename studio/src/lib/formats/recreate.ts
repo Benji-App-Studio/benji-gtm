@@ -9,10 +9,11 @@
 // (PR-2, PR-3, NH-5); review and before/after formats are flagged for a person to confirm (PR-3,
 // NH-2, NH-4); look-alike platform UIs become original designs (PR-5); rule explainers for visa,
 // residency and tax products carry "Rules change; check official sources" (BW-2).
-import { jobCost } from "../creative-plan";
+import { jobCost, type PlanWords } from "../creative-plan";
+import { fill, m } from "../i18n/translate";
 import { anglesFor, brandDefaults, pickAngle } from "./angles";
 import { FAMILIES } from "./families";
-import { policyIssues } from "./policy";
+import { policyFindings } from "./policy";
 import type { Angle, AppContext, Beat, FamilyId, FormatCard, HiggsfieldModel, Recipe, RecipeBeat } from "./types";
 
 const ROLE_NAME: Record<string, string> = {
@@ -21,6 +22,11 @@ const ROLE_NAME: Record<string, string> = {
 const MODE_LABEL: Record<string, string> = {
   ugc: "UGC", ugc_how_to: "Tutorial (UGC how-to)", product_review: "Product review", tv_spot: "TV spot", product_showcase: "Product showcase", t2v: "Text to video",
 };
+/** The modes in the reader's words (MODE_LABEL itself stays English: it opens the prompt). */
+export const MODE_WORDS: Record<string, string> = {
+  ugc: "UGC", ugc_how_to: m("Tutorial (UGC how-to)"), product_review: m("Product review"), tv_spot: m("TV spot"), product_showcase: m("Product showcase"), t2v: m("Text to video"),
+};
+const englishWords: PlanWords = (text, vars) => fill(text, vars);
 const MODEL_LABEL: Record<HiggsfieldModel, string> = {
   marketing_studio_video: "Marketing Studio Video", seedance_2_5: "Seedance 2.5", gpt_image_2_5: "GPT Image 2.5",
 };
@@ -178,17 +184,20 @@ function timeBeats(beats: Beat[], lines: string[], duration: number, speech: boo
   });
 }
 
-function route(card: FormatCard): { model: HiggsfieldModel; mode: string | null; aspect: string; why: string } {
+function route(card: FormatCard, t: PlanWords): { model: HiggsfieldModel; mode: string | null; aspect: string; why: string } {
   if (card.medium === "text") {
-    return { model: "gpt_image_2_5", mode: null, aspect: card.platform === "linkedin" ? "4:5" : "1:1", why: "A text post: recreated as a feed image with the hook as the headline (GPT Image 2.5 renders on-image text best), plus the post copy itself." };
+    return { model: "gpt_image_2_5", mode: null, aspect: card.platform === "linkedin" ? "4:5" : "1:1", why: t("A text post: recreated as a feed image with the hook as the headline (GPT Image 2.5 renders on-image text best), plus the post copy itself.") };
   }
+  const family = t(FAMILIES[card.family].label);
   if (card.medium === "image") {
-    return { model: "gpt_image_2_5", mode: null, aspect: card.platform === "tiktok_ads" ? "9:16" : "4:5", why: `A static ${FAMILIES[card.family].label.toLowerCase()} ad: GPT Image 2.5 is Higgsfield's default for designed images with legible text. ${card.platform === "tiktok_ads" ? "9:16 for TikTok." : "4:5 fills the Meta feed."}` };
+    return { model: "gpt_image_2_5", mode: null, aspect: card.platform === "tiktok_ads" ? "9:16" : "4:5", why: card.platform === "tiktok_ads"
+      ? t("A static {family} ad: GPT Image 2.5 is Higgsfield's default for designed images with legible text. 9:16 for TikTok.", { family: family.toLowerCase() })
+      : t("A static {family} ad: GPT Image 2.5 is Higgsfield's default for designed images with legible text. 4:5 fills the Meta feed.", { family: family.toLowerCase() }) };
   }
   const video = FAMILIES[card.family].video;
   return video.model === "marketing_studio_video"
-    ? { model: video.model, mode: video.mode, aspect: "9:16", why: `Presenter-led ${FAMILIES[card.family].label.toLowerCase()} format: Marketing Studio is Higgsfield's default for ads and UGC, in ${MODE_LABEL[video.mode] ?? video.mode} mode.` }
-    : { model: video.model, mode: "t2v", aspect: "9:16", why: `${FAMILIES[card.family].label} is scene- and motion-led, not a presenter talking: Seedance 2.5 (multi-shot text-to-video) fits better than Marketing Studio.` };
+    ? { model: video.model, mode: video.mode, aspect: "9:16", why: t("Presenter-led {family} format: Marketing Studio is Higgsfield's default for ads and UGC, in {mode} mode.", { family: family.toLowerCase(), mode: MODE_WORDS[video.mode] ? t(MODE_WORDS[video.mode]) : video.mode }) }
+    : { model: video.model, mode: "t2v", aspect: "9:16", why: t("{family} is scene- and motion-led, not a presenter talking: Seedance 2.5 (multi-shot text-to-video) fits better than Marketing Studio.", { family }) };
 }
 
 /** The still's layout for each format (image ads, text posts). */
@@ -217,13 +226,15 @@ function layoutFor(c: Ctx, colorName: string): string {
  * The recipe for one card. `angleId` picks one of the workspace's angles (default: the best fit);
  * `lines` overrides beat lines by index (a copy provider's rewrite).
  */
-export function recreate(card: FormatCard, app: AppContext, o: { angleId?: string; lines?: (string | null | undefined)[] } = {}): Recipe {
+export function recreate(card: FormatCard, app: AppContext, o: { angleId?: string; lines?: (string | null | undefined)[]; t?: PlanWords } = {}): Recipe {
+  // The recipe's notes and "why" in the reader's language (English by default); the prompt, caption and command stay English.
+  const t = o.t ?? englishWords;
   const angles = anglesFor(app);
   const angle = angles.find((a) => a.id === o.angleId) ?? pickAngle(card, angles);
   const brand = brandDefaults(app);
   const name = app.brandKit.appName || app.name;
   const c: Ctx = { app: name, angle, family: card.family, hookType: card.hookType, platform: card.platform, source: card.source };
-  const r = route(card);
+  const r = route(card, t);
   const family = FAMILIES[card.family];
   const notes: string[] = [];
   const needsHuman = new Set<string>();
@@ -244,8 +255,8 @@ export function recreate(card: FormatCard, app: AppContext, o: { angleId?: strin
     const base = card.lengthSec ?? family.defaultSec;
     const [lo, hi] = r.model === "marketing_studio_video" ? [8, 30] : [5, 15];
     duration = clamp(Math.round(speech ? Math.max(needed * 1.1, Math.min(base, needed * 1.4)) : base), lo, hi);
-    if (base > duration + 10) notes.push(`The winners run about ${Math.round(base)}s; this is a ${duration}s cut of the same beats. For the long version, generate the method beats as a second clip and join them in the edit.`);
-    if (speech && needed > duration + 1) notes.push(`The lines need about ${Math.round(needed)}s to say; trim them or raise --duration.`);
+    if (base > duration + 10) notes.push(t("The winners run about {base}s; this is a {duration}s cut of the same beats. For the long version, generate the method beats as a second clip and join them in the edit.", { base: String(Math.round(base)), duration: String(duration) }));
+    if (speech && needed > duration + 1) notes.push(t("The lines need about {seconds}s to say; trim them or raise --duration.", { seconds: String(Math.round(needed)) }));
   }
   const times = duration ? timeBeats(plan, lines, duration, speech) : plan.map(() => [null, null] as [null, null]);
   const beats: RecipeBeat[] = plan.map((beat, i) => {
@@ -274,7 +285,7 @@ export function recreate(card: FormatCard, app: AppContext, o: { angleId?: strin
       `Burned-in captions. Accents in ${palette}. Tone: ${brand.tone}. The only app or brand shown is ${name}.${rules}`,
     ].join(" ");
     params = { mode: r.mode!, duration: duration!, aspect_ratio: r.aspect, resolution: "720p", generate_audio: true };
-    notes.push(`Marketing Studio works best with your product attached: import the App Store page once (setup below), or pass a screenshot with --image-references so the screen shots show the real ${name} UI.`);
+    notes.push(t("Marketing Studio works best with your product attached: import the App Store page once (setup below), or pass a screenshot with --image-references so the screen shots show the real {name} UI.", { name }));
   } else if (r.model === "seedance_2_5") {
     const silent = family.cast === "none";
     prompt = [
@@ -283,8 +294,10 @@ export function recreate(card: FormatCard, app: AppContext, o: { angleId?: strin
       `Handheld phone look, soft natural light, ${palette} in the set and wardrobe. Original characters, no real person's likeness, no logos.${silent ? " No text in frame: the captions are added in the edit." : ""}`,
     ].join(" ");
     params = { mode: "t2v", duration: duration!, aspect_ratio: r.aspect, resolution: "720p", generate_audio: !silent };
-    if (silent) notes.push(`The message is in the on-screen text: add it in the edit over this footage${explainsRule ? `, with "${brand.disclaimer}"` : ""}, and a sound from Meta's Sound Collection or TikTok's Commercial Music Library (IP-4).`);
-    notes.push(`To show the real ${name} screens, switch to --mode omni_reference and pass an app screenshot with --image-references.`);
+    if (silent) notes.push(explainsRule
+      ? t("The message is in the on-screen text: add it in the edit over this footage, with \"{disclaimer}\", and a sound from Meta's Sound Collection or TikTok's Commercial Music Library (IP-4).", { disclaimer: brand.disclaimer ?? "" })
+      : t("The message is in the on-screen text: add it in the edit over this footage, and a sound from Meta's Sound Collection or TikTok's Commercial Music Library (IP-4)."));
+    notes.push(t("To show the real {name} screens, switch to --mode omni_reference and pass an app screenshot with --image-references.", { name }));
   } else {
     const headline = shorten(hook.replace(/[“”"]/g, ""), 10);
     prompt = `${r.aspect} social ${card.source === "paid" ? "ad" : "post"} image for the iPhone app ${name}. Headline in large bold type: "${headline}". Smaller line: "${cap(angle.outcome)}." Layout: ${layoutFor(c, colorName)}. Small "${shorten(angle.cta, 6)}" button at the bottom.${explainsRule ? ` Tiny footnote: "${brand.disclaimer}"` : ""} ${cap(palette)} palette, clean minimal layout, generous whitespace, crisp legible text. No other brands, logos or real people.`;
@@ -295,21 +308,21 @@ export function recreate(card: FormatCard, app: AppContext, o: { angleId?: strin
     if (reference) {
       params.style_refs = [reference];
       prompt = `REFERENCE IMAGE: the first attached image is a competitor's ad in this format. Keep its layout, composition, text hierarchy and kind of imagery so it reads as a sibling of that ad, not a print of it: the brand, product, wording, people and colours are ours, as described here. ${prompt}`;
-      notes.push("Send to Studio attaches the competitor's image as the layout and style reference (then your screenshots). The command below doesn't: add it with --image-references.");
+      notes.push(t("Send to Studio attaches the competitor's image as the layout and style reference (then your screenshots). The command below doesn't: add it with --image-references."));
     }
-    if (app.brandKit.screenshotUrls.length) notes.push("Pass an app screenshot with --image-references so the mockup shows the real UI.");
+    if (app.brandKit.screenshotUrls.length) notes.push(t("Pass an app screenshot with --image-references so the mockup shows the real UI."));
   }
 
   // What a person must confirm before this runs (POLICY.md).
   if (card.family === "testimonial_review") needsHuman.add("PR-3");
-  if (card.family === "ugc_testimonial" || card.family === "storytime" || card.family === "ai_ugc") notes.push("Testimonial-style formats are rewritten as a presenter explaining the app. A real customer's own words (with consent on file) can replace the lines; an AI presenter never claims to have used it (PR-2, PR-3).");
-  if (card.family === "founder_story") { needsHuman.add("PR-2"); notes.push("Founder formats need the real founder on camera: an AI presenter can't pose as the founder or an expert (PR-2)."); }
-  if (card.family === "before_after" && brand.policy === "health") { needsHuman.add("NH-2"); needsHuman.add("NH-4"); notes.push("Before/after for a health or wellness product compares the product's own result screens, never faces or bodies; check Meta's health rules before running (NH-2, NH-4)."); }
-  if (card.family === "reddit_style" || card.family === "tweet_style") notes.push("Look-alike platform screenshots are rebuilt as an original design with no platform logos or UI (PR-5).");
-  if (card.family === "us_vs_them" || card.family === "comparison") notes.push("Compare against the old way, never a named competitor (IP-5).");
+  if (card.family === "ugc_testimonial" || card.family === "storytime" || card.family === "ai_ugc") notes.push(t("Testimonial-style formats are rewritten as a presenter explaining the app. A real customer's own words (with consent on file) can replace the lines; an AI presenter never claims to have used it (PR-2, PR-3)."));
+  if (card.family === "founder_story") { needsHuman.add("PR-2"); notes.push(t("Founder formats need the real founder on camera: an AI presenter can't pose as the founder or an expert (PR-2).")); }
+  if (card.family === "before_after" && brand.policy === "health") { needsHuman.add("NH-2"); needsHuman.add("NH-4"); notes.push(t("Before/after for a health or wellness product compares the product's own result screens, never faces or bodies; check Meta's health rules before running (NH-2, NH-4).")); }
+  if (card.family === "reddit_style" || card.family === "tweet_style") notes.push(t("Look-alike platform screenshots are rebuilt as an original design with no platform logos or UI (PR-5)."));
+  if (card.family === "us_vs_them" || card.family === "comparison") notes.push(t("Compare against the old way, never a named competitor (IP-5)."));
   if (brand.policy === "health") needsHuman.add("NH-1");
-  if (r.model !== "gpt_image_2_5") notes.push("Realistic AI people: turn on TikTok's AI-generated content label when launching there (AI-2).");
-  if (card.ctaShare < 0.3) notes.push(`Only ${Math.round(card.ctaShare * 100)}% of these winners ask for an action; the CTA here is kept short and last so the format still feels native.`);
+  if (r.model !== "gpt_image_2_5") notes.push(t("Realistic AI people: turn on TikTok's AI-generated content label when launching there (AI-2)."));
+  if (card.ctaShare < 0.3) notes.push(t("Only {share}% of these winners ask for an action; the CTA here is kept short and last so the format still feels native.", { share: String(Math.round(card.ctaShare * 100)) }));
 
   // Hashtags from the angle's plain keywords, minus risky ones (fear, immigration politics: BW-4, BW-5).
   const tags = [...new Set([...angle.keywords.filter((k) => /^[a-z0-9]+$/i.test(k) && !TAG_BLOCK.has(k)).slice(0, 3), name.replace(/\W/g, "").toLowerCase()])];
@@ -333,13 +346,15 @@ export function recreate(card: FormatCard, app: AppContext, o: { angleId?: strin
     : [];
 
   const viewer = [caption, postCopy ?? "", ...beats.flatMap((b) => [b.line, b.onScreen])];
-  const issues = policyIssues([prompt, ...viewer], card, app, brand.claims, viewer);
+  // The issues in English (the tests and Studio read them) and as templates for the recreate panel to translate.
+  const issueTexts = policyFindings([prompt, ...viewer], card, app, brand.claims, viewer);
+  const issues = issueTexts.map((issue) => fill(issue.text, issue.vars));
   return {
     cardKey: card.key, model: r.model, modelLabel: MODEL_LABEL[r.model], mode: r.mode, why: r.why,
     aspectRatio: r.aspect, duration, resolution: String(params.resolution), angle: { id: angle.id, label: angle.label },
     prompt, beats, onScreenText: beats.map((b) => b.onScreen).filter(Boolean), caption, postCopy, params, cli, costCli, setup,
     // The Studio's price table (lib/creative-plan.ts jobCost), for the params this recipe runs with.
     estCredits: r.model === "gpt_image_2_5" || duration ? jobCost(r.model, params) : null,
-    notes, checks: { ok: issues.length === 0, issues }, needsHuman: [...needsHuman],
+    notes, checks: { ok: issues.length === 0, issues, issueTexts }, needsHuman: [...needsHuman],
   };
 }

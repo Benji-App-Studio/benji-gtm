@@ -8,7 +8,9 @@ import { DEFAULT_RESEARCH, mergeResearch, readResearch, type ResearchPatch, rese
 
 export { DEFAULT_LIMITS, DEFAULT_RESEARCH, type InstallLimits, type ResearchSettings };
 
-export type InstallRole = "owner" | "member" | "legacy";
+/** `account`: accounts mode (each signed-in account is its own, with its own keys and settings). */
+export type InstallRole = "owner" | "member" | "legacy" | "account";
+export type InstallMode = "accounts" | "install" | "legacy";
 export type AiProvider = "openai" | "typesafe";
 export type KeyStatus = "ok" | "failed" | "unverified";
 
@@ -19,8 +21,22 @@ export interface KeyState {
   verifiedAt: string | null;
   status: KeyStatus;
   message: string | null;
-  /** `env`: an edge function secret on the project (it wins, and can't be changed from the app). */
-  source: "vault" | "env" | null;
+  /**
+   * `env`: an edge function secret on the project (it wins, and can't be changed from the app).
+   * `platform`: accounts mode, a staff account without its own key uses the platform's.
+   */
+  source: "vault" | "env" | "platform" | null;
+}
+
+/** Accounts mode: the caller's plan, what it allows and what is used of it. */
+export interface PlanState {
+  id: string;
+  name: string;
+  staff: boolean;
+  limits: { maxApps: number; storageGb: number; monthlyGenerations: number; jobConcurrency: number; maxOpenJobs: number };
+  usage: { apps: number; storageBytes: number; generationsThisMonth: number };
+  /** Staff only: the whole project's storage against its safety net (platform.settings.safetyStorageGb). */
+  platform?: { usedBytes: number; safetyBytes: number };
 }
 
 export interface InstallModels { text: string; vision: string; transcribe: string; image: string }
@@ -43,6 +59,10 @@ export interface InstallState extends InstallSettings {
   keys: Record<string, KeyState>;
   /** The older research switches set on the project (RESEARCH_TIKTOK, RESEARCH_META_APIFY_ACTOR): they win over `research`. */
   researchEnv: { tiktok: string | null; metaActor: string | null };
+  /** Which mode the database is in (accounts: separate accounts; install: an owner and members; legacy: neither). */
+  mode: InstallMode;
+  /** Accounts mode only: the caller's plan and usage; null elsewhere. */
+  plan: PlanState | null;
 }
 
 export interface InstallMember { userId: string; email: string | null; role: "owner" | "member"; createdAt: string }
@@ -168,8 +188,10 @@ const status = (value: string | null | undefined): KeyStatus => (value === "ok" 
  * row's only when that row is about the environment's value (a row with last 4 characters describes a
  * copy stored in Vault, which the environment's value is hiding).
  */
-export function keyState(source: "env" | "vault" | null, meta: KeyMeta | undefined): KeyState {
+export function keyState(source: "env" | "vault" | "platform" | null, meta: KeyMeta | undefined): KeyState {
   if (!source) return { ...EMPTY_KEY };
+  // The platform's key, lent to a staff account: nothing about it is shown but that it is set.
+  if (source === "platform") return { set: true, last4: null, verifiedAt: null, status: "unverified", message: null, source };
   if (source === "env") {
     const mine = meta && meta.last4 === null ? meta : undefined;
     return { set: true, last4: null, verifiedAt: mine?.verified_at ?? null, status: status(mine?.status), message: mine?.message ?? null, source };
@@ -181,12 +203,16 @@ export function keyState(source: "env" | "vault" | null, meta: KeyMeta | undefin
  * The answer to `capabilities`. `modelEnv` holds the model names set as environment variables or
  * stored keys (`modelOverrides` in _shared/ai/models.ts); they win over the settings.
  */
-export function installState(o: { role: InstallRole; owned: boolean; settings: unknown; keys: Record<string, KeyState>; modelEnv?: ModelEnv; researchEnv?: SourceEnv }): InstallState {
+export function installState(o: {
+  role: InstallRole; owned: boolean; settings: unknown; keys: Record<string, KeyState>; modelEnv?: ModelEnv; researchEnv?: SourceEnv;
+  mode?: InstallMode; plan?: PlanState | null; limits?: InstallLimits;
+}): InstallState {
   const settings = readSettings(o.settings);
   const env = (value: string | null | undefined) => value?.trim() || null;
   return {
-    role: o.role, owned: o.owned, ...settings, resolvedModels: resolveModels(settings.models, o.modelEnv ?? {}), keys: o.keys,
+    role: o.role, owned: o.owned, ...settings, ...(o.limits ? { limits: o.limits } : {}), resolvedModels: resolveModels(settings.models, o.modelEnv ?? {}), keys: o.keys,
     researchEnv: { tiktok: env(o.researchEnv?.RESEARCH_TIKTOK), metaActor: env(o.researchEnv?.RESEARCH_META_APIFY_ACTOR) },
+    mode: o.mode ?? (o.owned ? "install" : "legacy"), plan: o.plan ?? null,
   };
 }
 

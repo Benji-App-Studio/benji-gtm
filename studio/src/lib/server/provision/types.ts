@@ -1,6 +1,7 @@
 // Shared shapes for provisioning a Supabase project (see index.ts for the overview).
 // Plain TypeScript with relative imports only: the studio's API routes, scripts/provision.mjs and the
 // tests all load these files.
+import { m } from "../../i18n/translate";
 
 /** `fetch`, injected so tests never touch the network. */
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -18,16 +19,17 @@ export const STEP_IDS = ["project", "keys", "migrations", "function-urls", "func
 export type StepId = (typeof STEP_IDS)[number];
 
 /** What a step is called on the checklist. */
+// Said with t() on the setup page (app/setup/parts.tsx).
 export const STEP_LABELS: Record<StepId, string> = {
-  project: "Check the project is ready",
-  keys: "Read the project's keys",
-  migrations: "Create the database tables",
-  "function-urls": "Point the database at its backend functions",
-  functions: "Install the backend functions",
-  owner: "Create your account and close sign-up",
-  storage: "Copy the Style Library images",
-  jobs: "Turn on the scheduled jobs",
-  config: "Save the connection on this computer",
+  project: m("Check the project is ready"),
+  keys: m("Read the project's keys"),
+  migrations: m("Create the database tables"),
+  "function-urls": m("Point the database at its backend functions"),
+  functions: m("Install the backend functions"),
+  owner: m("Create your account and close sign-up"),
+  storage: m("Copy the Style Library images"),
+  jobs: m("Turn on the scheduled jobs"),
+  config: m("Save the connection on this computer"),
 };
 
 /** The steps the checklist runs before the account exists, when it is created, and for a later update. */

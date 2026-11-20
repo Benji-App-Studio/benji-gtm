@@ -1,3 +1,4 @@
+import { getTranslator } from "@/lib/i18n/server";
 import { isResponse, requireUser } from "@/lib/server/auth";
 import { listWorkspaces } from "@/lib/workspace";
 import { caughtFailure } from "@/lib/server/errors";
@@ -9,6 +10,7 @@ export async function GET() {
   try {
     return Response.json(await listWorkspaces(session.supabase));
   } catch (error) {
-    return caughtFailure("workspaces list", error, "Couldn't load your workspaces. Try again.");
+    const { t } = await getTranslator();
+    return caughtFailure("workspaces list", error, t("Couldn't load your workspaces. Try again."), 500, {}, t);
   }
 }

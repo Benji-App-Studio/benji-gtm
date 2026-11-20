@@ -7,6 +7,7 @@
 // Font files, logos and product images are only listed here; the Brand page uploads them (fonts to the
 // workspace bucket, images as product images) and fills in the font URLs and each product's image ids.
 // Pure; tested in scripts/creative-runner/tests/brand-system.test.ts.
+import { fill, m, type Translator } from "./i18n/translate";
 import { cleanBrandSystem, EMPTY_BRAND_SYSTEM, type BrandAvatar, type BrandFont, type BrandOffer, type BrandProduct, type BrandSystem, type ColorRole, type FontRole } from "./brand-system";
 
 export interface ImportFile { path: string; text?: string }
@@ -25,12 +26,12 @@ export interface BrandImport {
 
 /** The headings a pasted guide is read by, for the Brand page's help. */
 export const GUIDE_HEADINGS: { part: string; headings: string }[] = [
-  { part: "Look", headings: "## Prompt modifier, ## Photography, ## Packaging, ## Ad formats (bullets like \"- **Lighting:** soft daylight\")" },
-  { part: "Voice", headings: "## Voice in one line, ## How it sounds, ## Words we use, ## Words we never use (or ## Vocabulary), ## Signature lines, ## Example copy" },
-  { part: "Positioning", headings: "## Counter-position, ## Value proposition, ## What this brand stands against" },
-  { part: "Offers", headings: "## Offers, then ### O1 — Free trial, 7 days free (one per offer), ## Stacking rules, ## Not offered" },
-  { part: "People", headings: "## 1. The busy parent — \"Maya\", 30–45 (one per person, with bullets like \"- **Wants:** …\")" },
-  { part: "Colours", headings: "## Colours, with bullets like \"- Ink #111111 (primary)\"; or JSON: { \"primary\": [{ \"name\": \"Ink\", \"hex\": \"#111111\" }], \"accent\": [] }" },
+  { part: m("Look"), headings: "## Prompt modifier, ## Photography, ## Packaging, ## Ad formats (bullets like \"- **Lighting:** soft daylight\")" },
+  { part: m("Voice"), headings: "## Voice in one line, ## How it sounds, ## Words we use, ## Words we never use (or ## Vocabulary), ## Signature lines, ## Example copy" },
+  { part: m("Positioning"), headings: "## Counter-position, ## Value proposition, ## What this brand stands against" },
+  { part: m("Offers"), headings: "## Offers, then ### O1 — Free trial, 7 days free (one per offer), ## Stacking rules, ## Not offered" },
+  { part: m("People"), headings: "## 1. The busy parent — \"Maya\", 30–45 (one per person, with bullets like \"- **Wants:** …\")" },
+  { part: m("Colours"), headings: "## Colours, with bullets like \"- Ink #111111 (primary)\"; or JSON: { \"primary\": [{ \"name\": \"Ink\", \"hex\": \"#111111\" }], \"accent\": [] }" },
 ];
 
 const base = (path: string) => path.split("/").pop() ?? path;
@@ -206,12 +207,12 @@ function counterPositioning(md: string, sys: BrandSystem) {
 
 const ROLE_OF: Record<string, ColorRole> = { primary: "primary", secondary: "secondary", accent: "accent", neutral: "neutral", background: "background" };
 
-function palette(json: string, sys: BrandSystem, warnings: string[]) {
+function palette(json: string, sys: BrandSystem, warnings: string[], t: Translator["t"]) {
   try {
     const data = JSON.parse(json) as Record<string, unknown>;
     sys.palette = Object.entries(ROLE_OF).flatMap(([key, role]) => (Array.isArray(data[key]) ? data[key] as Record<string, unknown>[] : [])
       .map((c) => ({ name: String(c.name ?? ""), hex: String(c.hex ?? ""), role, use: String(c.use ?? "") })));
-  } catch { warnings.push("color-palette.json isn't valid JSON; colours skipped."); }
+  } catch { warnings.push(t("color-palette.json isn't valid JSON; colours skipped.")); }
 }
 
 const COLOUR_HEADINGS = ["colours", "colors", "colour palette", "color palette", "palette"];
@@ -240,7 +241,7 @@ const FONT_ROLE: Record<string, FontRole> = { heading: "headline", headline: "he
 const FONT_EXT = /\.(ttf|otf|woff)$/i; // Satori (composed ads) reads TTF, OTF and WOFF, not WOFF2
 
 /** typography.json's fonts by role, each matched to a font file in fonts/ (family words + weight in its name). */
-function typography(json: string, sys: BrandSystem, fontFiles: string[], warnings: string[]): FontFileTask[] {
+function typography(json: string, sys: BrandSystem, fontFiles: string[], warnings: string[], t: Translator["t"]): FontFileTask[] {
   const tasks: FontFileTask[] = [];
   try {
     const data = JSON.parse(json) as { fonts?: Record<string, unknown>[] };
@@ -256,7 +257,7 @@ function typography(json: string, sys: BrandSystem, fontFiles: string[], warning
       const file = candidates.find((p) => weightFromName(base(p)) === weight) ?? candidates.find((p) => weightFromName(base(p)) === 400) ?? candidates[0];
       fonts.push({ role, family, weight: file ? weightFromName(base(file)) : weight, description: String(f.description ?? "").slice(0, 300) });
       if (file) tasks.push({ path: file, family, role, weight: weightFromName(base(file)) });
-      else warnings.push(`No TTF/OTF/WOFF file for ${family} (${role}) in fonts/: composed ads fall back to a system font for it.`);
+      else warnings.push(t("No TTF/OTF/WOFF file for {family} ({role}) in fonts/: composed ads fall back to a system font for it.", { family, role }));
     }
     // Legal text: the body face at Regular, when there's a file for it.
     const body = fonts.find((f) => f.role === "body");
@@ -267,12 +268,12 @@ function typography(json: string, sys: BrandSystem, fontFiles: string[], warning
       if (regular) tasks.push({ path: regular, family: body.family, role: "legal", weight: 400 });
     }
     sys.fonts = fonts;
-  } catch { warnings.push("typography.json isn't valid JSON; fonts skipped."); }
+  } catch { warnings.push(t("typography.json isn't valid JSON; fonts skipped.")); }
   return tasks;
 }
 
 /** products.json's products, each with its images in product-images/ (files named <slug>-NN.*). */
-function products(json: string, sys: BrandSystem, imageFiles: string[], warnings: string[]): ImageTask[] {
+function products(json: string, sys: BrandSystem, imageFiles: string[], warnings: string[], t: Translator["t"]): ImageTask[] {
   const tasks: ImageTask[] = [];
   try {
     const data = JSON.parse(json) as { products?: Record<string, unknown>[] };
@@ -290,7 +291,7 @@ function products(json: string, sys: BrandSystem, imageFiles: string[], warnings
         accent: String(p.cap_hex ?? p.accent ?? p.color ?? ""), assetIds: [],
       };
     });
-  } catch { warnings.push("products.json isn't valid JSON; products skipped."); }
+  } catch { warnings.push(t("products.json isn't valid JSON; products skipped.")); }
   return tasks;
 }
 
@@ -309,8 +310,9 @@ function unreadHeadings(md: string): string[] {
 const KNOWN = ["visual-guidelines.md", "brand-voice.md", "avatars.md", "offers.md", "counter-positioning.md", "color-palette.json", "typography.json", "products.json", "brand-context.md"];
 const hasHeading = (md: string, ...names: string[]) => { const all = [...sections(md).keys()]; return names.some((n) => all.some((k) => k.includes(n))); };
 
-/** Everything the folder (or one guide) holds, read into a brand system plus the files to upload. */
-export function readBrandFolder(files: ImportFile[], folderName = ""): BrandImport {
+/** Everything the folder (or one guide) holds, read into a brand system plus the files to upload. `t` words the summary and warnings. */
+export function readBrandFolder(files: ImportFile[], folderName = "", t: Translator["t"] = fill): BrandImport {
+  const count = (n: number, one: string, other: string) => t(n === 1 ? one : other, { n });
   const sys: BrandSystem = structuredClone(EMPTY_BRAND_SYSTEM);
   const read: string[] = [];
   const warnings: string[] = [];
@@ -325,55 +327,60 @@ export function readBrandFolder(files: ImportFile[], folderName = ""): BrandImpo
   const json = (name: string, ...keys: string[]) => named(name) ?? guideJson.find((g) => { try { const d = JSON.parse(g) as Record<string, unknown>; return keys.some((k) => k in d); } catch { return false; } });
 
   const vg = md("visual-guidelines.md", "prompt modifier", "photography", "packaging", "ad formats");
-  if (vg) { visualGuidelines(vg, sys); read.push("look"); parts.add("look"); }
+  if (vg) { visualGuidelines(vg, sys); read.push(t("look")); parts.add("look"); }
   if (!sys.look.promptModifier) {
     const capsule = named("brand-context.md");
     const quote = capsule?.split("\n").filter((l) => l.startsWith(">")).map((l) => l.replace(/^>\s?/, "")).join(" ").trim();
     if (quote) { sys.look.promptModifier = quote; parts.add("look"); }
   }
   const voice = md("brand-voice.md", "voice in one line", "how it sounds", "vocabulary", "signature", "example copy", ...USE_HEADINGS, ...AVOID_HEADINGS);
-  if (voice) { brandVoice(voice, sys); read.push("voice"); parts.add("voice"); }
+  if (voice) { brandVoice(voice, sys); read.push(t("voice")); parts.add("voice"); }
   const avatars = named("avatars.md") ?? guideMd.find((g) => parseAvatars(g).length > 0);
-  if (avatars) { sys.avatars = parseAvatars(avatars); read.push(`${sys.avatars.length} ${sys.avatars.length === 1 ? "person" : "people"}`); parts.add("avatars"); }
+  if (avatars) { sys.avatars = parseAvatars(avatars); read.push(count(sys.avatars.length, m("{n} person"), m("{n} people"))); parts.add("avatars"); }
   const offers = named("offers.md") ?? guideMd.find((g) => parseOffers(g).offers.length > 0);
   if (offers) {
     const o = parseOffers(offers);
     Object.assign(sys, { offers: o.offers, offerRules: o.rules, notOffered: o.notOffered });
-    read.push(`${o.offers.length} offer${o.offers.length === 1 ? "" : "s"}`);
+    read.push(count(o.offers.length, m("{n} offer"), m("{n} offers")));
     for (const part of ["offers", "offerRules", "notOffered"] as const) parts.add(part);
   }
   const cp = md("counter-positioning.md", "counter-position", "value proposition", "stands against");
-  if (cp) { counterPositioning(cp, sys); read.push("positioning"); parts.add("positioning"); }
+  if (cp) { counterPositioning(cp, sys); read.push(t("positioning")); parts.add("positioning"); }
   const pal = json("color-palette.json", ...Object.keys(ROLE_OF));
-  if (pal) { palette(pal, sys, warnings); read.push(`${sys.palette.length} colour${sys.palette.length === 1 ? "" : "s"}`); parts.add("palette"); }
+  if (pal) { palette(pal, sys, warnings, t); read.push(count(sys.palette.length, m("{n} colour"), m("{n} colours"))); parts.add("palette"); }
   else {
     // No palette file: a guide's own "## Colours" section, one colour per bullet.
     const listed = guideMd.map(parseColours).find((colours) => colours.length > 0);
-    if (listed) { sys.palette = listed; read.push(`${listed.length} colour${listed.length === 1 ? "" : "s"}`); parts.add("palette"); }
+    if (listed) { sys.palette = listed; read.push(count(listed.length, m("{n} colour"), m("{n} colours"))); parts.add("palette"); }
   }
   const fontFiles = paths.filter((p) => dirOf(p).toLowerCase() === "fonts");
   const typ = json("typography.json", "fonts");
-  const fonts = typ ? typography(typ, sys, fontFiles, warnings) : [];
-  if (typ) { read.push(`${sys.fonts.length} font${sys.fonts.length === 1 ? "" : "s"}`); parts.add("fonts"); }
+  const fonts = typ ? typography(typ, sys, fontFiles, warnings, t) : [];
+  if (typ) { read.push(count(sys.fonts.length, m("{n} font"), m("{n} fonts"))); parts.add("fonts"); }
   const imageFiles = paths.filter((p) => dirOf(p).toLowerCase() === "product-images" && /\.(png|jpe?g|webp)$/i.test(p));
   const prod = json("products.json", "products");
-  const images = prod ? products(prod, sys, imageFiles, warnings) : [];
-  if (prod) { read.push(`${sys.products.length} product${sys.products.length === 1 ? "" : "s"}`); parts.add("products"); }
+  const images = prod ? products(prod, sys, imageFiles, warnings, t) : [];
+  if (prod) { read.push(count(sys.products.length, m("{n} product"), m("{n} products"))); parts.add("products"); }
   for (const p of paths.filter((p) => dirOf(p).toLowerCase() === "logos" && /\.(png|jpe?g|webp)$/i.test(p))) images.push({ path: p, kind: "logo", label: base(p).replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ") });
 
   const system = cleanBrandSystem({ ...sys, source: "brand-skill", importedFrom: folderName, updatedAt: new Date().toISOString() });
   // A guide's sections nothing here reads: say which, so a part the person wrote isn't dropped without a word.
   const skipped = [...new Set(guideMd.flatMap(unreadHeadings))];
-  if (read.length && skipped.length) warnings.push(`Not read: ${skipped.slice(0, 6).map((h) => `“${h}”`).join(", ")}${skipped.length > 6 ? ` and ${skipped.length - 6} more` : ""}. Only the headings under “What it reads” are imported; add the rest by hand below.`);
-  if (!read.length) warnings.push("Nothing in this guide could be read. Use the headings listed under “What it reads”, or fill in the fields by hand.");
+  if (read.length && skipped.length) {
+    const list = skipped.slice(0, 6).map((h) => `“${h}”`).join(", ");
+    warnings.push(skipped.length > 6
+      ? t("Not read: {list} and {n} more. Only the headings under “What it reads” are imported; add the rest by hand below.", { list, n: skipped.length - 6 })
+      : t("Not read: {list}. Only the headings under “What it reads” are imported; add the rest by hand below.", { list }));
+  }
+  if (!read.length) warnings.push(t("Nothing in this guide could be read. Use the headings listed under “What it reads”, or fill in the fields by hand."));
   else {
-    if (parts.has("look") && !system.look.promptModifier) warnings.push("No prompt modifier found: write one on the Brand page (it opens every image prompt).");
-    if (parts.has("offers") && !system.offers.length) warnings.push("No offers found: creatives will show no price or offer until you add them.");
+    if (parts.has("look") && !system.look.promptModifier) warnings.push(t("No prompt modifier found: write one on the Brand page (it opens every image prompt)."));
+    if (parts.has("offers") && !system.offers.length) warnings.push(t("No offers found: creatives will show no price or offer until you add them."));
   }
   return { system, fonts, images, read, warnings, parts: [...parts] };
 }
 
 /** One guide, pasted as text: Markdown, or JSON when it starts with a brace. */
-export function readBrandGuide(text: string, name = "Pasted guide"): BrandImport {
-  return readBrandFolder([{ path: /^\s*\{/.test(text) ? "guide.json" : "guide.md", text }], name);
+export function readBrandGuide(text: string, name = "Pasted guide", t: Translator["t"] = fill): BrandImport {
+  return readBrandFolder([{ path: /^\s*\{/.test(text) ? "guide.json" : "guide.md", text }], name, t);
 }

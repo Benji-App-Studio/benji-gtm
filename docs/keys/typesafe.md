@@ -44,7 +44,7 @@ nothing, OpenAI covers the same jobs.
 
 ### Part 3. Paste it into Benji GTM
 
-1. Open **Settings > API keys**.
+1. Open **Settings > Your keys**.
 2. Scroll to **Advanced** and find the **TypeSafe** row.
 3. Click **Add** (or **Replace**).
 4. Paste the key into the box.
@@ -81,7 +81,7 @@ copy all of it. It is sent to TypeSafe as `Authorization: Bearer <key>`.
 - Never paste the key into a chat with an AI helper, an email, a screenshot or a file in your
   GitHub copy.
 - To delete a key: open https://console.typesafe.ai/keys and remove it there, then remove it in
-  Benji GTM too (**Settings > API keys > TypeSafe > ⋯ > Remove**).
+  Benji GTM too (**Settings > Your keys > TypeSafe > ⋯ > Remove**).
 
 ---
 

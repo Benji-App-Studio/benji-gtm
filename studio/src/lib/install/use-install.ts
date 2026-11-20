@@ -1,14 +1,19 @@
 "use client";
 // What the browser knows about this install (GET /api/install): the caller's role, which keys are set
 // and the settings. Shared through the client cache, so every screen that asks gets the same answer and
-// one request. Every caller must cope with `install` being null: the request can fail (signed out, the
+// one request; an answer stays fresh for a minute (INSTALL_MAX_AGE_MS), so moving between pages doesn't
+// ask again. The app shell asks again when the tab is looked at and every few minutes
+// (components/nav/session.tsx), and screens that change a key or a setting refresh it themselves. Every caller must cope with `install` being null: the request can fail (signed out, the
 // project unreachable, an install that is not set up yet), and then `error` says why.
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { refresh as refreshCached, useCached } from "@/lib/client-cache";
+import { refresh as refreshCached, revalidate, useCached } from "@/lib/client-cache";
+import { m } from "../i18n/translate";
 import type { InstallRole, InstallState } from "./types";
 
 export const INSTALL_URL = "/api/install";
-const UNREACHABLE = "The server didn't answer. Check your connection and try again.";
+/** How long an answer is used without asking again (pages opened within it share it). */
+export const INSTALL_MAX_AGE_MS = 60_000;
+const UNREACHABLE = m("The server didn't answer. Check your connection and try again.");
 
 const isInstall = (value: unknown): value is InstallState =>
   Boolean(value && typeof value === "object" && "role" in value && "keys" in value && typeof (value as InstallState).keys === "object");
@@ -36,7 +41,7 @@ export function useHydrated(): boolean {
 }
 
 export function useInstall(): UseInstall {
-  const [cached] = useCached<InstallState | { error?: string }>(INSTALL_URL);
+  const [cached] = useCached<InstallState | { error?: string }>(INSTALL_URL, { maxAgeMs: INSTALL_MAX_AGE_MS });
   const value = useHydrated() ? cached : undefined;
   // The cache only keeps answers that parsed; a request that failed outright is noted here.
   const [failed, setFailed] = useState(false);
@@ -52,10 +57,10 @@ export function useInstall(): UseInstall {
     }
   }, []);
 
-  // useCached has already started this request; asking again here shares it and tells us if it failed.
+  // useCached has already started this request (or has a fresh answer); asking here shares it and tells us if it failed.
   useEffect(() => {
     let live = true;
-    refreshCached<unknown>(INSTALL_URL).then(() => { if (live) setFailed(false); }, () => { if (live) setFailed(true); });
+    revalidate<unknown>(INSTALL_URL, INSTALL_MAX_AGE_MS).then(() => { if (live) setFailed(false); }, () => { if (live) setFailed(true); });
     return () => { live = false; };
   }, []);
 
@@ -65,9 +70,13 @@ export function useInstall(): UseInstall {
   return { install, loading: !install && !error, error, refresh };
 }
 
-/** "Owner" or "Member"; nothing for an install from before owners existed, or while it loads. */
+/** "Owner" or "Member"; nothing for an install from before owners existed, for an account (accounts mode), or while it loads. */
 export const roleLabel = (role: InstallRole | undefined | null): string | null =>
-  role === "owner" ? "Owner" : role === "member" ? "Member" : null;
+  role === "owner" ? m("Owner") : role === "member" ? m("Member") : null;
 
-/** Whether the caller may change install-wide settings (keys, models, members, the name). */
-export const canManage = (install: InstallState | null | undefined): boolean => Boolean(install?.owned && install.role === "owner");
+/**
+ * Whether the caller may change the settings they see (keys, models, the name): the owner of an install,
+ * or, in accounts mode, every account (each manages its own).
+ */
+export const canManage = (install: InstallState | null | undefined): boolean =>
+  Boolean(install && (install.mode === "accounts" || (install.owned && install.role === "owner")));

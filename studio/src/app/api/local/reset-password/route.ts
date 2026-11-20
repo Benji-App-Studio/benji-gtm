@@ -1,3 +1,4 @@
+import { getTranslator } from "@/lib/i18n/server";
 import { getInstallConfig, projectRef, readStoredOwner, writeStoredOwner } from "@/lib/install/config";
 import { isEmail, localReset, ProvisionError } from "@/lib/server/provision";
 import { appOriginOf } from "@/lib/server/provision/guard";
@@ -12,16 +13,17 @@ import { serverSignIn } from "@/lib/server/owner-session";
  * it answers `no_account`, and the page offers to create it again (`recreateEmail`).
  */
 export async function POST(request: Request) {
-  if (!localModeRequest(request)) return refuse(403, "Resetting the password works only in the app on the computer it runs on.");
+  const { t } = await getTranslator();
+  if (!localModeRequest(request)) return refuse(403, t("Resetting the password works only in the app on the computer it runs on."));
   const config = getInstallConfig();
   const ref = config ? projectRef(config.supabaseUrl) : null;
-  if (!config || !ref) return refuse(409, "This computer isn't connected to a hosted Supabase project. Open the setup page to connect it.");
+  if (!config || !ref) return refuse(409, t("This computer isn't connected to a hosted Supabase project. Open the setup page to connect it."));
   const input = await readSetupBody(request);
   if (input instanceof Response) return input;
   const password = typeof input.body.password === "string" ? input.body.password : "";
-  if (password.length < 8) return refuse(400, "Use a password with at least 8 characters.");
+  if (password.length < 8) return refuse(400, t("Use a password with at least 8 characters."));
   const recreate = typeof input.body.recreateEmail === "string" ? input.body.recreateEmail.trim() : "";
-  if (recreate && !isEmail(recreate)) return refuse(400, "That doesn't look like an email address. Check it for typos.");
+  if (recreate && !isEmail(recreate)) return refuse(400, t("That doesn't look like an email address. Check it for typos."));
 
   let email: string;
   let recreated = false;
@@ -35,7 +37,7 @@ export async function POST(request: Request) {
       const status = error.code === "no_account" ? 409 : error.code === "not_ready" || error.code === "no_project" || error.code === "not_prepared" ? 409 : error.status === 401 ? 401 : 400;
       return Response.json({ error: error.message, detail: error.detail, code: error.code }, { status, headers: NO_STORE });
     }
-    return refuse(500, "Something unexpected went wrong. Try again.");
+    return refuse(500, t("Something unexpected went wrong. Try again."));
   }
   try { writeStoredOwner({ email, password }); } catch { /* signing in still works; the login page asks once */ }
   const signedIn = (await serverSignIn(email, password)).ok;

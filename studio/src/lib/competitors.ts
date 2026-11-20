@@ -10,6 +10,8 @@
 // competitor per name, what saving the product form adds and removes, and what Research suggests.
 // The SQL twin of `competitorKey` is public.competitor_key; keep the two in step.
 
+import { m } from "./i18n/translate";
+
 /** Where a list entry came from. `research`: added in Research (or by an ad import). */
 export type CompetitorSource = "research" | "product" | "profile" | "analysis";
 
@@ -180,5 +182,5 @@ export function competitorSuggestions(rows: CompetitorRow[], candidates: { id: s
 }
 
 export const COMPETITOR_SOURCE_LABEL: Record<CompetitorSource, string> = {
-  research: "added in Research", product: "from your product", profile: "from the AI profile", analysis: "from an analysis",
+  research: m("added in Research"), product: m("from your product"), profile: m("from the AI profile"), analysis: m("from an analysis"),
 };

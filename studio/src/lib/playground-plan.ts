@@ -6,6 +6,11 @@
 // lib/brand-rules.ts like every other prompt, and QA checks the same rules (Plan.qa). Plain TypeScript,
 // safe in the browser (live estimate) and on the server.
 import { brandRules, ruleLines, type BrandRules } from "./brand-rules";
+import { fill, m, type Vars } from "./i18n/translate";
+
+/** Words a plan's notes in the reader's language (a route's `t`); English by default. */
+type Words = (text: string, vars?: Vars) => string;
+const englishWords: Words = (text, vars) => fill(text, vars);
 import { lookBlock, type BrandSystem } from "./brand-system";
 import { ANGLES, ASPECTS, cleanMustAvoid, DEFAULT_REQUEST, jobCost, totals, videoAspect, type BatchRequest, type ImageQuality, type ImageResolution, type Plan, type PlannedJob } from "./creative-plan";
 import { cleanReviewIds } from "./reviews";
@@ -125,25 +130,25 @@ export function normalizePlaygroundOptions(input: Partial<PlaygroundOptions> | n
  */
 export function playgroundRequestProblem(input: unknown): string | null {
   const r = (input ?? {}) as Record<string, unknown>;
-  if (typeof r.prompt !== "string" || r.prompt.trim().length < PLAYGROUND_PROMPT.min) return "Say what to make or change.";
+  if (typeof r.prompt !== "string" || r.prompt.trim().length < PLAYGROUND_PROMPT.min) return m("Say what to make or change.");
   if (r.prompt.length > PLAYGROUND_PROMPT.max) return `Keep the prompt under ${PLAYGROUND_PROMPT.max} characters.`;
-  if (r.referenceUrl != null && !isHttpsUrl(r.referenceUrl)) return "The reference image has to be a public https link.";
-  if (r.inputUrls != null && !Array.isArray(r.inputUrls)) return "Your images have to be a list of links.";
+  if (r.referenceUrl != null && !isHttpsUrl(r.referenceUrl)) return m("The reference image has to be a public https link.");
+  if (r.inputUrls != null && !Array.isArray(r.inputUrls)) return m("Your images have to be a list of links.");
   const inputs = (r.inputUrls as unknown[] | undefined) ?? [];
   if (inputs.length > PLAYGROUND_MAX_INPUTS) return `Add at most ${PLAYGROUND_MAX_INPUTS} of your own images.`;
-  if (inputs.some((u) => !isHttpsUrl(u))) return "Each of your images has to be a public https link.";
-  if (!(PLAYGROUND_ASPECTS as readonly unknown[]).includes(r.aspect)) return "Pick 1:1, 4:5, 9:16 or 16:9.";
-  if (r.mode != null && r.mode !== "image" && r.mode !== "video") return "Pick image or video.";
+  if (inputs.some((u) => !isHttpsUrl(u))) return m("Each of your images has to be a public https link.");
+  if (!(PLAYGROUND_ASPECTS as readonly unknown[]).includes(r.aspect)) return m("Pick 1:1, 4:5, 9:16 or 16:9.");
+  if (r.mode != null && r.mode !== "image" && r.mode !== "video") return m("Pick image or video.");
   if (r.mode === "video") {
-    if (![1, 2].includes(Number(r.count))) return "Make 1 or 2 versions of a video.";
+    if (![1, 2].includes(Number(r.count))) return m("Make 1 or 2 versions of a video.");
     const v = (r.video ?? {}) as Record<string, unknown>;
     const duration = Number(v.duration ?? DEFAULT_PLAYGROUND_VIDEO.duration);
     if (!Number.isInteger(duration) || duration < PLAYGROUND_VIDEO.minDuration || duration > PLAYGROUND_VIDEO.maxDuration) return `A video lasts ${PLAYGROUND_VIDEO.minDuration} to ${PLAYGROUND_VIDEO.maxDuration} seconds.`;
-    if (v.resolution != null && !(PLAYGROUND_VIDEO_RESOLUTIONS as unknown[]).includes(v.resolution)) return "Pick 720p or 1080p.";
-    if (v.startFrame != null && !inputs.includes(v.startFrame)) return "The start frame has to be one of your images.";
+    if (v.resolution != null && !(PLAYGROUND_VIDEO_RESOLUTIONS as unknown[]).includes(v.resolution)) return m("Pick 720p or 1080p.");
+    if (v.startFrame != null && !inputs.includes(v.startFrame)) return m("The start frame has to be one of your images.");
     return null;
   }
-  if (![1, 2, 3, 4].includes(Number(r.count))) return "Make 1 to 4 versions.";
+  if (![1, 2, 3, 4].includes(Number(r.count))) return m("Make 1 to 4 versions.");
   return null;
 }
 
@@ -262,15 +267,15 @@ export function playgroundVideoPrompt(req: PlaygroundRequest, brand: PlaygroundB
 }
 
 /** A video request's plan: one Seedance 2.5 `ai_video` job per version, priced from the Studio's table (jobCost). */
-function planPlaygroundVideo(req: PlaygroundRequest, brand: PlaygroundBrand): Plan {
+function planPlaygroundVideo(req: PlaygroundRequest, brand: PlaygroundBrand, t: Words): Plan {
   const v = req.video ?? DEFAULT_PLAYGROUND_VIDEO;
   const errors: string[] = [];
   const warnings: string[] = [];
-  if (req.prompt.trim().length < PLAYGROUND_PROMPT.min) errors.push("Describe the shot.");
-  if (!ASPECTS.includes(req.aspect)) errors.push("Pick 9:16, 1:1, 4:5 or 16:9.");
+  if (req.prompt.trim().length < PLAYGROUND_PROMPT.min) errors.push(t("Describe the shot."));
+  if (!ASPECTS.includes(req.aspect)) errors.push(t("Pick 9:16, 1:1, 4:5 or 16:9."));
   const images = playgroundVideoImages(req);
-  if (req.aspect === "4:5") warnings.push("Seedance has no 4:5: the video is made in 3:4 (Meta trims it to 4:5).");
-  if (v.startFrame && images.length === 1) warnings.push("With only a start frame, the Higgsfield API makes the video in that image's shape (the aspect is used on the desktop runner).");
+  if (req.aspect === "4:5") warnings.push(t("Seedance has no 4:5: the video is made in 3:4 (Meta trims it to 4:5)."));
+  if (v.startFrame && images.length === 1) warnings.push(t("With only a start frame, the Higgsfield API makes the video in that image's shape (the aspect is used on the desktop runner)."));
   // The same params the Studio's AI videos carry (lib/creative-plan.ts planBatch), with the exact image
   // list (`image_refs`, split over style_refs/product_refs as image jobs do) and the start frame.
   const { params: imageParams } = playgroundImages({ referenceUrl: null, inputUrls: images });
@@ -288,19 +293,19 @@ function planPlaygroundVideo(req: PlaygroundRequest, brand: PlaygroundBrand): Pl
 }
 
 /** What a playground request costs and the jobs it makes (the confirm dialog shows this; createBatch runs it). */
-export function planPlayground(input: PlaygroundRequest, optionsIn: PlaygroundOptions, brand: PlaygroundBrand): Plan {
+export function planPlayground(input: PlaygroundRequest, optionsIn: PlaygroundOptions, brand: PlaygroundBrand, t: Words = englishWords): Plan {
   const req = normalizePlaygroundRequest(input);
-  if (req.mode === "video") return planPlaygroundVideo(req, brand);
+  if (req.mode === "video") return planPlaygroundVideo(req, brand, t);
   const options = normalizePlaygroundOptions(optionsIn);
   const errors: string[] = [];
   const warnings: string[] = [];
-  if (req.prompt.trim().length < PLAYGROUND_PROMPT.min) errors.push("Say what to make or change.");
+  if (req.prompt.trim().length < PLAYGROUND_PROMPT.min) errors.push(t("Say what to make or change."));
   const { images, params: imageParams } = playgroundImages(req);
   const backend = images.length > RUNNER_MAX_IMAGES ? "api" : "auto";
   const viaHiggsfield = options.provider === "higgsfield";
-  if (viaHiggsfield && backend === "api") warnings.push(`With ${images.length} images it runs on Higgsfield's API (the desktop runner sends at most ${RUNNER_MAX_IMAGES}).`);
-  if (viaHiggsfield && req.aspect === "4:5") warnings.push("On the Higgsfield API, 4:5 is made in 3:4 (Meta trims it to 4:5); the desktop runner makes 4:5.");
-  if (!ASPECTS.includes(req.aspect)) errors.push("Pick 1:1, 4:5, 9:16 or 16:9.");
+  if (viaHiggsfield && backend === "api") warnings.push(t("With {n} images it runs on Higgsfield's API (the desktop runner sends at most {max}).", { n: images.length, max: RUNNER_MAX_IMAGES }));
+  if (viaHiggsfield && req.aspect === "4:5") warnings.push(t("On the Higgsfield API, 4:5 is made in 3:4 (Meta trims it to 4:5); the desktop runner makes 4:5."));
+  if (!ASPECTS.includes(req.aspect)) errors.push(t("Pick 1:1, 4:5, 9:16 or 16:9."));
   const params: Record<string, unknown> = {
     aspect_ratio: req.aspect, resolution: options.resolution, quality: options.quality, variant: options.variant, use_screenshots: false,
     ...imageParams,

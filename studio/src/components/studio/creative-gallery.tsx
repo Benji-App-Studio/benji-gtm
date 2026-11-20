@@ -3,12 +3,13 @@
 // checks (TypeSafe's Jev), fills in the ad copy Launch will use, and approves or rejects it with a note. A creative still
 // waiting for its composed text or our logo (`waiting`) can't be approved; one where that failed after
 // its retries (`failures`) says so on its card, with a way to try again. Approval rules: lib/creative-review.ts.
-// Playground results are reviewed here too (badged "Playground", with a source chip); `openId` comes from
+// Playground results are reviewed here too (badged "Remix", with a source chip); `openId` comes from
 // the Studio so a link (?review=<id>) can open one's panel.
 // Ad copy: "Write copy" (on a card, in the panel, or "Write copy for all" for the creatives shown) has
 // OpenAI write A (creator voice) and B (brand voice) from the brand's rules (lib/creative-copy.ts); the
 // A/B switcher sets the headline, primary text and description Launch uses. QA checks the copy again.
-import { COPY_LIMITS, LAYOUTS, layoutById, layoutRoles, unplacedCopy, unplacedNote, type ComposedCopy } from "@/lib/composed-ads";
+import { COMPOSE_WORDS, COPY_LIMITS, LAYOUTS, layoutById, layoutRoles, unplacedCopy, unplacedNote, type ComposedCopy } from "@/lib/composed-ads";
+import { storedWords } from "@/lib/stored-words";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chosenVariant } from "@/lib/creative-copy";
 import { KIND_LABEL } from "@/lib/creative-plan";
@@ -22,9 +23,10 @@ import { IconX } from "../icons";
 import { Badge, Button, ButtonLink, cx, EmptyState, Field, Gear, IconButton, inputClass, segmentClass, segmentTrackClass, Spinner } from "../ui";
 import { FeatureLock, type Features } from "./features";
 import type { FeatureState } from "@/lib/capabilities";
-import { workspaceHref } from "@/lib/workspace-schema";
 import { PANEL, PANEL_OVERLAY, PanelPortal } from "../panel-portal";
-import { UI_LOCALE } from "@/lib/ui-locale";
+import { studioHref } from "@/lib/nav-model";
+import { useT } from "@/lib/i18n/client";
+import { m } from "@/lib/i18n/translate";
 
 type Filter = "review" | "approved" | "rejected" | "all";
 const QA: Record<QaStatus, (typeof QA_BADGE)[string]> = QA_BADGE;
@@ -34,16 +36,16 @@ const QA: Record<QaStatus, (typeof QA_BADGE)[string]> = QA_BADGE;
  * instead of a failure.
  */
 const qaBadge = (status: QaStatus, aiLock: FeatureState | null): (typeof QA_BADGE)[string] =>
-  (aiLock && (status === "error" || status === "pending") ? { label: "Not checked", tone: "neutral" } : QA[status]);
-const ORIGIN_LABEL: Record<OriginFilter, string> = { all: "All sources", studio: "Studio", playground: "Playground" };
+  (aiLock && (status === "error" || status === "pending") ? { label: m("Not checked"), tone: "neutral" } : QA[status]);
 const ASPECT_CLASS: Record<string, string> = { "9:16": "aspect-[9/16]", "4:5": "aspect-[4/5]", "1:1": "aspect-square", "3:4": "aspect-[3/4]", "16:9": "aspect-video" };
 
 function Preview({ creative, controls = false, className }: { creative: CreativeView; controls?: boolean; className?: string }) {
+  const { t } = useT();
   if (creative.kind === "video") {
     return <video src={creative.url} poster={creative.thumbnail_url ?? undefined} controls={controls} muted={!controls} playsInline preload="metadata" className={cx("h-full w-full bg-console object-contain", className)} />;
   }
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={creative.url} alt={creative.title ?? KIND_LABEL[creative.style]} loading="lazy" className={cx("h-full w-full bg-canvas object-contain", className)} />;
+  return <img src={creative.url} alt={creative.title ?? t(KIND_LABEL[creative.style])} loading="lazy" className={cx("h-full w-full bg-canvas object-contain", className)} />;
 }
 
 interface Work { waiting?: Record<string, string>; failures?: Record<string, string>; onRetryWork?: (id: string) => void }
@@ -62,6 +64,7 @@ const fieldsOf = (v: CopyVariant): CopyFields => ({ headline: v.headline, primar
  * fields (or null when it failed: the reason is shown), then refresh the list.
  */
 function useCopyWriter(onChanged: () => void) {
+  const { t, tn } = useT();
   const [writing, setWriting] = useState<ReadonlySet<string>>(new Set());
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const mark = (id: string, on: boolean) => setWriting((s) => { const next = new Set(s); if (on) next.add(id); else next.delete(id); return next; });
@@ -69,25 +72,25 @@ function useCopyWriter(onChanged: () => void) {
   const request = useCallback(async (id: string, variant?: string): Promise<{ fields?: CopyFields; error?: string }> => {
     const response = await fetch(`/api/studio/creatives/${id}/copy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(variant ? { variant } : {}) }).catch(() => null);
     const data = await response?.json().catch(() => null) as { error?: string; creative?: CreativeView } | null;
-    if (!response?.ok || !data?.creative) return { error: data?.error ?? "Couldn't write the copy. Try again." };
+    if (!response?.ok || !data?.creative) return { error: data?.error ?? t("Couldn't write the copy. Try again.") };
     const c = data.creative;
     return { fields: { headline: c.headline ?? "", primary_text: c.primary_text ?? "", description: c.description ?? "" } };
-  }, []);
+  }, [t]);
 
   const write = useCallback(async (id: string, variant?: string) => {
     mark(id, true);
     const result = await request(id, variant);
     mark(id, false);
-    if (result.error) { await notice(result.error, "Couldn't write the copy"); return null; }
+    if (result.error) { await notice(result.error, t("Couldn't write the copy")); return null; }
     onChanged();
     return result.fields ?? null;
-  }, [request, onChanged]);
+  }, [request, onChanged, t]);
 
   const writeAll = useCallback(async (ids: string[]) => {
     const ok = await ask({
-      title: `Write copy for ${ids.length} creative${ids.length === 1 ? "" : "s"}?`,
-      body: "The AI writes two versions of each: A in a creator's voice, B in the brand's, following your brand rules. Version A becomes the ad copy, and it is checked again.",
-      confirm: "Write copy",
+      title: tn(ids.length, "Write copy for {n} creative?", "Write copy for {n} creatives?"),
+      body: t("The AI writes two versions of each: A in a creator's voice, B in the brand's, following your brand rules. Version A becomes the ad copy, and it is checked again."),
+      confirm: t("Write copy"),
     });
     if (!ok) return;
     const queue = [...ids];
@@ -104,38 +107,39 @@ function useCopyWriter(onChanged: () => void) {
     }));
     setProgress(null);
     onChanged();
-    if (errors.length) await notice(`${ids.length - errors.length} written; ${errors.length} didn't: ${errors[0]}`, "Ad copy");
-  }, [request, onChanged]);
+    if (errors.length) await notice(t("{written} written; {failed} didn't: {reason}", { written: ids.length - errors.length, failed: errors.length, reason: errors[0] }), t("Ad copy"));
+  }, [request, onChanged, t, tn]);
 
   const pick = useCallback(async (creative: CreativeView, v: CopyVariant) => {
     const response = await fetch(`/api/studio/creatives/${creative.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fieldsOf(v)) }).catch(() => null);
-    if (!response?.ok) { await notice((await response?.json().catch(() => ({})))?.error ?? "Couldn't switch the copy. Try again."); return null; }
+    if (!response?.ok) { await notice((await response?.json().catch(() => ({})))?.error ?? t("Couldn't switch the copy. Try again.")); return null; }
     onChanged();
     return fieldsOf(v);
-  }, [onChanged]);
+  }, [onChanged, t]);
 
   return { writing, progress, write, writeAll, pick };
 }
 
 /** Under a card: "Write copy", or the A/B switcher once there's copy (hover a letter to read it). */
 function CardCopy({ creative, busy, canWrite, onWrite, onPick }: { creative: CreativeView; busy: boolean; canWrite: boolean; onWrite: () => void; onPick: (v: CopyVariant) => void }) {
+  const { t } = useT();
   const variants = creative.copy_variants ?? [];
   const chosen = chosenVariant(creative);
   // Nothing to switch between and nothing that could write it: no row.
   if (!variants.length && !canWrite && !busy) return null;
   return (
     <div className="flex items-center gap-1 border-t border-line px-2 py-1 text-xs">
-      {busy ? <span className="flex items-center gap-1 text-muted"><Spinner className="size-3" /> Writing copy…</span>
+      {busy ? <span className="flex items-center gap-1 text-muted"><Spinner className="size-3" /> {t("Writing copy…")}</span>
         : variants.length ? (
           <>
-            <span className="mr-1 text-muted">Copy</span>
+            <span className="mr-1 text-muted">{t("Copy")}</span>
             {variants.map((v) => (
-              <button key={v.label} type="button" aria-pressed={chosen === v.label} onClick={() => onPick(v)} title={`${v.label} · ${v.voice === "creator" ? "creator voice" : "brand voice"}: ${v.primary_text}`}
+              <button key={v.label} type="button" aria-pressed={chosen === v.label} onClick={() => onPick(v)} title={v.voice === "creator" ? t("{label} · creator voice: {text}", { label: v.label, text: v.primary_text }) : t("{label} · brand voice: {text}", { label: v.label, text: v.primary_text })}
                 className={cx("min-w-6 rounded-full border px-1.5 py-0.5 tabular-nums transition-colors", chosen === v.label ? "border-hairline bg-control font-medium text-ink" : "border-transparent text-muted hover:bg-hover hover:text-ink")}>{v.label}</button>
             ))}
-            {canWrite && <button type="button" onClick={onWrite} className="ml-auto rounded-xs font-medium text-accent hover:underline" title="Write both versions again">Rewrite</button>}
+            {canWrite && <button type="button" onClick={onWrite} className="ml-auto rounded-xs font-medium text-accent hover:underline" title={t("Write both versions again")}>{t("Rewrite")}</button>}
           </>
-        ) : <button type="button" onClick={onWrite} className="rounded-xs font-medium text-accent hover:underline">Write copy</button>}
+        ) : <button type="button" onClick={onWrite} className="rounded-xs font-medium text-accent hover:underline">{t("Write copy")}</button>}
     </div>
   );
 }
@@ -154,10 +158,12 @@ export function CreativeGallery({ productId, features, creatives, batches = NO_B
   batches?: BatchRow[];
   /** Opens "Send to Meta" with these approved creatives. */
   onSendToMeta?: (ids: string[]) => void;
-  /** Batches the Playground made: their creatives carry a "Playground" badge and a source chip. */
+  /** Batches the Playground made: their creatives carry a "Remix" badge and a source chip. */
   playgroundBatchIds?: ReadonlySet<string>;
   openId: string | null; onOpen: (id: string | null) => void;
 } & Work) {
+  const { t, tn } = useT();
+  const originLabel: Record<OriginFilter, string> = { all: t("All sources"), studio: t("Studio"), playground: t("Remix") };
   const [filter, setFilter] = useState<Filter>("review");
   const [origin, setOrigin] = useState<OriginFilter>("all");
   const fromPlayground = creatives.some((c) => originOf(c, playgroundBatchIds) === "playground");
@@ -181,15 +187,15 @@ export function CreativeGallery({ productId, features, creatives, batches = NO_B
 
   async function exportToDrive() {
     const ids = creatives.filter((c) => c.approval === "approved" && !c.drive_file_id).map((c) => c.id).slice(0, 50);
-    if (!ids.length) return notice("Every approved creative is already in Drive.", "Nothing to copy");
+    if (!ids.length) return notice(t("Every approved creative is already in Drive."), t("Nothing to copy"));
     setExporting(true);
     const response = await fetch(`/api/studio/${productId}/drive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ creativeIds: ids }) });
     const data = await response.json().catch(() => ({}));
     setExporting(false);
-    if (!response.ok) return notice(data.error ?? "Couldn't copy to Drive.");
+    if (!response.ok) return notice(data.error ?? t("Couldn't copy to Drive."));
     const results = (data.results ?? []) as { error?: string }[];
     const failed = results.filter((r) => r.error);
-    await notice(failed.length ? `${results.length - failed.length} copied; ${failed.length} didn't: ${failed[0].error}` : `${results.length} copied to the workspace's Drive folder.`, "Google Drive");
+    await notice(failed.length ? t("{copied} copied; {failed} didn't: {reason}", { copied: results.length - failed.length, failed: failed.length, reason: failed[0].error ?? "" }) : t("{n} copied to the workspace's Drive folder.", { n: results.length }), "Google Drive");
     onChanged();
   }
 
@@ -201,7 +207,7 @@ export function CreativeGallery({ productId, features, creatives, batches = NO_B
     if (!response?.ok) {
       setZipping(false);
       const data = await response?.json().catch(() => null) as { error?: string } | null;
-      return notice(data?.error ?? "Couldn't make the zip. Try again.");
+      return notice(data?.error ?? t("Couldn't make the zip. Try again."));
     }
     const blob = await response.blob();
     setZipping(false);
@@ -212,26 +218,26 @@ export function CreativeGallery({ productId, features, creatives, batches = NO_B
     link.remove();
     setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
     const missing = Number(response.headers.get("X-Export-Missing") ?? 0);
-    if (missing) notice(`${missing} file${missing === 1 ? "" : "s"} couldn't be read from storage and ${missing === 1 ? "is" : "are"} missing from the zip.`, "Downloaded");
+    if (missing) notice(tn(missing, "{n} file couldn't be read from storage and is missing from the zip.", "{n} files couldn't be read from storage and are missing from the zip."), t("Downloaded"));
   }
 
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        <div className={segmentTrackClass} role="tablist" aria-label="Filter creatives">
+        <div className={segmentTrackClass} role="tablist" aria-label={t("Filter creatives")}>
           {(["review", "approved", "rejected", "all"] as Filter[]).map((f) => (
             <button key={f} type="button" role="tab" aria-selected={filter === f} onClick={() => setFilter(f)} className={segmentClass(filter === f)}>
-              {{ review: "To review", approved: "Approved", rejected: "Rejected", all: "All" }[f]} <span className="tabular-nums opacity-70">{counts[f]}</span>
+              {{ review: t("To review"), approved: t("Approved"), rejected: t("Rejected"), all: t("All") }[f]} <span className="tabular-nums opacity-70">{counts[f]}</span>
             </button>
           ))}
         </div>
-        {hasApproved && <Button size="sm" variant="secondary" className="ml-auto" disabled={zipping} onClick={downloadApproved} title="One zip, in folders by awareness level (or format), then by creative: the files only">{zipping ? <><Spinner className="size-3" /> Zipping…</> : "Download approved"}</Button>}
-        {hasApproved && !driveLock && <Button size="sm" variant="secondary" disabled={exporting} onClick={exportToDrive} title="Into this app's Drive folder, in the same folders as the zip">{exporting ? <><Spinner className="size-3" /> Copying…</> : "Copy to Google Drive"}</Button>}
-        {hasApproved && onSendToMeta && !launchLock && <Button size="sm" onClick={() => onSendToMeta([])} title="Pick the creatives, the campaign and ad set, and every setting">Send to Meta</Button>}
+        {hasApproved && <Button size="sm" variant="secondary" className="ml-auto" disabled={zipping} onClick={downloadApproved} title={t("One zip, in folders by awareness level (or format), then by creative: the files only")}>{zipping ? <><Spinner className="size-3" /> {t("Zipping…")}</> : t("Download approved")}</Button>}
+        {hasApproved && !driveLock && <Button size="sm" variant="secondary" disabled={exporting} onClick={exportToDrive} title={t("Into this app's Drive folder, in the same folders as the zip")}>{exporting ? <><Spinner className="size-3" /> {t("Copying…")}</> : t("Copy to Google Drive")}</Button>}
+        {hasApproved && onSendToMeta && !launchLock && <Button size="sm" onClick={() => onSendToMeta([])} title={t("Pick the creatives, the campaign and ad set, and every setting")}>{t("Send to Meta")}</Button>}
         {!aiLock && (needCopy.length > 0 || copyWriter.progress) && (
           <Button size="sm" variant="secondary" className={hasApproved ? "" : "ml-auto"} disabled={Boolean(copyWriter.progress)} onClick={() => void copyWriter.writeAll(needCopy)}
-            title="A in a creator's voice, B in the brand's, for every creative shown that has no copy yet">
-            {copyWriter.progress ? <><Spinner className="size-3" /> Writing {copyWriter.progress.done}/{copyWriter.progress.total}…</> : `Write copy for all (${needCopy.length})`}
+            title={t("A in a creator's voice, B in the brand's, for every creative shown that has no copy yet")}>
+            {copyWriter.progress ? <><Spinner className="size-3" /> {t("Writing {done}/{total}…", { done: copyWriter.progress.done, total: copyWriter.progress.total })}</> : t("Write copy for all ({n})", { n: needCopy.length })}
           </Button>
         )}
       </div>
@@ -245,10 +251,10 @@ export function CreativeGallery({ productId, features, creatives, batches = NO_B
       )}
       <AwarenessCoverage levels={shown.filter((c) => c.approval !== "rejected").map((c) => levelOf(c, batches))} />
       {fromPlayground && (
-        <div className={cx(segmentTrackClass, "mb-3 flex-wrap")} role="tablist" aria-label="Filter by source">
+        <div className={cx(segmentTrackClass, "mb-3 flex-wrap")} role="tablist" aria-label={t("Filter by source")}>
           {(["all", "studio", "playground"] as OriginFilter[]).map((o) => (
             <button key={o} type="button" role="tab" aria-selected={origin === o} onClick={() => setOrigin(o)} className={segmentClass(origin === o)}>
-              {ORIGIN_LABEL[o]} <span className="tabular-nums opacity-70">{byOrigin(creatives, o, playgroundBatchIds).length}</span>
+              {originLabel[o]} <span className="tabular-nums opacity-70">{byOrigin(creatives, o, playgroundBatchIds).length}</span>
             </button>
           ))}
         </div>
@@ -264,18 +270,18 @@ export function CreativeGallery({ productId, features, creatives, batches = NO_B
                     ? <img src={c.thumbnail_url} alt="" loading="lazy" className="h-full w-full bg-console object-contain" />
                     : <Preview creative={c} />}
                   <span className="absolute top-1.5 right-1.5 rounded-xs bg-card/90 px-1 py-px text-[11px] text-ink tabular-nums">{c.aspect}</span>
-                  {c.kind === "video" && <span className="absolute bottom-1.5 left-1.5 rounded-xs bg-scrim/70 px-1 py-px text-[11px] text-white">▶ {c.duration_sec ? `${Math.round(Number(c.duration_sec))}s` : "video"}</span>}
+                  {c.kind === "video" && <span className="absolute bottom-1.5 left-1.5 rounded-xs bg-scrim/70 px-1 py-px text-[11px] text-white">▶ {c.duration_sec ? `${Math.round(Number(c.duration_sec))}s` : t("video")}</span>}
                 </div>
                 <div className="grid gap-1 p-2">
-                  <span className="truncate text-xs font-medium">{c.title ?? KIND_LABEL[c.style]}</span>
+                  <span className="truncate text-xs font-medium">{c.title ?? t(KIND_LABEL[c.style])}</span>
                   <span className="flex flex-wrap gap-1">
-                    {originOf(c, playgroundBatchIds) === "playground" && <Badge tone="neutral">Playground</Badge>}
+                    {originOf(c, playgroundBatchIds) === "playground" && <Badge tone="neutral">{t("Remix")}</Badge>}
                     {levelOf(c, batches) && <Badge tone="neutral">L{levelOf(c, batches)}</Badge>}
-                    <Badge tone={qaBadge(c.qa_status, aiLock).tone}>{c.qa_status === "running" && <Gear className="size-3" />}{qaBadge(c.qa_status, aiLock).label}</Badge>
-                    {c.approval !== "pending" && <Badge tone={c.approval === "approved" ? "win" : "warn"}>{c.approval}</Badge>}
-                    {Boolean(c.copy?.composed) && <Badge tone="accent">composed</Badge>}
-                    {Boolean(c.copy?.composeError) && <Badge tone="caution">text to shorten</Badge>}
-                    {failures[c.id] ? <Badge tone="warn">not finished</Badge> : waiting[c.id] && !c.copy?.composeError ? <Badge tone="neutral">finishing</Badge> : null}
+                    <Badge tone={qaBadge(c.qa_status, aiLock).tone}>{c.qa_status === "running" && <Gear className="size-3" />}{t(qaBadge(c.qa_status, aiLock).label)}</Badge>
+                    {c.approval !== "pending" && <Badge tone={c.approval === "approved" ? "win" : "warn"}>{c.approval === "approved" ? t("approved") : t("rejected")}</Badge>}
+                    {Boolean(c.copy?.composed) && <Badge tone="accent">{t("composed")}</Badge>}
+                    {Boolean(c.copy?.composeError) && <Badge tone="caution">{t("text to shorten")}</Badge>}
+                    {failures[c.id] ? <Badge tone="warn">{t("not finished")}</Badge> : waiting[c.id] && !c.copy?.composeError ? <Badge tone="neutral">{t("finishing")}</Badge> : null}
                   </span>
                   {failures[c.id] && <span className="line-clamp-3 text-xs text-warn">{failures[c.id]}</span>}
                 </div>
@@ -287,9 +293,9 @@ export function CreativeGallery({ productId, features, creatives, batches = NO_B
           ))}
         </ul>
       ) : filter === "review"
-        ? <EmptyState className="py-8" title="Nothing waiting for review" body="New creatives land here once they have been checked. Start a batch in New batch above, or make images in the Playground." />
-        : <EmptyState className="py-8" title="No creatives here yet" body="Start a batch in New batch above, or make images in the Playground: they're reviewed here."
-            action={<ButtonLink href={workspaceHref(productId, "playground")} variant="secondary" size="sm">Open the Playground</ButtonLink>} />}
+        ? <EmptyState className="py-8" title={t("Nothing waiting for review")} body={t("New creatives land here once they have been checked. Start a batch in New batch above, or remix an ad on the Remix tab.")} />
+        : <EmptyState className="py-8" title={t("No creatives here yet")} body={t("Start a batch in New batch above, or remix an ad on the Remix tab: they're reviewed here.")}
+            action={<ButtonLink href={studioHref(productId, "remix")} variant="secondary" size="sm">{t("Open Remix")}</ButtonLink>} />}
       {open && <ReviewPanel key={open.id} aiLock={aiLock} launchLock={launchLock} creative={open} fromPlayground={originOf(open, playgroundBatchIds) === "playground"} waiting={waiting[open.id]} failure={failures[open.id]} onRetryWork={onRetryWork} onClose={() => onOpen(null)} onChanged={onChanged} copyWriter={copyWriter}
         onSendToMeta={onSendToMeta ? (ids) => { onOpen(null); onSendToMeta(ids); } : undefined} />}
     </div>
@@ -303,12 +309,13 @@ const VERDICT_ICON: Record<QaCheck["verdict"], { mark: string; cls: string }> = 
 type ComposedRecord = { layout: string; copy: ComposedCopy; warnings?: string[]; plate?: { url: string }; svgUrl?: string | null; layersUrl?: string | null };
 type ComposeErrorRecord = { problems: string[]; copy: ComposedCopy; layout: string };
 const COPY_FIELDS: { key: keyof ComposedCopy; label: string }[] = [
-  { key: "eyebrow", label: "Eyebrow" }, { key: "headline", label: "Headline" }, { key: "subhead", label: "Subhead" },
-  { key: "offer", label: "Offer (word for word from your list)" }, { key: "cta", label: "Button" }, { key: "legal", label: "Legal line" },
+  { key: "eyebrow", label: m("Eyebrow") }, { key: "headline", label: m("Headline") }, { key: "subhead", label: m("Subhead") },
+  { key: "offer", label: m("Offer (word for word from your list)") }, { key: "cta", label: m("Button") }, { key: "legal", label: m("Legal line") },
 ];
 
 /** A composed ad's words and layout: edit and set them again on the same plate (free; QA runs again). */
 function ComposedPanel({ creative, onChanged }: { creative: CreativeView; onChanged: () => void }) {
+  const { t } = useT();
   const record = (creative.copy?.composed ?? null) as ComposedRecord | null;
   const failed = (creative.copy?.composeError ?? null) as ComposeErrorRecord | null;
   const [copy, setCopy] = useState<ComposedCopy>(record?.copy ?? failed?.copy ?? { headline: "" });
@@ -320,29 +327,29 @@ function ComposedPanel({ creative, onChanged }: { creative: CreativeView; onChan
     const response = await fetch(`/api/studio/creatives/${creative.id}/compose`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ copy, layout }) }).catch(() => null);
     const data = await response?.json().catch(() => null) as { error?: string; problems?: string[] } | null;
     setBusy(false);
-    if (!response?.ok) { setProblems(data?.problems ?? [data?.error ?? "Couldn't set the text. Try again."]); return; }
+    if (!response?.ok) { setProblems(data?.problems ?? [data?.error ?? t("Couldn't set the text. Try again.")]); return; }
     setProblems([]);
     onChanged();
   }
   return (
     <details open={Boolean(failed) && !record} className="grid gap-2 rounded-inner border border-line p-3 text-xs">
-      <summary className="cursor-pointer font-medium text-ink">Edit text <span className="font-normal text-muted">· set in your brand fonts on the same plate (free)</span></summary>
+      <summary className="cursor-pointer font-medium text-ink">{t("Edit text")} <span className="font-normal text-muted">· {t("set in your brand fonts on the same plate (free)")}</span></summary>
       <div className="mt-2 grid gap-2">
-        {problems.map((p) => <p key={p} className="text-caution-ink">{p}</p>)}
-        {record?.warnings?.map((w) => <p key={w} className="text-muted">{w}</p>)}
-        <select className={inputClass} value={layout} aria-label="Layout" onChange={(e) => setLayout(e.target.value)}>
-          {LAYOUTS.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+        {problems.map((p) => <p key={p} className="text-caution-ink">{storedWords(p, COMPOSE_WORDS, t)}</p>)}
+        {record?.warnings?.map((w) => <p key={w} className="text-muted">{storedWords(w, COMPOSE_WORDS, t)}</p>)}
+        <select className={inputClass} value={layout} aria-label={t("Layout")} onChange={(e) => setLayout(e.target.value)}>
+          {LAYOUTS.map((l) => <option key={l.id} value={l.id}>{t(l.name)}</option>)}
         </select>
-        {unplacedCopy(copy, layoutById(layout)).length > 0 && <p className="text-caution-ink">{unplacedNote(layoutById(layout), unplacedCopy(copy, layoutById(layout)))}</p>}
+        {unplacedCopy(copy, layoutById(layout)).length > 0 && <p className="text-caution-ink">{unplacedNote(layoutById(layout), unplacedCopy(copy, layoutById(layout)), t)}</p>}
         {COPY_FIELDS.filter((f) => layoutRoles(layoutById(layout)).includes(f.key) || copy[f.key]?.trim()).map((f) => (
-          <input key={f.key} className={inputClass} value={copy[f.key] ?? ""} maxLength={COPY_LIMITS[f.key]} placeholder={f.label} aria-label={f.label}
+          <input key={f.key} className={inputClass} value={copy[f.key] ?? ""} maxLength={COPY_LIMITS[f.key]} placeholder={t(f.label)} aria-label={t(f.label)}
             onChange={(e) => setCopy({ ...copy, [f.key]: e.target.value })} />
         ))}
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" disabled={busy || !copy.headline.trim()} onClick={apply}>{busy ? <><Spinner className="size-3" /> Setting…</> : "Set the text"}</Button>
-          {record?.svgUrl && <a href={record.svgUrl} target="_blank" rel="noreferrer" className="text-accent hover:underline">Editable SVG</a>}
-          {record?.layersUrl && <a href={record.layersUrl} target="_blank" rel="noreferrer" className="text-accent hover:underline">Layers</a>}
-          {record?.plate?.url && <a href={record.plate.url} target="_blank" rel="noreferrer" className="text-accent hover:underline">Plate (no text)</a>}
+          <Button size="sm" disabled={busy || !copy.headline.trim()} onClick={apply}>{busy ? <><Spinner className="size-3" /> {t("Setting…")}</> : t("Set the text")}</Button>
+          {record?.svgUrl && <a href={record.svgUrl} target="_blank" rel="noreferrer" className="text-accent hover:underline">{t("Editable SVG")}</a>}
+          {record?.layersUrl && <a href={record.layersUrl} target="_blank" rel="noreferrer" className="text-accent hover:underline">{t("Layers")}</a>}
+          {record?.plate?.url && <a href={record.plate.url} target="_blank" rel="noreferrer" className="text-accent hover:underline">{t("Plate (no text)")}</a>}
         </div>
       </div>
     </details>
@@ -350,6 +357,7 @@ function ComposedPanel({ creative, onChanged }: { creative: CreativeView; onChan
 }
 
 function ReviewPanel({ aiLock, launchLock, creative, fromPlayground, waiting, failure, onRetryWork, onClose, onChanged, onSendToMeta, copyWriter }: { aiLock: FeatureState | null; launchLock: FeatureState | null; creative: CreativeView; fromPlayground: boolean; waiting?: string; failure?: string; onRetryWork?: (id: string) => void; onClose: () => void; onChanged: () => void; onSendToMeta?: (ids: string[]) => void; copyWriter: ReturnType<typeof useCopyWriter> }) {
+  const { t, tn, intl } = useT();
   const [copy, setCopy] = useState({ title: creative.title ?? "", headline: creative.headline ?? "", primary_text: creative.primary_text ?? "", description: creative.description ?? "", cta: creative.cta ?? "" });
   const variants = creative.copy_variants ?? [];
   const chosen = chosenVariant({ ...creative, ...copy });
@@ -366,7 +374,7 @@ function ReviewPanel({ aiLock, launchLock, creative, fromPlayground, waiting, fa
   const human = needsHuman(creative);
   const noteNeeded = creative.qa_status === "warn";
   const canApprove = qaDone && !waiting && (!noteNeeded || Boolean(note.trim()));
-  const approveHint = !qaDone ? "QA must pass (or warn) first" : waiting ?? (noteNeeded && !note.trim() ? "Add a note first" : undefined);
+  const approveHint = !qaDone ? t("QA must pass (or warn) first") : waiting ? t(waiting) : (noteNeeded && !note.trim() ? t("Add a note first") : undefined);
 
   useEffect(() => { closeRef.current?.focus(); }, []);
 
@@ -374,14 +382,14 @@ function ReviewPanel({ aiLock, launchLock, creative, fromPlayground, waiting, fa
     setBusy(label);
     const response = await fetch(`/api/studio/creatives/${creative.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     setBusy(null);
-    if (!response.ok) return notice((await response.json().catch(() => ({}))).error ?? "Couldn't save. Try again.");
+    if (!response.ok) return notice((await response.json().catch(() => ({}))).error ?? t("Couldn't save. Try again."));
     onChanged();
   }
   async function rerun() {
     setBusy("qa");
     const response = await fetch(`/api/studio/creatives/${creative.id}/qa`, { method: "POST" });
     setBusy(null);
-    if (!response.ok) return notice((await response.json().catch(() => ({}))).error ?? "Couldn't run QA. Try again.");
+    if (!response.ok) return notice((await response.json().catch(() => ({}))).error ?? t("Couldn't run QA. Try again."));
     onChanged();
   }
 
@@ -391,25 +399,25 @@ function ReviewPanel({ aiLock, launchLock, creative, fromPlayground, waiting, fa
       <div role="dialog" aria-modal="true" aria-labelledby="review-title" className={`${PANEL} max-w-4xl`}>
         <div className="flex items-start justify-between gap-4 border-b border-line px-4 py-2.5">
           <div className="min-w-0">
-            <p className="text-xs text-muted">{fromPlayground ? "Playground · " : ""}{KIND_LABEL[creative.style]} · {creative.aspect}{creative.width ? ` · ${creative.width}×${creative.height}` : ""}{creative.duration_sec ? ` · ${Number(creative.duration_sec)}s` : ""}</p>
-            <h2 id="review-title" className="mt-0.5 truncate text-sm font-medium">{creative.title ?? "Creative"}</h2>
+            <p className="text-xs text-muted">{fromPlayground ? `${t("Remix")} · ` : ""}{t(KIND_LABEL[creative.style])} · {creative.aspect}{creative.width ? ` · ${creative.width}×${creative.height}` : ""}{creative.duration_sec ? ` · ${Number(creative.duration_sec)}s` : ""}</p>
+            <h2 id="review-title" className="mt-0.5 truncate text-sm font-medium">{creative.title ?? t("Creative")}</h2>
           </div>
-          <IconButton ref={closeRef} label="Close" onClick={onClose}><IconX /></IconButton>
+          <IconButton ref={closeRef} label={t("Close")} onClick={onClose}><IconX /></IconButton>
         </div>
         <div className="grid gap-4 p-4 @container md:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
           <div className="grid content-start gap-3">
             <div className={cx("w-full overflow-hidden rounded-small border border-line", ASPECT_CLASS[creative.aspect] ?? "aspect-square")}><Preview creative={creative} controls /></div>
-            <a href={creative.url} target="_blank" rel="noreferrer" className="text-xs text-muted underline-offset-2 hover:underline">Open the file</a>
+            <a href={creative.url} target="_blank" rel="noreferrer" className="text-xs text-muted underline-offset-2 hover:underline">{t("Open the file")}</a>
             {failure && (
               <div className="grid gap-2 rounded-inner border border-warn/40 p-3 text-xs">
                 <p className="text-warn">{failure}</p>
-                {onRetryWork && <div><Button size="sm" variant="secondary" onClick={() => onRetryWork(creative.id)}>Try again</Button></div>}
+                {onRetryWork && <div><Button size="sm" variant="secondary" onClick={() => onRetryWork(creative.id)}>{t("Try again")}</Button></div>}
               </div>
             )}
             {(creative.copy?.composed || creative.copy?.composeError) ? <ComposedPanel creative={creative} onChanged={onChanged} /> : null}
             {creative.prompt && (
               <details className="text-xs text-muted">
-                <summary className="cursor-pointer">Brief sent to {creative.model ?? "the model"}</summary>
+                <summary className="cursor-pointer">{creative.model ? t("Brief sent to {model}", { model: creative.model }) : t("Brief sent to the model")}</summary>
                 <p className="mt-2 whitespace-pre-wrap">{creative.prompt}</p>
               </details>
             )}
@@ -418,10 +426,10 @@ function ReviewPanel({ aiLock, launchLock, creative, fromPlayground, waiting, fa
           <div className="grid content-start gap-4">
             <section>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-medium">Checked</h3>
+                <h3 className="text-sm font-medium">{t("Checked")}</h3>
                 <span className="flex items-center gap-2">
-                  <Badge tone={qaBadge(creative.qa_status, aiLock).tone}>{qaBadge(creative.qa_status, aiLock).label}</Badge>
-                  {!aiLock && <Button size="sm" variant="ghost" disabled={busy === "qa" || creative.qa_status === "running"} onClick={rerun}>{busy === "qa" ? <Spinner className="size-3" /> : "Run again"}</Button>}
+                  <Badge tone={qaBadge(creative.qa_status, aiLock).tone}>{t(qaBadge(creative.qa_status, aiLock).label)}</Badge>
+                  {!aiLock && <Button size="sm" variant="ghost" disabled={busy === "qa" || creative.qa_status === "running"} onClick={rerun}>{busy === "qa" ? <Spinner className="size-3" /> : t("Run again")}</Button>}
                 </span>
               </div>
               {aiLock && <FeatureLock state={aiLock} className="mt-2" />}
@@ -440,61 +448,61 @@ function ReviewPanel({ aiLock, launchLock, creative, fromPlayground, waiting, fa
                   ))}
                 </ul>
               )}
-              {human.length > 0 && <p className="mt-3 text-xs"><span className="font-medium">Check yourself:</span> <span className="text-muted">{human.join(", ")}.</span></p>}
+              {human.length > 0 && <p className="mt-3 text-xs"><span className="font-medium">{t("Check yourself:")}</span> <span className="text-muted">{human.join(", ")}.</span></p>}
               {qa?.notes?.map((n) => <p key={n} className="mt-1 text-xs text-muted">{n}</p>)}
               {(qa?.textSeen?.length ?? 0) > 0 && (
                 <details className="mt-2 text-xs text-muted">
-                  <summary className="cursor-pointer">Text read on the creative ({qa!.textSeen!.length} lines)</summary>
-                  <ul className="mt-1 list-disc pl-4">{qa!.textSeen!.map((t, i) => <li key={i}>{t}</li>)}</ul>
+                  <summary className="cursor-pointer">{tn(qa!.textSeen!.length, "Text read on the creative ({n} line)", "Text read on the creative ({n} lines)")}</summary>
+                  <ul className="mt-1 list-disc pl-4">{qa!.textSeen!.map((line, i) => <li key={i}>{line}</li>)}</ul>
                 </details>
               )}
             </section>
 
             <section className="grid gap-3 border-t border-line pt-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-medium">Ad copy for Launch</h3>
+                <h3 className="text-sm font-medium">{t("Ad copy for Launch")}</h3>
                 <span className="flex flex-wrap items-center gap-1">
                   {variants.map((v) => (
                     <Button key={v.label} size="sm" variant={chosen === v.label ? "primary" : "secondary"} aria-pressed={chosen === v.label} disabled={Boolean(busy) || writingCopy} onClick={() => void pickCopy(v)}
-                      title={`${v.voice === "creator" ? "Creator voice" : "Brand voice"}: ${v.primary_text}`}>{v.label} · {v.voice === "creator" ? "creator" : "brand"}</Button>
+                      title={v.voice === "creator" ? t("Creator voice: {text}", { text: v.primary_text }) : t("Brand voice: {text}", { text: v.primary_text })}>{v.voice === "creator" ? t("{label} · creator", { label: v.label }) : t("{label} · brand", { label: v.label })}</Button>
                   ))}
-                  {!aiLock && <Button size="sm" variant="ghost" disabled={Boolean(busy) || writingCopy} onClick={() => void writeCopy()}>{writingCopy ? <><Spinner className="size-3" /> Writing…</> : variants.length ? "Rewrite" : "Write copy"}</Button>}
+                  {!aiLock && <Button size="sm" variant="ghost" disabled={Boolean(busy) || writingCopy} onClick={() => void writeCopy()}>{writingCopy ? <><Spinner className="size-3" /> {t("Writing…")}</> : variants.length ? t("Rewrite") : t("Write copy")}</Button>}
                 </span>
               </div>
               <div className="grid gap-3 @lg:grid-cols-2">
-                <Field label="Name"><input className={inputClass} value={copy.title} maxLength={200} onChange={(e) => setCopy({ ...copy, title: e.target.value })} /></Field>
-                <Field label="Call to action">
+                <Field label={t("Name")}><input className={inputClass} value={copy.title} maxLength={200} onChange={(e) => setCopy({ ...copy, title: e.target.value })} /></Field>
+                <Field label={t("Call to action")}>
                   <input className={inputClass} list="cta-suggestions" value={copy.cta} maxLength={40} onChange={(e) => setCopy({ ...copy, cta: e.target.value })} placeholder="Download" />
                   <datalist id="cta-suggestions">{CTA_SUGGESTIONS.map((c) => <option key={c} value={c} />)}</datalist>
                 </Field>
               </div>
-              <Field label="Headline"><input className={inputClass} value={copy.headline} maxLength={255} onChange={(e) => setCopy({ ...copy, headline: e.target.value })} /></Field>
-              <Field label="Primary text" hint="The check reads the creative, not this copy: keep it to the same rules (no guarantees, no personal attributes).">
+              <Field label={t("Headline")}><input className={inputClass} value={copy.headline} maxLength={255} onChange={(e) => setCopy({ ...copy, headline: e.target.value })} /></Field>
+              <Field label={t("Primary text")} hint={t("The check reads the creative, not this copy: keep it to the same rules (no guarantees, no personal attributes).")}>
                 <textarea className={cx(inputClass, "min-h-20")} value={copy.primary_text} maxLength={2200} onChange={(e) => setCopy({ ...copy, primary_text: e.target.value })} />
               </Field>
-              <Field label="Description" hint="Under the headline on Meta: where disclaimers go (Results vary., AI-generated imagery.).">
+              <Field label={t("Description")} hint={t("Under the headline on Meta: where disclaimers go (Results vary., AI-generated imagery.).")}>
                 <input className={inputClass} value={copy.description} maxLength={1000} onChange={(e) => setCopy({ ...copy, description: e.target.value })} />
               </Field>
-              <div><Button size="sm" variant="secondary" disabled={busy === "copy"} onClick={() => save(copy, "copy")}>{busy === "copy" ? "Saving…" : "Save copy"}</Button></div>
+              <div><Button size="sm" variant="secondary" disabled={busy === "copy"} onClick={() => save(copy, "copy")}>{busy === "copy" ? t("Saving…") : t("Save copy")}</Button></div>
             </section>
 
             <section className="grid gap-3 border-t border-line pt-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-medium">Your decision</h3>
-                {creative.approval !== "pending" && <Badge tone={creative.approval === "approved" ? "win" : "warn"}>{creative.approval}{creative.reviewed_at ? ` · ${new Date(creative.reviewed_at).toLocaleString(UI_LOCALE, { dateStyle: "medium", timeStyle: "short" })}` : ""}</Badge>}
+                <h3 className="text-sm font-medium">{t("Your decision")}</h3>
+                {creative.approval !== "pending" && <Badge tone={creative.approval === "approved" ? "win" : "warn"}>{creative.approval === "approved" ? t("approved") : t("rejected")}{creative.reviewed_at ? ` · ${new Date(creative.reviewed_at).toLocaleString(intl, { dateStyle: "medium", timeStyle: "short" })}` : ""}</Badge>}
               </div>
-              <Field label="Note" hint={creative.qa_status === "warn" ? "The check raised a warning: say why it's fine to ship (required to approve)." : "Required to reject, so the next batch can avoid it."}>
+              <Field label={t("Note")} hint={creative.qa_status === "warn" ? t("The check raised a warning: say why it's fine to ship (required to approve).") : t("Required to reject, so the next batch can avoid it.")}>
                 <textarea className={cx(inputClass, "min-h-16")} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} />
               </Field>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" disabled={!canApprove || Boolean(busy)} onClick={() => save({ ...copy, approval: "approved", note }, "approve")} title={canApprove ? undefined : approveHint}>{busy === "approve" ? "Approving…" : "Approve"}</Button>
-                <Button size="sm" variant="danger" disabled={Boolean(busy)} onClick={() => save({ approval: "rejected", note }, "reject")}>{busy === "reject" ? "Rejecting…" : "Reject"}</Button>
-                {creative.approval !== "pending" && <Button size="sm" variant="ghost" disabled={Boolean(busy)} onClick={() => save({ approval: "pending", note }, "reset")}>Undo decision</Button>}
-                {creative.approval === "approved" && qaDone && onSendToMeta && !launchLock && <Button size="sm" variant="secondary" className="ml-auto" onClick={() => onSendToMeta([creative.id])}>Send to Meta</Button>}
+                <Button size="sm" disabled={!canApprove || Boolean(busy)} onClick={() => save({ ...copy, approval: "approved", note }, "approve")} title={canApprove ? undefined : approveHint}>{busy === "approve" ? t("Approving…") : t("Approve")}</Button>
+                <Button size="sm" variant="danger" disabled={Boolean(busy)} onClick={() => save({ approval: "rejected", note }, "reject")}>{busy === "reject" ? t("Rejecting…") : t("Reject")}</Button>
+                {creative.approval !== "pending" && <Button size="sm" variant="ghost" disabled={Boolean(busy)} onClick={() => save({ approval: "pending", note }, "reset")}>{t("Undo decision")}</Button>}
+                {creative.approval === "approved" && qaDone && onSendToMeta && !launchLock && <Button size="sm" variant="secondary" className="ml-auto" onClick={() => onSendToMeta([creative.id])}>{t("Send to Meta")}</Button>}
               </div>
               {creative.approval === "approved" && qaDone && onSendToMeta && launchLock && <FeatureLock state={launchLock} />}
-              {!qaDone && <p className="text-xs text-muted">{creative.qa_status === "fail" ? "The check failed: fix the brief and make a new one. Failed creatives can't be approved." : creative.qa?.rerun ? "The file or its words changed: it is checked again, then approval opens." : aiLock ? "Approval opens once the creative has been checked, which needs the AI connected." : "Approval opens once the creative has been checked."}</p>}
-              {qaDone && waiting && <p className="text-xs text-muted">{waiting}</p>}
+              {!qaDone && <p className="text-xs text-muted">{creative.qa_status === "fail" ? t("The check failed: fix the brief and make a new one. Failed creatives can't be approved.") : creative.qa?.rerun ? t("The file or its words changed: it is checked again, then approval opens.") : aiLock ? t("Approval opens once the creative has been checked, which needs the AI connected.") : t("Approval opens once the creative has been checked.")}</p>}
+              {qaDone && waiting && <p className="text-xs text-muted">{t(waiting)}</p>}
             </section>
           </div>
         </div>
